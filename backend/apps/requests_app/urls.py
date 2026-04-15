@@ -6,6 +6,7 @@ from .views import (
     OperationalUnitViewSet,
     RequestCommentCreateView,
     RequestDetailView,
+    RequestAssignToMeView,
     RequestMessageViewSet,
     RequestListCreateView,
     RequestStatusUpdateView,
@@ -38,5 +39,10 @@ urlpatterns = [
         "requests/<int:request_id>/status/",
         RequestStatusUpdateView.as_view(),
         name="requests-status",
+    ),
+    path(
+        "requests/<int:request_id>/assign/",
+        RequestAssignToMeView.as_view(),
+        name="requests-assign",
     ),
 ] + router.urls

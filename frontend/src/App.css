@@ -127,6 +127,10 @@
   margin: 18px 0;
 }
 
+.request-meta-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .summary-card,
 .permission-card {
   border: 1px solid var(--border);
@@ -275,7 +279,9 @@ button:disabled {
 }
 
 .permission-list,
-.check-grid {
+.check-grid,
+.thread-list,
+.timeline-list {
   display: grid;
   gap: 12px;
 }
@@ -285,6 +291,22 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.thread-card,
+.timeline-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.thread-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .button-stack {

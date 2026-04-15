@@ -1,4 +1,5 @@
-from django.db.models import Max
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,6 +11,7 @@ from apps.permissions_app.services import get_user_role_keys
 from .models import (
     MainBranch,
     OperationalUnit,
+    RequestAssignmentHistory,
     RequestMessage,
     RequestStatusHistory,
     ServiceRequest,
@@ -132,18 +134,23 @@ class RequestListCreateView(APIView):
         requester_unit = self.get_or_create_unit_for_entity(request.user.entity)
         target_unit = self.get_or_create_unit_for_entity(target_entity)
 
-        latest_id = ServiceRequest.objects.aggregate(max_id=Max("id"))["max_id"] or 0
         service_request = ServiceRequest.objects.create(
-            request_number=f"REQ-{latest_id + 1:05d}",
+            request_number=f"REQ-{timezone.now():%Y%m%d%H%M%S%f}",
             title=serializer.validated_data["title"],
             description=serializer.validated_data["description"],
             category=serializer.validated_data["type"],
             requester_user=request.user,
+            company=request.user.company,
+            source_entity=request.user.entity,
+            target_entity=target_entity,
             requester_unit=requester_unit,
             target_unit=target_unit,
         )
         return Response(
-            RequestDetailSerializer(service_request, context={"request": request}).data,
+            RequestDetailSerializer(
+                load_request(service_request.id),
+                context={"request": request, "can_manage_incoming_request": False},
+            ).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -155,21 +162,22 @@ class RequestDetailView(APIView):
         return get_visible_requests_queryset(user).filter(id=service_request.id).exists()
 
     def get_object(self, request_id):
-        return (
-            ServiceRequest.objects.select_related(
-                "target_unit", "requester_user", "current_assignee"
-            )
-            .prefetch_related("messages__sender", "status_history__changed_by")
-            .filter(id=request_id)
-            .first()
-        )
+        return load_request(request_id)
 
     def get(self, request, request_id):
         service_request = self.get_object(request_id)
         if service_request is None or not self.has_access(request.user, service_request):
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(
-            RequestDetailSerializer(service_request, context={"request": request}).data
+            RequestDetailSerializer(
+                service_request,
+                context={
+                    "request": request,
+                    "can_manage_incoming_request": can_manage_incoming_request(
+                        request.user, service_request
+                    ),
+                },
+            ).data
         )
 
 
@@ -190,15 +198,17 @@ class RequestCommentCreateView(APIView):
             sender=request.user,
             message=serializer.validated_data["message"],
         )
-        service_request = (
-            ServiceRequest.objects.select_related(
-                "target_unit", "requester_user", "current_assignee"
-            )
-            .prefetch_related("messages__sender", "status_history__changed_by")
-            .get(id=request_id)
-        )
+        service_request = load_request(request_id)
         return Response(
-            RequestDetailSerializer(service_request, context={"request": request}).data
+            RequestDetailSerializer(
+                service_request,
+                context={
+                    "request": request,
+                    "can_manage_incoming_request": can_manage_incoming_request(
+                        request.user, service_request
+                    ),
+                },
+            ).data
         )
 
 
@@ -224,35 +234,125 @@ class RequestStatusUpdateView(APIView):
         serializer.is_valid(raise_exception=True)
         old_status = service_request.status
         new_status = serializer.validated_data["status"]
+        note = serializer.validated_data.get("note", "")
         service_request.status = new_status
+        update_fields = ["status"]
         if service_request.current_assignee_id is None:
             service_request.current_assignee = request.user
-        service_request.save(update_fields=["status", "current_assignee"])
+            update_fields.append("current_assignee")
+        if new_status == ServiceRequest.Status.ACCEPTED and service_request.accepted_at is None:
+            service_request.accepted_at = timezone.now()
+            update_fields.append("accepted_at")
+        if new_status == ServiceRequest.Status.COMPLETED:
+            service_request.completed_at = timezone.now()
+            service_request.resolution_note = note
+            update_fields.extend(["completed_at", "resolution_note"])
+        if new_status == ServiceRequest.Status.CLOSED:
+            service_request.closed_at = timezone.now()
+            service_request.resolution_note = note
+            update_fields.extend(["closed_at", "resolution_note"])
+        if new_status == ServiceRequest.Status.REJECTED:
+            service_request.rejection_reason = note
+            service_request.resolution_note = note
+            update_fields.extend(["rejection_reason", "resolution_note"])
+        service_request.save(update_fields=update_fields)
         RequestStatusHistory.objects.create(
             request=service_request,
             old_status=old_status,
             new_status=new_status,
             changed_by=request.user,
-            note=serializer.validated_data.get("note", ""),
+            note=note,
         )
-        service_request = (
-            ServiceRequest.objects.select_related(
-                "target_unit", "requester_user", "current_assignee"
-            )
-            .prefetch_related("messages__sender", "status_history__changed_by")
-            .get(id=request_id)
-        )
+        service_request = load_request(request_id)
         return Response(
-            RequestDetailSerializer(service_request, context={"request": request}).data
+            RequestDetailSerializer(
+                service_request,
+                context={"request": request, "can_manage_incoming_request": True},
+            ).data
         )
+
+
+class RequestAssignToMeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not get_visible_requests_queryset(request.user).filter(id=service_request.id).exists():
+            return Response(
+                {"detail": "You cannot access this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not can_manage_incoming_request(request.user, service_request):
+            return Response(
+                {"detail": "Only the correct support/dev target entity can assign this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        service_request.current_assignee = request.user
+        service_request.save(update_fields=["current_assignee"])
+        RequestAssignmentHistory.objects.create(
+            request=service_request,
+            assigned_by=request.user,
+            assignee=request.user,
+            note="Assigned to self",
+        )
+        service_request = load_request(request_id)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context={"request": request, "can_manage_incoming_request": True},
+            ).data
+        )
+
+
+def load_request(request_id):
+    return (
+        ServiceRequest.objects.select_related(
+            "company",
+            "source_entity",
+            "target_entity",
+            "target_unit",
+            "requester_unit",
+            "requester_user",
+            "requester_user__company",
+            "current_assignee",
+        )
+        .prefetch_related(
+            "messages__sender",
+            "messages__sender__entity",
+            "status_history__changed_by",
+            "status_history__changed_by__entity",
+            "assignment_history__assigned_by",
+            "assignment_history__assigned_by__entity",
+            "assignment_history__assignee",
+        )
+        .filter(id=request_id)
+        .first()
+    )
 
 
 def get_visible_requests_queryset(user):
     base_queryset = (
         ServiceRequest.objects.select_related(
-            "target_unit", "requester_user", "requester_unit", "current_assignee"
+            "company",
+            "source_entity",
+            "target_entity",
+            "target_unit",
+            "requester_user",
+            "requester_user__company",
+            "requester_unit",
+            "current_assignee",
         )
-        .prefetch_related("messages__sender", "status_history__changed_by")
+        .prefetch_related(
+            "messages__sender",
+            "messages__sender__entity",
+            "status_history__changed_by",
+            "status_history__changed_by__entity",
+            "assignment_history__assigned_by",
+            "assignment_history__assignee",
+        )
         .order_by("-created_at")
     )
 
@@ -263,8 +363,9 @@ def get_visible_requests_queryset(user):
         return base_queryset.filter(requester_user_id=user.id)
 
     return base_queryset.filter(
-        requester_user__company_id=user.company_id,
-        target_unit__code=user.entity.code,
+        Q(company_id=user.company_id) | Q(company__isnull=True, requester_user__company_id=user.company_id),
+        Q(target_entity_id=user.entity_id)
+        | Q(target_entity__isnull=True, target_unit__code=user.entity.code),
     )
 
 
@@ -272,6 +373,19 @@ def can_manage_incoming_request(user, service_request):
     if not user.entity_id or user.entity.entity_type == Entity.EntityType.PROD:
         return False
     return (
-        service_request.requester_user.company_id == user.company_id
-        and service_request.target_unit.code == user.entity.code
+        get_request_company_id(service_request) == user.company_id
+        and get_request_target_entity_id(service_request) == user.entity_id
     )
+
+
+def get_request_company_id(service_request):
+    if service_request.company_id:
+        return service_request.company_id
+    return service_request.requester_user.company_id
+
+
+def get_request_target_entity_id(service_request):
+    if service_request.target_entity_id:
+        return service_request.target_entity_id
+    target_entity = Entity.objects.filter(code=service_request.target_unit.code).first()
+    return target_entity.id if target_entity else None

@@ -1,6 +1,9 @@
 from django.conf import settings
 from django.db import models
 
+from apps.companies.models import Company
+from apps.entities.models import Entity
+
 
 class MainBranch(models.Model):
     name = models.CharField(max_length=255)
@@ -92,6 +95,27 @@ class ServiceRequest(models.Model):
         on_delete=models.PROTECT,
         related_name="service_requests_created",
     )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="service_requests",
+    )
+    source_entity = models.ForeignKey(
+        Entity,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="service_requests_sent",
+    )
+    target_entity = models.ForeignKey(
+        Entity,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="service_requests_received",
+    )
     requester_unit = models.ForeignKey(
         OperationalUnit,
         on_delete=models.PROTECT,
@@ -111,6 +135,7 @@ class ServiceRequest(models.Model):
         related_name="service_requests_assigned",
     )
     rejection_reason = models.TextField(blank=True)
+    resolution_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -136,6 +161,27 @@ class RequestStatusHistory(models.Model):
 
     def __str__(self):
         return f"{self.request_id}: {self.old_status} -> {self.new_status}"
+
+
+class RequestAssignmentHistory(models.Model):
+    request = models.ForeignKey(
+        ServiceRequest, on_delete=models.CASCADE, related_name="assignment_history"
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="request_assignments_made",
+    )
+    assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="request_assignments_received",
+    )
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.request_id}: {self.assignee_id}"
 
 
 class RequestMessage(models.Model):

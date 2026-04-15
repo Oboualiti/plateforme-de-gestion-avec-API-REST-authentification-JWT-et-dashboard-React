@@ -13,6 +13,15 @@ const statusClassMap = {
   CLOSED: 'status-tag muted',
 }
 
+const statusLabelMap = {
+  NEW: 'New',
+  ACCEPTED: 'Accepted',
+  IN_PROGRESS: 'In progress',
+  REJECTED: 'Rejected',
+  COMPLETED: 'Completed',
+  CLOSED: 'Closed',
+}
+
 function RequestsPage() {
   const { user, refreshUser } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
@@ -63,17 +72,25 @@ function RequestsPage() {
         </div>
 
         {state.loading && <p className="muted-text">Loading requests...</p>}
-        {state.error && <p className="error-text">{state.error}</p>}
+        {state.error && (
+          <div className="state-card">
+            <p className="error-text">{state.error}</p>
+          </div>
+        )}
 
         {!state.loading && !state.error && (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
+                  <th>Ref</th>
                   <th>Title</th>
                   <th>Type</th>
                   <th>Status</th>
                   <th>Source</th>
+                  <th>Target</th>
+                  <th>Creator</th>
+                  <th>Assignee</th>
                   <th>Created</th>
                   <th>Action</th>
                 </tr>
@@ -81,7 +98,7 @@ function RequestsPage() {
               <tbody>
                 {state.requests.length === 0 && (
                   <tr>
-                    <td colSpan="6">
+                    <td colSpan="10">
                       {isProdSide ? 'No requests yet.' : 'No incoming requests for your team.'}
                     </td>
                   </tr>
@@ -89,15 +106,21 @@ function RequestsPage() {
                 {state.requests.map((item) => (
                   <tr key={item.id}>
                     <td>
+                      <strong>{item.reference_code || item.request_number}</strong>
+                    </td>
+                    <td>
                       {item.title}
                     </td>
                     <td>{item.type}</td>
                     <td>
                       <span className={statusClassMap[item.status] || 'status-tag'}>
-                        {item.status}
+                        {statusLabelMap[item.status] || item.status}
                       </span>
                     </td>
                     <td>{item.source_entity_name || '-'}</td>
+                    <td>{item.target_team_name || '-'}</td>
+                    <td>{item.creator_name || '-'}</td>
+                    <td>{item.current_assignee_name || 'Unassigned'}</td>
                     <td>{new Date(item.created_at).toLocaleString()}</td>
                     <td>
                       <Link className="table-action" to={`/requests/${item.id}`}>
