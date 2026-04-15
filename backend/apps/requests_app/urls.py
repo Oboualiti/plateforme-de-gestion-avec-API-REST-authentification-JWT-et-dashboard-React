@@ -1,9 +1,14 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
     MainBranchViewSet,
     OperationalUnitViewSet,
+    RequestCommentCreateView,
+    RequestDetailView,
     RequestMessageViewSet,
+    RequestListCreateView,
+    RequestStatusUpdateView,
     RequestStatusHistoryViewSet,
     ServiceRequestViewSet,
     UnitMembershipViewSet,
@@ -21,4 +26,17 @@ router.register(
 )
 router.register(r"request-messages", RequestMessageViewSet, basename="request-message")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("requests/", RequestListCreateView.as_view(), name="requests-list-create"),
+    path("requests/<int:request_id>/", RequestDetailView.as_view(), name="requests-detail"),
+    path(
+        "requests/<int:request_id>/comments/",
+        RequestCommentCreateView.as_view(),
+        name="requests-comments",
+    ),
+    path(
+        "requests/<int:request_id>/status/",
+        RequestStatusUpdateView.as_view(),
+        name="requests-status",
+    ),
+] + router.urls

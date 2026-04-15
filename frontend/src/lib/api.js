@@ -27,6 +27,7 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const { access } = getStoredTokens()
   if (access) {
+    config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${access}`
   }
   return config
@@ -41,7 +42,7 @@ api.interceptors.response.use(
     const status = error.response?.status
     const { refresh } = getStoredTokens()
 
-    if (status !== 401 || !refresh || originalRequest._retry) {
+    if (status !== 401 || !refresh || !originalRequest || originalRequest._retry) {
       return Promise.reject(error)
     }
 
