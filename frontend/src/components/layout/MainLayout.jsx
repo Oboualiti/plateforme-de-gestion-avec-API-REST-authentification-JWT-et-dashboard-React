@@ -2,14 +2,13 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 import { useAuth } from '../../context/AuthContext'
 
-const menuItems = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/requests', label: 'Requests' },
-  { to: '/admin/permissions', label: 'Permission Management' },
-]
-
 function MainLayout() {
   const { user, logout } = useAuth()
+  const menuItems = [
+    { to: '/dashboard', label: 'Dashboard' },
+    { to: '/requests', label: 'Requests' },
+    { to: '/admin/permissions', label: 'Permission Management' },
+  ]
 
   return (
     <div className="layout-shell">

@@ -4,9 +4,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.entities.models import Entity
+from apps.companies.models import Company
+from apps.permissions_app.models import UserRole
+from apps.roles.models import Role
 from apps.users.models import User
 
 from .serializers import (
+    ManagedUserCreateSerializer,
+    ManagedUserUpdateSerializer,
     ManageableUserListSerializer,
     UserPermissionAdminDetailSerializer,
     UserPermissionOverrideSerializer,
@@ -88,6 +94,128 @@ class ManageableUserListView(BaseManageUsersView):
             ).data,
         }
         return Response(data)
+
+    def post(self, request):
+        serializer = ManagedUserCreateSerializer(
+            data=request.data,
+            context={
+                "request": request,
+                "actor_level": get_user_max_role_level(request.user),
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        user = serializer.create()
+        payload = ManageableUserListSerializer(
+            user, context={"actor_level": get_user_max_role_level(request.user)}
+        ).data
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class ManageableUserFormOptionsView(BaseManageUsersView):
+    def get(self, request):
+        actor = request.user
+        actor_level = get_user_max_role_level(actor)
+        role_options = [
+            {"key": key, "name": key.replace("_", " ").title(), "level": level}
+            for key, level in ROLE_HIERARCHY.items()
+            if level < actor_level
+        ]
+
+        actor_roles = set(actor.assigned_roles.values_list("role__key", flat=True))
+        companies_qs = Company.objects.none()
+        if "super_admin" in actor_roles:
+            companies_qs = Company.objects.filter(is_active=True).order_by("name")
+        elif actor.company_id:
+            companies_qs = Company.objects.filter(id=actor.company_id, is_active=True)
+
+        companies = [
+            {"id": item.id, "name": item.name, "code": item.code}
+            for item in companies_qs
+        ]
+
+        entities_qs = Entity.objects.none()
+        if "super_admin" in actor_roles:
+            entities_qs = Entity.objects.filter(is_active=True).select_related("company")
+        elif "senior" in actor_roles and actor.company_id:
+            entities_qs = Entity.objects.filter(
+                company_id=actor.company_id, is_active=True
+            ).select_related("company")
+        elif actor.entity_id:
+            entities_qs = Entity.objects.filter(id=actor.entity_id).select_related("company")
+
+        entities = [
+            {
+                "id": item.id,
+                "name": item.name,
+                "entity_type": item.entity_type,
+                "company_id": item.company_id,
+                "company_name": item.company.name,
+                "label": f"{item.name} ({item.get_entity_type_display()})",
+            }
+            for item in entities_qs.order_by("name")
+        ]
+
+        tl_queryset = (
+            User.objects.filter(is_active=True, assigned_roles__role__key="team_leader")
+            .select_related("company", "entity")
+            .distinct()
+        )
+        if "super_admin" in actor_roles:
+            pass
+        elif "senior" in actor_roles and actor.company_id:
+            tl_queryset = tl_queryset.filter(company_id=actor.company_id)
+        elif actor.entity_id:
+            tl_queryset = tl_queryset.filter(entity_id=actor.entity_id)
+        else:
+            tl_queryset = tl_queryset.none()
+
+        team_leaders = [
+            {
+                "id": item.id,
+                "username": item.username,
+                "company_id": item.company_id,
+                "entity_id": item.entity_id,
+                "label": f"{item.username} ({item.entity.name if item.entity else '-'})",
+            }
+            for item in tl_queryset.order_by("username")
+        ]
+        return Response(
+            {
+                "role_options": role_options,
+                "company_options": companies,
+                "entity_options": entities,
+                "team_leader_options": team_leaders,
+            }
+        )
+
+
+class ManageableUserCrudView(BaseManageUsersView):
+    def patch(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        serializer = ManagedUserUpdateSerializer(
+            data=request.data,
+            context={"request": request, "target_user": target},
+        )
+        serializer.is_valid(raise_exception=True)
+        user = serializer.update(target)
+        payload = ManageableUserListSerializer(
+            user, context={"actor_level": get_user_max_role_level(request.user)}
+        ).data
+        return Response(payload)
+
+    def delete(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        if UserRole.objects.filter(user=target, role__key="senior").exists():
+            actor = request.user
+            if not actor.assigned_roles.filter(role__key="super_admin").exists():
+                self.permission_denied(
+                    request,
+                    message="Only Super Admin can delete Senior users.",
+                )
+        target.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ManageUserDetailView(BaseManageUsersView):

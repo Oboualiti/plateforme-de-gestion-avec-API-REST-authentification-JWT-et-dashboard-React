@@ -114,9 +114,7 @@ def can_manage_any_users(user):
             return bool(user.company_id and user.entity_id)
         return True
     if role_key == "team_leader":
-        return bool(user.company_id and user.entity_id) and user.__class__.objects.filter(
-            team_leader_id=user.id
-        ).exists()
+        return bool(user.company_id and user.entity_id)
     return False
 
 
