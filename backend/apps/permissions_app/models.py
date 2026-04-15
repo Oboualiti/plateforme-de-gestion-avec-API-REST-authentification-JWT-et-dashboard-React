@@ -1,0 +1,68 @@
+from django.conf import settings
+from django.db import models
+
+
+class AppPermission(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    category = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["key"]
+
+    def __str__(self):
+        return self.key
+
+
+class RolePermission(models.Model):
+    role = models.ForeignKey(
+        "roles.Role", on_delete=models.CASCADE, related_name="role_permissions"
+    )
+    permission = models.ForeignKey(
+        AppPermission, on_delete=models.CASCADE, related_name="permission_roles"
+    )
+
+    class Meta:
+        unique_together = ("role", "permission")
+
+    def __str__(self):
+        return f"{self.role.key} -> {self.permission.key}"
+
+
+class UserRole(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assigned_roles"
+    )
+    role = models.ForeignKey(
+        "roles.Role", on_delete=models.CASCADE, related_name="user_assignments"
+    )
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "role")
+
+    def __str__(self):
+        return f"{self.user} as {self.role.key}"
+
+
+class UserPermissionOverride(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="permission_overrides",
+    )
+    permission = models.ForeignKey(
+        AppPermission, on_delete=models.CASCADE, related_name="user_overrides"
+    )
+    is_allowed = models.BooleanField()
+    reason = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "permission")
+
+    def __str__(self):
+        mode = "allow" if self.is_allowed else "deny"
+        return f"{self.user}: {mode} {self.permission.key}"
