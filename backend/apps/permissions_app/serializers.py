@@ -1,8 +1,10 @@
 from rest_framework import serializers
 
 from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
+from apps.companies.models import Company
 from apps.roles.models import Role
 from apps.users.models import User
+from apps.entities.models import Entity
 
 from .services import (
     ROLE_HIERARCHY,
@@ -77,6 +79,7 @@ class UserPermissionAdminDetailSerializer(serializers.ModelSerializer):
     entity_name = serializers.CharField(source="entity.name", read_only=True)
     entity_type = serializers.CharField(source="entity.entity_type", read_only=True)
     entity_label = serializers.SerializerMethodField()
+    team_leader_name = serializers.CharField(source="team_leader.username", read_only=True)
 
     class Meta:
         model = User
@@ -87,12 +90,16 @@ class UserPermissionAdminDetailSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "is_active",
+            "job_title",
+            "phone_number",
             "company",
             "company_name",
             "entity",
             "entity_name",
             "entity_type",
             "entity_label",
+            "team_leader",
+            "team_leader_name",
             "roles",
             "effective_permission_keys",
             "permissions",
@@ -259,3 +266,272 @@ class UserPermissionOverrideSerializer(serializers.Serializer):
             },
         )
         return override
+
+
+class ManagedUserCreateSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    is_active = serializers.BooleanField(required=False, default=True)
+    password = serializers.CharField(required=False, allow_blank=True)
+    role_key = serializers.CharField()
+    company_id = serializers.IntegerField(required=False, allow_null=True)
+    entity_id = serializers.IntegerField(required=False, allow_null=True)
+    team_leader_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        actor = self.context["request"].user
+        actor_role = get_primary_role_key(actor)
+        actor_level = self.context["actor_level"]
+
+        role_key = attrs["role_key"]
+        role = Role.objects.filter(key=role_key, is_active=True).first()
+        if role is None or role_key not in ROLE_HIERARCHY:
+            raise serializers.ValidationError({"role_key": "Invalid role."})
+        if ROLE_HIERARCHY[role_key] >= actor_level:
+            raise serializers.ValidationError(
+                {"role_key": "You can only create users below your role level."}
+            )
+
+        if User.objects.filter(username=attrs["username"]).exists():
+            raise serializers.ValidationError({"username": "Username already exists."})
+
+        company = actor.company
+        entity = actor.entity
+        if actor_role == "super_admin":
+            company_id = attrs.get("company_id")
+            if not company_id:
+                raise serializers.ValidationError({"company_id": "Company is required."})
+            company = Company.objects.filter(id=company_id, is_active=True).first()
+            if company is None:
+                raise serializers.ValidationError({"company_id": "Invalid company."})
+
+            entity_id = attrs.get("entity_id")
+            if role_key in {"manager", "team_leader", "user"} and not entity_id:
+                raise serializers.ValidationError({"entity_id": "Entity is required for this role."})
+            if entity_id:
+                entity = Entity.objects.filter(
+                    id=entity_id, company_id=company.id, is_active=True
+                ).first()
+                if entity is None:
+                    raise serializers.ValidationError(
+                        {"entity_id": "Entity must belong to selected company."}
+                    )
+
+        if actor_role == "senior":
+            if not company:
+                raise serializers.ValidationError("Senior must belong to a company.")
+            if role_key in {"manager", "team_leader", "user"}:
+                entity_id = attrs.get("entity_id")
+                if not entity_id:
+                    raise serializers.ValidationError({"entity_id": "Entity is required."})
+                entity = Entity.objects.filter(
+                    id=entity_id, company_id=company.id, is_active=True
+                ).first()
+                if entity is None:
+                    raise serializers.ValidationError(
+                        {"entity_id": "Entity must belong to your company."}
+                    )
+
+        if actor_role in {"manager", "team_leader"}:
+            if role_key not in {"team_leader", "user"}:
+                raise serializers.ValidationError(
+                    {"role_key": "You can only create Team Leaders or Users."}
+                )
+            if actor_role == "team_leader" and role_key != "user":
+                raise serializers.ValidationError(
+                    {"role_key": "Team Leader can only create Users."}
+                )
+            company = actor.company
+            entity = actor.entity
+
+        if role_key in {"manager", "team_leader", "user"} and entity is None:
+            raise serializers.ValidationError({"entity_id": "Entity is required for this role."})
+
+        team_leader = None
+        if role_key == "user":
+            team_leader_id = attrs.get("team_leader_id")
+            if actor_role == "team_leader":
+                team_leader = actor
+            else:
+                if not team_leader_id:
+                    raise serializers.ValidationError(
+                        {"team_leader_id": "Team Leader is required for User role."}
+                    )
+                team_leader = User.objects.filter(id=team_leader_id, is_active=True).first()
+                if team_leader is None:
+                    raise serializers.ValidationError({"team_leader_id": "Invalid Team Leader."})
+            if team_leader.company_id != company.id or team_leader.entity_id != entity.id:
+                raise serializers.ValidationError(
+                    {"team_leader_id": "Team Leader must be in same company and entity."}
+                )
+            if not UserRole.objects.filter(user=team_leader, role__key="team_leader").exists():
+                raise serializers.ValidationError(
+                    {"team_leader_id": "Selected user is not a Team Leader."}
+                )
+
+        attrs["resolved_company"] = company
+        attrs["resolved_entity"] = entity
+        attrs["resolved_team_leader"] = team_leader
+        attrs["resolved_role"] = role
+        return attrs
+
+    def create(self):
+        attrs = self.validated_data
+        password = attrs.get("password") or "test12345"
+        user = User.objects.create(
+            username=attrs["username"],
+            email=attrs.get("email", ""),
+            first_name=attrs.get("first_name", ""),
+            last_name=attrs.get("last_name", ""),
+            is_active=attrs.get("is_active", True),
+            company=attrs["resolved_company"],
+            entity=attrs["resolved_entity"],
+            team_leader=attrs["resolved_team_leader"],
+        )
+        user.set_password(password)
+        user.save()
+        UserRole.objects.create(user=user, role=attrs["resolved_role"])
+        return user
+
+
+class ManagedUserUpdateSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150, required=False)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    is_active = serializers.BooleanField(required=False)
+    password = serializers.CharField(required=False, allow_blank=True)
+    company_id = serializers.IntegerField(required=False, allow_null=True)
+    entity_id = serializers.IntegerField(required=False, allow_null=True)
+    team_leader_id = serializers.IntegerField(required=False, allow_null=True)
+    job_title = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    phone_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        actor = self.context["request"].user
+        target = self.context["target_user"]
+        actor_role = get_primary_role_key(actor)
+        target_role = get_primary_role_key(target)
+
+        username = attrs.get("username")
+        if username and User.objects.filter(username=username).exclude(id=target.id).exists():
+            raise serializers.ValidationError({"username": "Username already exists."})
+
+        company = target.company
+        entity = target.entity
+
+        if actor_role == "super_admin":
+            if "company_id" in attrs:
+                company_id = attrs.get("company_id")
+                if not company_id:
+                    raise serializers.ValidationError({"company_id": "Company is required."})
+                company = Company.objects.filter(id=company_id, is_active=True).first()
+                if company is None:
+                    raise serializers.ValidationError({"company_id": "Invalid company."})
+            if "entity_id" in attrs:
+                entity_id = attrs.get("entity_id")
+                if entity_id:
+                    entity = Entity.objects.filter(
+                        id=entity_id, company_id=company.id, is_active=True
+                    ).first()
+                    if entity is None:
+                        raise serializers.ValidationError(
+                            {"entity_id": "Entity must belong to selected company."}
+                        )
+                else:
+                    entity = None
+        elif actor_role == "senior":
+            company = actor.company
+            if company is None:
+                raise serializers.ValidationError("Senior must belong to a company.")
+            if "entity_id" in attrs:
+                entity_id = attrs.get("entity_id")
+                if entity_id:
+                    entity = Entity.objects.filter(
+                        id=entity_id, company_id=company.id, is_active=True
+                    ).first()
+                    if entity is None:
+                        raise serializers.ValidationError(
+                            {"entity_id": "Entity must belong to your company."}
+                        )
+                else:
+                    entity = None
+        else:
+            company = actor.company
+            entity = actor.entity
+
+        if target_role in {"manager", "team_leader", "user"} and entity is None:
+            raise serializers.ValidationError(
+                {"entity_id": "Entity is required for this role."}
+            )
+        if target_role == "senior" and company is None:
+            raise serializers.ValidationError(
+                {"company_id": "Company is required for Senior role."}
+            )
+
+        team_leader = target.team_leader
+        if target_role == "user":
+            if actor_role == "team_leader":
+                team_leader = actor
+            elif "team_leader_id" in attrs:
+                team_leader_id = attrs.get("team_leader_id")
+                if not team_leader_id:
+                    raise serializers.ValidationError(
+                        {"team_leader_id": "Team Leader is required for User role."}
+                    )
+                team_leader = User.objects.filter(id=team_leader_id, is_active=True).first()
+                if team_leader is None:
+                    raise serializers.ValidationError(
+                        {"team_leader_id": "Invalid Team Leader."}
+                    )
+            elif team_leader is None:
+                raise serializers.ValidationError(
+                    {"team_leader_id": "Team Leader is required for User role."}
+                )
+
+            if team_leader.company_id != company.id or team_leader.entity_id != entity.id:
+                raise serializers.ValidationError(
+                    {"team_leader_id": "Team Leader must be in same company and entity."}
+                )
+            if not UserRole.objects.filter(
+                user=team_leader, role__key="team_leader"
+            ).exists():
+                raise serializers.ValidationError(
+                    {"team_leader_id": "Selected user is not a Team Leader."}
+                )
+        else:
+            team_leader = None
+
+        if company and entity and entity.company_id != company.id:
+            raise serializers.ValidationError(
+                {"entity_id": "Entity must belong to the selected company."}
+            )
+
+        attrs["resolved_company"] = company
+        attrs["resolved_entity"] = entity
+        attrs["resolved_team_leader"] = team_leader
+        return attrs
+
+    def update(self, user):
+        for field in (
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "is_active",
+            "job_title",
+            "phone_number",
+        ):
+            if field in self.validated_data:
+                setattr(user, field, self.validated_data[field])
+        user.company = self.validated_data["resolved_company"]
+        user.entity = self.validated_data["resolved_entity"]
+        user.team_leader = self.validated_data["resolved_team_leader"]
+        password = self.validated_data.get("password")
+        if password:
+            user.set_password(password)
+        user.full_clean()
+        user.save()
+        return user

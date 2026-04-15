@@ -5,6 +5,7 @@ import MainLayout from '../components/layout/MainLayout'
 import { useAuth } from '../context/AuthContext'
 import Dashboard from '../pages/Dashboard'
 import CreateRequestPage from '../pages/CreateRequestPage'
+import CreateManagedUserPage from '../pages/CreateManagedUserPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
@@ -100,6 +101,7 @@ function AppRoutes() {
         }
       >
         <Route element={<MainLayout />}>
+          <Route path="/admin/users/create" element={<CreateManagedUserPage />} />
           <Route path="/admin/permissions" element={<PermissionManagementPage />} />
           <Route
             path="/admin/permissions/:userId"
