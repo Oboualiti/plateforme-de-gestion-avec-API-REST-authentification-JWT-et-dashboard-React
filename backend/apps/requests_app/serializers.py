@@ -11,6 +11,13 @@ from .models import (
     UnitMembership,
 )
 
+REQUEST_TYPE_CHOICES = [
+    ("INFO", "Info"),
+    ("SCRIPT", "Script"),
+    ("TOOL", "Tool"),
+    ("APP_PROJECT", "App/Project"),
+]
+
 
 class MainBranchSerializer(serializers.ModelSerializer):
     class Meta:
@@ -51,6 +58,7 @@ class RequestMessageSerializer(serializers.ModelSerializer):
 class RequestSummarySerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="category", read_only=True)
     target_team_name = serializers.CharField(source="target_unit.name", read_only=True)
+    source_entity_name = serializers.CharField(source="requester_unit.name", read_only=True)
 
     class Meta:
         model = ServiceRequest
@@ -60,8 +68,8 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "title",
             "type",
             "status",
-            "priority",
             "created_at",
+            "source_entity_name",
             "target_unit",
             "target_team_name",
         ]
@@ -94,6 +102,7 @@ class RequestHistorySerializer(serializers.ModelSerializer):
 class RequestDetailSerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="category", read_only=True)
     target_team_name = serializers.CharField(source="target_unit.name", read_only=True)
+    source_entity_name = serializers.CharField(source="requester_unit.name", read_only=True)
     requester_name = serializers.CharField(source="requester_user.username", read_only=True)
     current_assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
@@ -111,11 +120,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "description",
             "type",
             "status",
-            "priority",
             "created_at",
             "accepted_at",
             "completed_at",
             "closed_at",
+            "source_entity_name",
             "target_unit",
             "target_team_name",
             "requester_user",
@@ -137,9 +146,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 class RequestCreateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
     description = serializers.CharField()
-    type = serializers.CharField(max_length=100)
+    type = serializers.ChoiceField(choices=REQUEST_TYPE_CHOICES)
     target_team = serializers.IntegerField()
-    priority = serializers.ChoiceField(choices=ServiceRequest.Priority.choices)
 
 
 class RequestCommentCreateSerializer(serializers.Serializer):

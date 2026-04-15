@@ -96,12 +96,16 @@ function RequestDetailsPage() {
 
         <div className="summary-grid">
           <div className="summary-card">
+            <span>Type</span>
+            <strong>{request.type}</strong>
+          </div>
+          <div className="summary-card">
             <span>Status</span>
             <strong>{request.status}</strong>
           </div>
           <div className="summary-card">
-            <span>Priority</span>
-            <strong>{request.priority}</strong>
+            <span>Source entity</span>
+            <strong>{request.source_entity_name || '-'}</strong>
           </div>
           <div className="summary-card">
             <span>Target team</span>

@@ -84,8 +84,13 @@ function AppRoutes() {
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/requests" element={<RequestsPage />} />
-          <Route path="/requests/create" element={<CreateRequestPage />} />
           <Route path="/requests/:requestId" element={<RequestDetailsPage />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute requireRequestCreate redirectTo="/requests" />}>
+        <Route element={<MainLayout />}>
+          <Route path="/requests/create" element={<CreateRequestPage />} />
         </Route>
       </Route>
 

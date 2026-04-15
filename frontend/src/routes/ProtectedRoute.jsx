@@ -2,7 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 
-function ProtectedRoute({ allowedRoles }) {
+function ProtectedRoute({ allowedRoles, requireRequestCreate = false, redirectTo = '/requests' }) {
   const { isAuthenticated, loading, user } = useAuth()
   const location = useLocation()
 
@@ -34,6 +34,10 @@ function ProtectedRoute({ allowedRoles }) {
         </main>
       )
     }
+  }
+
+  if (requireRequestCreate && !user?.request_creation_allowed) {
+    return <Navigate to={redirectTo} replace />
   }
 
   return <Outlet />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
 const statusClassMap = {
@@ -13,12 +14,15 @@ const statusClassMap = {
 }
 
 function RequestsPage() {
+  const { user, refreshUser } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
+  const isProdSide = user?.entity_type === 'PROD'
 
   useEffect(() => {
     let active = true
     async function loadRequests() {
       try {
+        await refreshUser()
         const response = await api.get('/requests/')
         if (active) {
           setState({ loading: false, error: '', requests: response.data })
@@ -37,7 +41,7 @@ function RequestsPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [refreshUser])
 
   return (
     <main className="page-content">
@@ -45,11 +49,17 @@ function RequestsPage() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Requests</p>
-            <h1>Your requests</h1>
+            <h1>{isProdSide ? 'Your requests' : 'Incoming Requests'}</h1>
           </div>
-          <Link className="pill-link" to="/requests/create">
-            Create Request
-          </Link>
+          {user?.request_creation_allowed ? (
+            <Link className="pill-link" to="/requests/create">
+              Create Request
+            </Link>
+          ) : (
+            <span className="muted-text">
+              Only users from production entities can create requests.
+            </span>
+          )}
         </div>
 
         {state.loading && <p className="muted-text">Loading requests...</p>}
@@ -63,22 +73,23 @@ function RequestsPage() {
                   <th>Title</th>
                   <th>Type</th>
                   <th>Status</th>
-                  <th>Priority</th>
+                  <th>Source</th>
                   <th>Created</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {state.requests.length === 0 && (
                   <tr>
-                    <td colSpan="5">No requests yet.</td>
+                    <td colSpan="6">
+                      {isProdSide ? 'No requests yet.' : 'No incoming requests for your team.'}
+                    </td>
                   </tr>
                 )}
                 {state.requests.map((item) => (
                   <tr key={item.id}>
                     <td>
-                      <Link className="inline-link" to={`/requests/${item.id}`}>
-                        {item.title}
-                      </Link>
+                      {item.title}
                     </td>
                     <td>{item.type}</td>
                     <td>
@@ -86,8 +97,13 @@ function RequestsPage() {
                         {item.status}
                       </span>
                     </td>
-                    <td>{item.priority}</td>
+                    <td>{item.source_entity_name || '-'}</td>
                     <td>{new Date(item.created_at).toLocaleString()}</td>
+                    <td>
+                      <Link className="table-action" to={`/requests/${item.id}`}>
+                        View
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

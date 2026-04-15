@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 
 import { api, clearTokens, getStoredTokens, saveTokens } from '../lib/api'
 
@@ -8,6 +8,17 @@ export function AuthProvider({ children }) {
   const [tokens, setTokens] = useState(() => getStoredTokens())
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  const refreshUser = useCallback(async () => {
+    if (!getStoredTokens().access) {
+      setUser(null)
+      return null
+    }
+
+    const response = await api.get('/auth/me/')
+    setUser(response.data)
+    return response.data
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -50,9 +61,7 @@ export function AuthProvider({ children }) {
     const response = await api.post('/auth/login/', credentials)
     saveTokens(response.data)
     setTokens(response.data)
-    const meResponse = await api.get('/auth/me/')
-    setUser(meResponse.data)
-    return meResponse.data
+    return refreshUser()
   }
 
   function logout() {
@@ -70,6 +79,7 @@ export function AuthProvider({ children }) {
         isAuthenticated: Boolean(tokens.access),
         login,
         logout,
+        refreshUser,
       }}
     >
       {children}
