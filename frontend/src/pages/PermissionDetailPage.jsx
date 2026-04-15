@@ -1,12 +1,40 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { api } from '../lib/api'
 
+function getApiErrorMessage(error, fallback) {
+  const payload = error?.response?.data
+  if (!payload) {
+    return fallback
+  }
+  if (typeof payload.detail === 'string' && payload.detail) {
+    return payload.detail
+  }
+  if (Array.isArray(payload.role_keys) && payload.role_keys.length) {
+    return payload.role_keys.join(' ')
+  }
+  if (typeof payload.role_keys === 'string') {
+    return payload.role_keys
+  }
+  if (payload && typeof payload === 'object') {
+    const firstKey = Object.keys(payload)[0]
+    const firstValue = payload[firstKey]
+    if (Array.isArray(firstValue) && firstValue.length) {
+      return String(firstValue[0])
+    }
+    if (typeof firstValue === 'string' && firstValue) {
+      return firstValue
+    }
+  }
+  return fallback
+}
+
 function PermissionDetailPage() {
   const { userId } = useParams()
+  const navigate = useNavigate()
   const [state, setState] = useState({ loading: true, error: '', user: null })
-  const [selectedRoles, setSelectedRoles] = useState([])
+  const [selectedRole, setSelectedRole] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -16,7 +44,7 @@ function PermissionDetailPage() {
         const response = await api.get(`/admin/users/${userId}/`)
         if (active) {
           setState({ loading: false, error: '', user: response.data })
-          setSelectedRoles(response.data.roles.map((role) => role.key))
+          setSelectedRole(response.data.roles[0]?.key || '')
         }
       } catch (error) {
         if (active) {
@@ -35,19 +63,33 @@ function PermissionDetailPage() {
   }, [userId])
 
   async function saveRoles() {
-    const response = await api.patch(`/admin/users/${userId}/`, { role_keys: selectedRoles })
-    setState((current) => ({ ...current, user: response.data }))
-    setMessage('Roles updated.')
+    if (!selectedRole) {
+      setMessage('Select one role before saving.')
+      return
+    }
+    try {
+      const response = await api.patch(`/admin/users/${userId}/`, { role_keys: [selectedRole] })
+      setState((current) => ({ ...current, user: response.data }))
+      setSelectedRole(response.data.roles[0]?.key || '')
+      setMessage('Roles updated.')
+      navigate('/admin/permissions')
+    } catch (error) {
+      setMessage(getApiErrorMessage(error, 'Could not save roles.'))
+    }
   }
 
   async function updatePermission(permissionKey, shouldAllow) {
-    const response = shouldAllow
-      ? await api.post(`/admin/users/${userId}/permissions/`, { permission_key: permissionKey })
-      : await api.delete(`/admin/users/${userId}/permissions/`, {
-          data: { permission_key: permissionKey },
-        })
-    setState((current) => ({ ...current, user: response.data }))
-    setMessage(`${permissionKey} updated.`)
+    try {
+      const response = shouldAllow
+        ? await api.post(`/admin/users/${userId}/permissions/`, { permission_key: permissionKey })
+        : await api.delete(`/admin/users/${userId}/permissions/`, {
+            data: { permission_key: permissionKey },
+          })
+      setState((current) => ({ ...current, user: response.data }))
+      setMessage(`${permissionKey} updated.`)
+    } catch (error) {
+      setMessage(getApiErrorMessage(error, `Could not update ${permissionKey}.`))
+    }
   }
 
   if (state.loading) {
@@ -71,6 +113,8 @@ function PermissionDetailPage() {
   }
 
   const user = state.user
+  const canEdit = Boolean(user.can_edit)
+  const roleOptions = canEdit ? user.available_roles : user.roles
 
   return (
     <main className="page-content">
@@ -96,7 +140,9 @@ function PermissionDetailPage() {
           </div>
           <div className="summary-card">
             <span>Entity</span>
-            <strong>{user.entity_name || '-'}</strong>
+            <strong>
+              {user.entity_name || '-'} ({user.entity_type || '-'})
+            </strong>
           </div>
         </div>
       </section>
@@ -104,20 +150,17 @@ function PermissionDetailPage() {
       <section className="detail-grid">
         <section className="panel">
           <p className="eyebrow">Roles</p>
-          <h2>Assigned roles</h2>
+          <h2>Assigned role</h2>
+          {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
           <div className="check-grid">
-            {user.available_roles.map((role) => (
+            {roleOptions.map((role) => (
               <label key={role.key} className="checkbox-row">
                 <input
-                  type="checkbox"
-                  checked={selectedRoles.includes(role.key)}
-                  onChange={(event) =>
-                    setSelectedRoles((current) =>
-                      event.target.checked
-                        ? [...current, role.key]
-                        : current.filter((item) => item !== role.key),
-                    )
-                  }
+                  type="radio"
+                  name="role-selection"
+                  checked={selectedRole === role.key}
+                  onChange={() => setSelectedRole(role.key)}
+                  disabled={!canEdit}
                 />
                 <span>
                   {role.name} <small>(level {role.level})</small>
@@ -125,7 +168,7 @@ function PermissionDetailPage() {
               </label>
             ))}
           </div>
-          <button type="button" onClick={saveRoles}>
+          <button type="button" onClick={saveRoles} disabled={!canEdit}>
             Save roles
           </button>
         </section>
@@ -149,16 +192,16 @@ function PermissionDetailPage() {
                   </div>
                 </div>
                 <div className="button-stack">
-                  <button type="button" onClick={() => updatePermission(permission.key, true)}>
-                    Allow
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => updatePermission(permission.key, false)}
-                  >
-                    Deny
-                  </button>
+                  <label className="switch-row">
+                    <span>{permission.effective ? 'ON' : 'OFF'}</span>
+                    <input
+                      type="checkbox"
+                      className="permission-switch"
+                      checked={permission.effective}
+                      onChange={(event) => updatePermission(permission.key, event.target.checked)}
+                      disabled={!canEdit}
+                    />
+                  </label>
                 </div>
               </article>
             ))}

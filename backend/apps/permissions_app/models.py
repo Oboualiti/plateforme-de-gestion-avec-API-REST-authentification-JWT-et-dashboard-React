@@ -31,6 +31,21 @@ class RolePermission(models.Model):
         return f"{self.role.key} -> {self.permission.key}"
 
 
+class PermissionDelegation(models.Model):
+    role = models.ForeignKey(
+        "roles.Role", on_delete=models.CASCADE, related_name="delegatable_permissions"
+    )
+    permission = models.ForeignKey(
+        AppPermission, on_delete=models.CASCADE, related_name="delegatable_by_roles"
+    )
+
+    class Meta:
+        unique_together = ("role", "permission")
+
+    def __str__(self):
+        return f"{self.role.key} can delegate {self.permission.key}"
+
+
 class UserRole(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assigned_roles"
@@ -41,7 +56,10 @@ class UserRole(models.Model):
     assigned_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("user", "role")
+        constraints = [
+            models.UniqueConstraint(fields=["user"], name="unique_role_per_user"),
+            models.UniqueConstraint(fields=["user", "role"], name="unique_user_role_pair"),
+        ]
 
     def __str__(self):
         return f"{self.user} as {self.role.key}"

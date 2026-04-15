@@ -4,7 +4,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.permissions_app.services import get_user_role_keys
+from apps.permissions_app.services import (
+    get_primary_role_key,
+    get_request_scope_filter,
+    get_user_role_keys,
+)
 
 from .models import (
     MainBranch,
@@ -63,11 +67,15 @@ class RequestListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        role_key = get_primary_role_key(request.user)
+        scope_filter = get_request_scope_filter(request.user)
         queryset = (
-            ServiceRequest.objects.filter(requester_user=request.user)
+            ServiceRequest.objects.filter(scope_filter)
             .select_related("target_unit")
             .order_by("-created_at")
         )
+        if role_key == "user":
+            queryset = queryset.filter(requester_user=request.user)
         return Response(RequestSummarySerializer(queryset, many=True).data)
 
     def post(self, request):
@@ -109,13 +117,9 @@ class RequestDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def has_access(self, user, service_request):
-        role_keys = set(get_user_role_keys(user))
-        elevated_roles = {"handler", "senior", "manager", "team_leader", "super_admin"}
-        return (
-            service_request.requester_user_id == user.id
-            or service_request.current_assignee_id == user.id
-            or bool(role_keys.intersection(elevated_roles))
-        )
+        return ServiceRequest.objects.filter(
+            get_request_scope_filter(user), id=service_request.id
+        ).exists()
 
     def get_object(self, request_id):
         return (
@@ -140,13 +144,9 @@ class RequestCommentCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def has_access(self, user, service_request):
-        role_keys = set(get_user_role_keys(user))
-        elevated_roles = {"handler", "senior", "manager", "team_leader", "super_admin"}
-        return (
-            service_request.requester_user_id == user.id
-            or service_request.current_assignee_id == user.id
-            or bool(role_keys.intersection(elevated_roles))
-        )
+        return ServiceRequest.objects.filter(
+            get_request_scope_filter(user), id=service_request.id
+        ).exists()
 
     def post(self, request, request_id):
         service_request = ServiceRequest.objects.filter(id=request_id).first()
@@ -174,7 +174,7 @@ class RequestCommentCreateView(APIView):
 class RequestStatusUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
-    allowed_roles = {"handler", "senior", "manager", "team_leader", "super_admin"}
+    allowed_roles = {"senior", "manager", "team_leader", "super_admin"}
 
     def post(self, request, request_id):
         role_keys = set(get_user_role_keys(request.user))
@@ -187,6 +187,14 @@ class RequestStatusUpdateView(APIView):
         service_request = ServiceRequest.objects.filter(id=request_id).first()
         if service_request is None:
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not ServiceRequest.objects.filter(
+            get_request_scope_filter(request.user),
+            id=service_request.id,
+        ).exists():
+            return Response(
+                {"detail": "You cannot update this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         serializer = RequestStatusUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

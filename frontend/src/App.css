@@ -107,7 +107,8 @@
 .topbar-actions,
 .button-stack,
 .tag-row,
-.button-row {
+.button-row,
+.switch-row {
   gap: 10px;
 }
 
@@ -204,6 +205,11 @@ button,
   cursor: pointer;
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ghost-button {
   background: rgba(31, 41, 55, 0.08);
   color: var(--text-h);
@@ -211,6 +217,13 @@ button,
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(3, minmax(160px, 220px));
+  gap: 12px;
+  margin-top: 14px;
 }
 
 .inline-link {
@@ -237,6 +250,14 @@ button,
   cursor: pointer;
 }
 
+.readonly-row {
+  opacity: 0.85;
+}
+
+.readonly-row td {
+  background: rgba(148, 163, 184, 0.06);
+}
+
 .permission-list,
 .check-grid {
   display: grid;
@@ -252,6 +273,16 @@ button,
 
 .button-stack {
   flex-direction: column;
+}
+
+.switch-row {
+  display: inline-flex;
+  align-items: center;
+}
+
+.permission-switch {
+  width: 44px;
+  height: 22px;
 }
 
 .status-tag {
@@ -335,5 +366,9 @@ button,
   .layout-content,
   .sidebar {
     padding: 18px;
+  }
+
+  .filter-bar {
+    grid-template-columns: 1fr;
   }
 }

@@ -16,10 +16,12 @@ from .services import (
     ROLE_HIERARCHY,
     can_manage_any_users,
     can_manage_target_user,
+    can_view_target_user,
+    get_delegatable_permission_keys,
     get_effective_permission_keys,
     get_manage_scope,
-    get_manageable_users_queryset,
     get_user_max_role_level,
+    get_visible_users_queryset,
 )
 
 
@@ -52,16 +54,24 @@ class BaseManageUsersView(APIView):
                 message="You cannot modify this user based on your scope or hierarchy.",
             )
 
+    def ensure_viewable(self, request, target):
+        if not can_view_target_user(request.user, target):
+            self.permission_denied(
+                request,
+                message="You cannot view this user based on your scope or hierarchy.",
+            )
+
 
 class ManageableUserListView(BaseManageUsersView):
     def get(self, request):
         queryset = (
-            get_manageable_users_queryset(request.user)
+            get_visible_users_queryset(request.user)
             .select_related("company", "entity")
             .prefetch_related("assigned_roles__role")
         )
         data = {
             "scope": get_manage_scope(request.user),
+            "current_entity_name": getattr(request.user.entity, "name", ""),
             "current_user_level": get_user_max_role_level(request.user),
             "current_user_roles": [
                 {
@@ -71,13 +81,20 @@ class ManageableUserListView(BaseManageUsersView):
                 for role_key in request.user.assigned_roles.values_list("role__key", flat=True)
             ],
             "effective_permission_keys": get_effective_permission_keys(request.user),
-            "results": ManageableUserListSerializer(queryset, many=True).data,
+            "results": ManageableUserListSerializer(
+                queryset,
+                many=True,
+                context={"actor_level": get_user_max_role_level(request.user)},
+            ).data,
         }
         return Response(data)
 
 
 class ManageUserDetailView(BaseManageUsersView):
     def build_payload(self, request, target):
+        actor_level = get_user_max_role_level(request.user)
+        can_edit = can_manage_target_user(request.user, target)
+        delegatable_permission_keys = get_delegatable_permission_keys(request.user)
         available_roles = [
             {
                 "key": role_key,
@@ -85,15 +102,19 @@ class ManageUserDetailView(BaseManageUsersView):
                 "level": level,
             }
             for role_key, level in ROLE_HIERARCHY.items()
-            if level < get_user_max_role_level(request.user)
+            if level < actor_level
         ]
-        payload = UserPermissionAdminDetailSerializer(target).data
-        payload["available_roles"] = available_roles
+        payload = UserPermissionAdminDetailSerializer(
+            target, context={"editor_user": request.user}
+        ).data
+        payload["available_roles"] = available_roles if can_edit else []
+        payload["can_edit"] = can_edit
+        payload["delegatable_permission_keys"] = delegatable_permission_keys
         return payload
 
     def get(self, request, user_id):
         target = self.get_target_user(user_id)
-        self.ensure_manageable(request, target)
+        self.ensure_viewable(request, target)
         return Response(self.build_payload(request, target))
 
     def patch(self, request, user_id):
@@ -116,6 +137,9 @@ class ManageUserDetailView(BaseManageUsersView):
 
 class ManageUserPermissionOverrideView(BaseManageUsersView):
     def build_payload(self, request, target):
+        actor_level = get_user_max_role_level(request.user)
+        can_edit = can_manage_target_user(request.user, target)
+        delegatable_permission_keys = get_delegatable_permission_keys(request.user)
         available_roles = [
             {
                 "key": role_key,
@@ -123,16 +147,27 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
                 "level": level,
             }
             for role_key, level in ROLE_HIERARCHY.items()
-            if level < get_user_max_role_level(request.user)
+            if level < actor_level
         ]
-        payload = UserPermissionAdminDetailSerializer(target).data
-        payload["available_roles"] = available_roles
+        payload = UserPermissionAdminDetailSerializer(
+            target, context={"editor_user": request.user}
+        ).data
+        payload["available_roles"] = available_roles if can_edit else []
+        payload["can_edit"] = can_edit
+        payload["delegatable_permission_keys"] = delegatable_permission_keys
         return payload
 
     def post(self, request, user_id):
         target = self.get_target_user(user_id)
         self.ensure_manageable(request, target)
-        serializer = UserPermissionOverrideSerializer(data=request.data)
+        serializer = UserPermissionOverrideSerializer(
+            data=request.data,
+            context={
+                "delegatable_permission_keys": get_delegatable_permission_keys(
+                    request.user
+                )
+            },
+        )
         serializer.is_valid(raise_exception=True)
         serializer.apply(target, True)
         target = self.get_target_user(user_id)
@@ -144,7 +179,14 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
     def delete(self, request, user_id):
         target = self.get_target_user(user_id)
         self.ensure_manageable(request, target)
-        serializer = UserPermissionOverrideSerializer(data=request.data)
+        serializer = UserPermissionOverrideSerializer(
+            data=request.data,
+            context={
+                "delegatable_permission_keys": get_delegatable_permission_keys(
+                    request.user
+                )
+            },
+        )
         serializer.is_valid(raise_exception=True)
         serializer.apply(target, False)
         target = self.get_target_user(user_id)

@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from apps.permissions_app.models import AppPermission, RolePermission
+from apps.permissions_app.models import AppPermission, PermissionDelegation, RolePermission
 from apps.roles.models import Role
 
 
@@ -10,8 +10,9 @@ ROLE_DEFINITIONS = [
     ("manager", "Manager"),
     ("team_leader", "Team Leader"),
     ("user", "User"),
-    ("handler", "Handler"),
 ]
+
+DELEGATION_ROLES = {"super_admin", "senior", "manager", "team_leader"}
 
 PERMISSION_MATRIX = {
     "manage_companies": {"super_admin"},
@@ -28,7 +29,6 @@ PERMISSION_MATRIX = {
         "manager",
         "team_leader",
         "user",
-        "handler",
     },
     "view_all_requests": {"super_admin"},
     "view_company_requests": {"super_admin", "senior"},
@@ -40,13 +40,12 @@ PERMISSION_MATRIX = {
         "manager",
         "team_leader",
         "user",
-        "handler",
     },
     "approve_request_tl": {"super_admin", "senior", "manager", "team_leader"},
     "approve_request_mgr": {"super_admin", "senior", "manager"},
     "approve_request_snr": {"super_admin", "senior"},
-    "assign_request": {"super_admin", "senior", "manager", "team_leader", "handler"},
-    "resolve_request": {"super_admin", "senior", "handler"},
+    "assign_request": {"super_admin", "senior", "manager", "team_leader"},
+    "resolve_request": {"super_admin", "senior"},
     "close_request": {"super_admin", "senior", "manager", "user"},
     "view_global_reports": {"super_admin"},
     "view_company_reports": {"super_admin", "senior"},
@@ -97,6 +96,8 @@ class Command(BaseCommand):
                 role.save(update_fields=["name"])
             roles[key] = role
 
+        Role.objects.filter(key="handler").update(is_active=False)
+
         permissions = {}
         for permission_key, allowed_roles in PERMISSION_MATRIX.items():
             permission, _ = AppPermission.objects.get_or_create(
@@ -116,8 +117,16 @@ class Command(BaseCommand):
                     role=roles[role_key], permission=permission
                 )
 
+        PermissionDelegation.objects.all().delete()
+        for permission_key, allowed_roles in PERMISSION_MATRIX.items():
+            permission = permissions[permission_key]
+            for role_key in allowed_roles.intersection(DELEGATION_ROLES):
+                PermissionDelegation.objects.get_or_create(
+                    role=roles[role_key], permission=permission
+                )
+
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeded {len(roles)} roles, {len(permissions)} permissions, and role mappings."
+                f"Seeded {len(roles)} roles, {len(permissions)} permissions, role mappings, and delegation mappings."
             )
         )

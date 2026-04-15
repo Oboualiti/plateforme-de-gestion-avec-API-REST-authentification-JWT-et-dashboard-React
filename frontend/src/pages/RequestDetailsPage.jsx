@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
-const supportRoles = ['handler', 'senior', 'manager', 'team_leader', 'super_admin']
+const supportRoles = ['senior', 'manager', 'team_leader', 'super_admin']
 const statusOptions = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'COMPLETED', 'CLOSED']
 
 function RequestDetailsPage() {

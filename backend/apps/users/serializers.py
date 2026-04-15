@@ -8,6 +8,8 @@ from .models import User
 class UserMeSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source="company.name", read_only=True)
     entity_name = serializers.CharField(source="entity.name", read_only=True)
+    entity_type = serializers.CharField(source="entity.entity_type", read_only=True)
+    entity_label = serializers.SerializerMethodField()
     role_keys = serializers.SerializerMethodField()
     effective_permission_keys = serializers.SerializerMethodField()
 
@@ -25,6 +27,8 @@ class UserMeSerializer(serializers.ModelSerializer):
             "company_name",
             "entity",
             "entity_name",
+            "entity_type",
+            "entity_label",
             "is_staff",
             "role_keys",
             "effective_permission_keys",
@@ -35,3 +39,8 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     def get_effective_permission_keys(self, obj):
         return get_effective_permission_keys(obj)
+
+    def get_entity_label(self, obj):
+        if not obj.entity:
+            return ""
+        return f"{obj.entity.name} ({obj.entity.get_entity_type_display()})"

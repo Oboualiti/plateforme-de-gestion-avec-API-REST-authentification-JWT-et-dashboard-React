@@ -29,8 +29,7 @@ function LoginPage() {
     setError('')
     try {
       await login(form)
-      const redirectTo = location.state?.from?.pathname || '/dashboard'
-      navigate(redirectTo, { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (nextError) {
       setError(nextError.response?.data?.detail || 'Login failed.')
     } finally {
@@ -91,7 +90,9 @@ function AppRoutes() {
       </Route>
 
       <Route
-        element={<ProtectedRoute allowedRoles={['super_admin', 'senior', 'manager']} />}
+        element={
+          <ProtectedRoute allowedRoles={['super_admin', 'senior', 'manager', 'team_leader']} />
+        }
       >
         <Route element={<MainLayout />}>
           <Route path="/admin/permissions" element={<PermissionManagementPage />} />
