@@ -77,9 +77,7 @@ class ManageableUserListView(BaseManageUsersView):
 
 
 class ManageUserDetailView(BaseManageUsersView):
-    def get(self, request, user_id):
-        target = self.get_target_user(user_id)
-        self.ensure_manageable(request, target)
+    def build_payload(self, request, target):
         available_roles = [
             {
                 "key": role_key,
@@ -91,7 +89,12 @@ class ManageUserDetailView(BaseManageUsersView):
         ]
         payload = UserPermissionAdminDetailSerializer(target).data
         payload["available_roles"] = available_roles
-        return Response(payload)
+        return payload
+
+    def get(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        return Response(self.build_payload(request, target))
 
     def patch(self, request, user_id):
         target = self.get_target_user(user_id)
@@ -108,10 +111,24 @@ class ManageUserDetailView(BaseManageUsersView):
         serializer.save()
         target.refresh_from_db()
         target = self.get_target_user(user_id)
-        return Response(UserPermissionAdminDetailSerializer(target).data)
+        return Response(self.build_payload(request, target))
 
 
 class ManageUserPermissionOverrideView(BaseManageUsersView):
+    def build_payload(self, request, target):
+        available_roles = [
+            {
+                "key": role_key,
+                "name": role_key.replace("_", " ").title(),
+                "level": level,
+            }
+            for role_key, level in ROLE_HIERARCHY.items()
+            if level < get_user_max_role_level(request.user)
+        ]
+        payload = UserPermissionAdminDetailSerializer(target).data
+        payload["available_roles"] = available_roles
+        return payload
+
     def post(self, request, user_id):
         target = self.get_target_user(user_id)
         self.ensure_manageable(request, target)
@@ -120,7 +137,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         serializer.apply(target, True)
         target = self.get_target_user(user_id)
         return Response(
-            UserPermissionAdminDetailSerializer(target).data,
+            self.build_payload(request, target),
             status=status.HTTP_200_OK,
         )
 
@@ -132,6 +149,6 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         serializer.apply(target, False)
         target = self.get_target_user(user_id)
         return Response(
-            UserPermissionAdminDetailSerializer(target).data,
+            self.build_payload(request, target),
             status=status.HTTP_200_OK,
         )
