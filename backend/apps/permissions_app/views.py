@@ -1,3 +1,137 @@
-from django.shortcuts import render
+from rest_framework import status
+from rest_framework.exceptions import NotFound
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-# Create your views here.
+from apps.users.models import User
+
+from .serializers import (
+    ManageableUserListSerializer,
+    UserPermissionAdminDetailSerializer,
+    UserPermissionOverrideSerializer,
+    UserRoleUpdateSerializer,
+)
+from .services import (
+    ROLE_HIERARCHY,
+    can_manage_any_users,
+    can_manage_target_user,
+    get_effective_permission_keys,
+    get_manage_scope,
+    get_manageable_users_queryset,
+    get_user_max_role_level,
+)
+
+
+class BaseManageUsersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not can_manage_any_users(request.user):
+            self.permission_denied(
+                request,
+                message="You do not have permission to manage users.",
+            )
+
+    def get_target_user(self, user_id):
+        target = (
+            User.objects.filter(id=user_id)
+            .prefetch_related("assigned_roles__role", "permission_overrides__permission")
+            .select_related("company", "entity")
+            .first()
+        )
+        if target is None:
+            raise NotFound("User not found.")
+        return target
+
+    def ensure_manageable(self, request, target):
+        if not can_manage_target_user(request.user, target):
+            self.permission_denied(
+                request,
+                message="You cannot modify this user based on your scope or hierarchy.",
+            )
+
+
+class ManageableUserListView(BaseManageUsersView):
+    def get(self, request):
+        queryset = (
+            get_manageable_users_queryset(request.user)
+            .select_related("company", "entity")
+            .prefetch_related("assigned_roles__role")
+        )
+        data = {
+            "scope": get_manage_scope(request.user),
+            "current_user_level": get_user_max_role_level(request.user),
+            "current_user_roles": [
+                {
+                    "key": role_key,
+                    "level": ROLE_HIERARCHY.get(role_key, 0),
+                }
+                for role_key in request.user.assigned_roles.values_list("role__key", flat=True)
+            ],
+            "effective_permission_keys": get_effective_permission_keys(request.user),
+            "results": ManageableUserListSerializer(queryset, many=True).data,
+        }
+        return Response(data)
+
+
+class ManageUserDetailView(BaseManageUsersView):
+    def get(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        available_roles = [
+            {
+                "key": role_key,
+                "name": role_key.replace("_", " ").title(),
+                "level": level,
+            }
+            for role_key, level in ROLE_HIERARCHY.items()
+            if level < get_user_max_role_level(request.user)
+        ]
+        payload = UserPermissionAdminDetailSerializer(target).data
+        payload["available_roles"] = available_roles
+        return Response(payload)
+
+    def patch(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        serializer = UserRoleUpdateSerializer(
+            data=request.data,
+            context={
+                "request": request,
+                "target_user": target,
+                "actor_level": get_user_max_role_level(request.user),
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        target.refresh_from_db()
+        target = self.get_target_user(user_id)
+        return Response(UserPermissionAdminDetailSerializer(target).data)
+
+
+class ManageUserPermissionOverrideView(BaseManageUsersView):
+    def post(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        serializer = UserPermissionOverrideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.apply(target, True)
+        target = self.get_target_user(user_id)
+        return Response(
+            UserPermissionAdminDetailSerializer(target).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def delete(self, request, user_id):
+        target = self.get_target_user(user_id)
+        self.ensure_manageable(request, target)
+        serializer = UserPermissionOverrideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.apply(target, False)
+        target = self.get_target_user(user_id)
+        return Response(
+            UserPermissionAdminDetailSerializer(target).data,
+            status=status.HTTP_200_OK,
+        )

@@ -21,6 +21,7 @@ PERMISSION_MATRIX = {
     "manage_users_global": {"super_admin"},
     "manage_users_company": {"super_admin", "senior"},
     "manage_users_entity": {"super_admin", "senior", "manager"},
+    "manage_users_team": {"super_admin", "senior", "manager", "team_leader"},
     "create_request": {
         "super_admin",
         "senior",
@@ -61,6 +62,7 @@ CATEGORY_MAP = {
     "manage_users_global": "user_management",
     "manage_users_company": "user_management",
     "manage_users_entity": "user_management",
+    "manage_users_team": "user_management",
     "create_request": "requests",
     "view_all_requests": "requests",
     "view_company_requests": "requests",

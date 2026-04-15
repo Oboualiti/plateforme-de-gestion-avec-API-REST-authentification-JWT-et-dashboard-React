@@ -2,6 +2,8 @@ from django.core.management.base import BaseCommand
 
 from apps.companies.models import Company
 from apps.entities.models import Entity
+from apps.permissions_app.models import UserRole
+from apps.roles.models import Role
 from apps.users.models import User
 
 
@@ -30,6 +32,8 @@ class Command(BaseCommand):
                 "last_name": "User",
                 "entity": prod_entity,
                 "job_title": "Production Specialist",
+                "role_key": "super_admin",
+                "is_staff": True,
             },
             {
                 "username": "support",
@@ -38,16 +42,30 @@ class Command(BaseCommand):
                 "last_name": "User",
                 "entity": support_entity,
                 "job_title": "Support Specialist",
+                "role_key": "senior",
+                "is_staff": False,
             },
         ]
 
         for payload in users:
+            role_key = payload["role_key"]
             user, created = User.objects.get_or_create(
                 email=payload["email"],
-                defaults={**payload, "company": company},
+                defaults={
+                    "username": payload["username"],
+                    "email": payload["email"],
+                    "first_name": payload["first_name"],
+                    "last_name": payload["last_name"],
+                    "entity": payload["entity"],
+                    "job_title": payload["job_title"],
+                    "is_staff": payload["is_staff"],
+                    "company": company,
+                },
             )
             changed = False
             for key, value in payload.items():
+                if key == "role_key":
+                    continue
                 if getattr(user, key) != value:
                     setattr(user, key, value)
                     changed = True
@@ -59,6 +77,9 @@ class Command(BaseCommand):
                 changed = True
             if changed:
                 user.save()
+            role = Role.objects.filter(key=role_key).first()
+            if role and not UserRole.objects.filter(user=user, role=role).exists():
+                UserRole.objects.create(user=user, role=role)
             self.stdout.write(
                 self.style.SUCCESS(
                     f"{'Created' if created else 'Updated'} {payload['email']}"
