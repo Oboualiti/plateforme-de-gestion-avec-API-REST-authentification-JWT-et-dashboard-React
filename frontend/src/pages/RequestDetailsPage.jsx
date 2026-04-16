@@ -37,13 +37,16 @@ function formatTimelineTitle(item) {
   return item.title || item.kind
 }
 
+function formatDateTime(value) {
+  if (!value) return '-'
+  return new Date(value).toLocaleString()
+}
+
 function RequestDetailsPage() {
   const { requestId } = useParams()
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
   const [comment, setComment] = useState('')
-  const [statusValue, setStatusValue] = useState('IN_PROGRESS')
-  const [note, setNote] = useState('')
   const [actionState, setActionState] = useState({
     busy: false,
     error: '',
@@ -60,7 +63,6 @@ function RequestDetailsPage() {
         const response = await api.get(`/requests/${requestId}/`)
         if (active) {
           setState({ loading: false, error: '', request: response.data })
-          setStatusValue(response.data.status)
           setReassignTarget(String(response.data.target_entity || ''))
         }
       } catch (error) {
@@ -106,7 +108,6 @@ function RequestDetailsPage() {
             return current
           }
 
-          setStatusValue(response.data.status)
           setReassignTarget(String(response.data.target_entity || ''))
           return { ...current, request: response.data }
         })
@@ -125,10 +126,8 @@ function RequestDetailsPage() {
     try {
       const response = await requestPromise
       setState((current) => ({ ...current, request: response.data }))
-      setStatusValue(response.data.status)
       setReassignTarget(String(response.data.target_entity || ''))
       setComment('')
-      setNote('')
       setReassignNote('')
       setDelegateNote('')
       setDelegateTarget('')
@@ -147,14 +146,28 @@ function RequestDetailsPage() {
     await refreshFromResponse(api.post(`/requests/${requestId}/comments/`, { message: comment }))
   }
 
-  async function submitStatus(event) {
-    event.preventDefault()
+  async function updateStatus(nextStatus, nextNote = '') {
     await refreshFromResponse(
       api.post(`/requests/${requestId}/status/`, {
-        status: statusValue,
-        note,
+        status: nextStatus,
+        note: nextNote,
       }),
     )
+  }
+
+  async function handleLifecycleStatusChange(nextStatus) {
+    if (!request.can_update_status || actionState.busy || request.status === nextStatus) return
+
+    const nextNote = terminalStatuses.has(nextStatus)
+      ? window.prompt('Resolution note is required for this status.')?.trim()
+      : window.prompt('Optional note for this status change:')?.trim() || ''
+
+    if (terminalStatuses.has(nextStatus) && !nextNote) {
+      setActionState({ busy: false, error: 'Resolution note is required.' })
+      return
+    }
+
+    await updateStatus(nextStatus, nextNote || '')
   }
 
   async function assignToMe() {
@@ -204,7 +217,7 @@ function RequestDetailsPage() {
   }
 
   const request = state.request
-  const needsResolutionNote = terminalStatuses.has(statusValue)
+  const isSuperAdmin = user?.role_keys?.includes('super_admin')
   const lifecycleSteps = [
     { label: 'New', value: 'NEW', helper: 'Awaiting review' },
     { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
@@ -244,46 +257,59 @@ function RequestDetailsPage() {
 
       {actionState.error && <p className="error-text">{actionState.error}</p>}
 
-      <section className="summary-grid request-meta-grid">
-          <div className="summary-card">
+      <section className="panel request-summary-panel">
+        <div className="workspace-section-title">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h2>Request summary</h2>
+          </div>
+        </div>
+
+        <div className="request-summary-grid">
+          <article className="request-summary-item request-summary-item-wide">
             <span>Reference</span>
-            <strong className="stat-value-small">{request.reference_code || request.request_number}</strong>
-          </div>
-          <div className="summary-card">
+            <strong>{request.reference_code || request.request_number}</strong>
+          </article>
+          <article className="request-summary-item">
+            <span>Status</span>
+            <strong>{statusLabelMap[request.status] || request.status}</strong>
+          </article>
+          <article className="request-summary-item">
             <span>Type</span>
-            <strong className="stat-value-small">{request.type}</strong>
-          </div>
-          <div className="summary-card">
+            <strong>{request.type || '-'}</strong>
+          </article>
+          <article className="request-summary-item">
             <span>Company</span>
-            <strong className="stat-value-small">{request.company_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Source</span>
-            <strong className="stat-value-small">{request.source_entity_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Target</span>
-            <strong className="stat-value-small">{request.target_team_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
+            <strong>{request.company_name || '-'}</strong>
+          </article>
+          <article className="request-summary-item">
+            <span>Source entity</span>
+            <strong>{request.source_entity_name || '-'}</strong>
+          </article>
+          <article className="request-summary-item">
+            <span>Target entity</span>
+            <strong>{request.target_entity_name || '-'}</strong>
+          </article>
+          <article className="request-summary-item">
             <span>Creator</span>
-            <strong className="stat-value-small">{request.requester_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Created at</span>
-            <strong className="stat-value-small">{new Date(request.created_at).toLocaleString()}</strong>
-          </div>
-          <div className="summary-card">
+            <strong>{request.requester_name || '-'}</strong>
+          </article>
+          <article className="request-summary-item">
             <span>Assignee</span>
-            <strong className="stat-value-small">{request.current_assignee_name || 'Unassigned'}</strong>
-          </div>
-          <div className="summary-card">
+            <strong>{request.assignee_name || 'Unassigned'}</strong>
+          </article>
+          <article className="request-summary-item">
+            <span>Created at</span>
+            <strong>{formatDateTime(request.created_at)}</strong>
+          </article>
+          <article className="request-summary-item request-summary-item-wide">
             <span>Resolution note</span>
-            <strong className="stat-value-small">{request.resolution_note || 'Not resolved yet'}</strong>
-          </div>
+            <strong>{request.resolution_note || 'Not resolved yet'}</strong>
+          </article>
+        </div>
       </section>
 
-      <section className="detail-grid request-conversation-grid">
+      <div className="request-primary-column">
         <section className="panel">
           <div className="workspace-section-title">
             <div>
@@ -293,13 +319,16 @@ function RequestDetailsPage() {
           </div>
           <div className="request-lifecycle">
             {lifecycleSteps.map((step) => (
-              <div
+              <button
+                type="button"
                 key={step.value}
-                className={`request-lifecycle-step ${request.status === step.value ? 'request-lifecycle-step-active' : ''}`}
+                disabled={!request.can_update_status || actionState.busy}
+                onClick={() => handleLifecycleStatusChange(step.value)}
+                className={`request-lifecycle-step ${request.status === step.value ? 'request-lifecycle-step-active' : ''} ${request.can_update_status ? 'request-lifecycle-step-clickable' : ''}`}
               >
                 {step.label}
                 <span>{step.helper}</span>
-              </div>
+              </button>
             ))}
           </div>
         </section>
@@ -317,11 +346,11 @@ function RequestDetailsPage() {
                 <div className="thread-head">
                   <div>
                     <strong>{item.sender_name}</strong>
-                    <div className="subline">
+                    <div className="subline request-thread-meta">
                       {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
                     </div>
                   </div>
-                  <small>{new Date(item.created_at).toLocaleString()}</small>
+                  <small>{formatDateTime(item.created_at)}</small>
                 </div>
                 <p>{item.message}</p>
               </article>
@@ -339,63 +368,9 @@ function RequestDetailsPage() {
             </button>
           </form>
         </section>
+      </div>
 
-        <section className="panel">
-          <p className="eyebrow">Timeline</p>
-          <h2>Activity</h2>
-          <div className="timeline-list">
-            {request.activity_timeline.map((item, index) => (
-              <article key={`${item.kind}-${item.timestamp}-${index}`} className="timeline-card">
-                <div className="thread-head">
-                  <strong>{formatTimelineTitle(item)}</strong>
-                  <small>{new Date(item.timestamp).toLocaleString()}</small>
-                </div>
-                <p>{item.description}</p>
-                {item.note ? <p className="muted-text">{item.note}</p> : null}
-              </article>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      {request.can_update_status && (
-        <section className="panel">
-          <p className="eyebrow">Support actions</p>
-          <h2>Update status</h2>
-          <form className="status-form" onSubmit={submitStatus}>
-            <div>
-              <label htmlFor="status">Status</label>
-              <select
-                id="status"
-                className="app-select"
-                value={statusValue}
-                onChange={(event) => setStatusValue(event.target.value)}
-              >
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {statusLabelMap[option] || option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="status-note">Note</label>
-              <textarea
-                id="status-note"
-                className="app-textarea"
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder={needsResolutionNote ? 'Resolution note is required' : 'Optional note'}
-              />
-            </div>
-            <button disabled={actionState.busy || (needsResolutionNote && !note.trim())} type="submit">
-              Update status
-            </button>
-          </form>
-        </section>
-      )}
-
-      {request.can_reassign_target_team && (
+      {request.can_reassign_target_team && isSuperAdmin && (
         <section className="panel">
           <p className="eyebrow">Admin actions</p>
           <h2>Reassign target team</h2>

@@ -450,6 +450,51 @@
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
 }
 
+.request-primary-column {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.request-summary-panel {
+  gap: 1.25rem;
+}
+
+.request-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.875rem;
+}
+
+.request-summary-item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.request-summary-item-wide {
+  grid-column: span 2;
+}
+
+.request-summary-item span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.request-summary-item strong {
+  font-size: 1rem;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
 .editorial-grid {
   grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.8fr);
 }
@@ -710,6 +755,7 @@ button,
 
 .thread-list {
   align-content: start;
+  gap: 0.75rem;
 }
 
 .thread-card.incoming {
@@ -742,6 +788,10 @@ button,
   line-height: 1.55;
   font-weight: 400;
   color: var(--text-soft);
+}
+
+.request-thread-meta {
+  font-size: 0.75rem;
 }
 
 .switch-row {
@@ -824,6 +874,7 @@ button,
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
   font-size: 0.875rem;
+  text-align: left;
 }
 
 .request-lifecycle-step-active {
@@ -832,9 +883,27 @@ button,
   color: var(--text);
 }
 
+.request-lifecycle-step-clickable {
+  cursor: pointer;
+}
+
+.request-lifecycle-step-clickable:hover:not(:disabled) {
+  border-color: #99f6e4;
+  background: #f8fffd;
+}
+
+.request-lifecycle-step:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
 .request-lifecycle-step span {
   color: var(--text-muted);
   font-size: 0.75rem;
+}
+
+.timeline-list {
+  gap: 0.75rem;
 }
 
 .state-card {
@@ -1048,7 +1117,8 @@ button,
 
   .kpi-grid,
   .summary-grid,
-  .admin-detail-grid {
+  .admin-detail-grid,
+  .request-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1084,6 +1154,10 @@ button,
 
   .filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .request-summary-item-wide {
+    grid-column: span 1;
   }
 }
 

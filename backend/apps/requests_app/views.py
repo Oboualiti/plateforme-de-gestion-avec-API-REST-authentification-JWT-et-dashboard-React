@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from apps.entities.models import Entity
 from apps.permissions_app.services import get_user_role_keys
+from apps.users.models import User
 
 from .models import (
     MainBranch,
