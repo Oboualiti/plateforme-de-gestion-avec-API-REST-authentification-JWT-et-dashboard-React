@@ -1,5 +1,26 @@
 from django.urls import path
 
+from .admin_views import (
+    AdminAssignmentsView,
+    AdminAuditLogsView,
+    AdminCompaniesView,
+    AdminCompanyDetailView,
+    AdminDashboardView,
+    AdminDelegationRulesView,
+    AdminEntitiesView,
+    AdminEntityDetailView,
+    AdminHierarchyCompanyAssignView,
+    AdminHierarchyEntityAssignView,
+    AdminHierarchyView,
+    AdminNotificationsView,
+    AdminPermissionsView,
+    AdminReportsView,
+    AdminRequestDetailView,
+    AdminRequestsView,
+    AdminRoleDetailView,
+    AdminRolesView,
+    AdminStatusTrackingView,
+)
 from .views import (
     ManageableUserCrudView,
     ManageableUserExportView,
@@ -11,6 +32,27 @@ from .views import (
 )
 
 urlpatterns = [
+    path("dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
+    path("companies/", AdminCompaniesView.as_view(), name="admin-companies"),
+    path("companies/<int:company_id>/", AdminCompanyDetailView.as_view(), name="admin-company-detail"),
+    path("entities/", AdminEntitiesView.as_view(), name="admin-entities"),
+    path("entities/<int:entity_id>/", AdminEntityDetailView.as_view(), name="admin-entity-detail"),
+    path("hierarchy/", AdminHierarchyView.as_view(), name="admin-hierarchy"),
+    path("hierarchy/companies/<int:company_id>/", AdminHierarchyCompanyAssignView.as_view(), name="admin-hierarchy-company"),
+    path("hierarchy/entities/<int:entity_id>/", AdminHierarchyEntityAssignView.as_view(), name="admin-hierarchy-entity"),
+    path("roles/", AdminRolesView.as_view(), name="admin-roles"),
+    path("roles/<int:role_id>/", AdminRoleDetailView.as_view(), name="admin-role-detail"),
+    path("permissions/catalog/", AdminPermissionsView.as_view(), name="admin-permissions"),
+    path("delegation-rules/", AdminDelegationRulesView.as_view(), name="admin-delegation-rules"),
+    path("delegation-rules/<int:role_id>/", AdminDelegationRulesView.as_view(), name="admin-delegation-rules-detail"),
+    path("requests/", AdminRequestsView.as_view(), name="admin-requests"),
+    path("requests/<int:request_id>/", AdminRequestDetailView.as_view(), name="admin-request-detail"),
+    path("assignments/", AdminAssignmentsView.as_view(), name="admin-assignments"),
+    path("status-tracking/", AdminStatusTrackingView.as_view(), name="admin-status-tracking"),
+    path("audit-logs/", AdminAuditLogsView.as_view(), name="admin-audit-logs"),
+    path("notifications/", AdminNotificationsView.as_view(), name="admin-notifications"),
+    path("notifications/<int:preference_id>/", AdminNotificationsView.as_view(), name="admin-notifications-detail"),
+    path("reports/", AdminReportsView.as_view(), name="admin-reports"),
     path("users/manageable/", ManageableUserListView.as_view(), name="manageable-users"),
     path(
         "users/manageable/export/",

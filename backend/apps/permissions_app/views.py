@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.entities.models import Entity
 from apps.companies.models import Company
+from apps.audit_logs.services import log_admin_action
 from apps.permissions_app.models import UserRole
 from apps.roles.models import Role
 from apps.users.models import User
@@ -113,6 +114,14 @@ class ManageableUserListView(BaseManageUsersView):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.create()
+        log_admin_action(
+            actor=request.user,
+            module="users",
+            action="create",
+            target_model="User",
+            target_id=user.id,
+            target_label=user.username,
+        )
         payload = ManageableUserListSerializer(
             user, context={"actor_level": get_user_max_role_level(request.user)}
         ).data
@@ -207,6 +216,14 @@ class ManageableUserCrudView(BaseManageUsersView):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.update(target)
+        log_admin_action(
+            actor=request.user,
+            module="users",
+            action="update",
+            target_model="User",
+            target_id=user.id,
+            target_label=user.username,
+        )
         payload = ManageableUserListSerializer(
             user, context={"actor_level": get_user_max_role_level(request.user)}
         ).data
@@ -223,6 +240,14 @@ class ManageableUserCrudView(BaseManageUsersView):
                     message="Only Super Admin can delete Senior users.",
                 )
         target.delete()
+        log_admin_action(
+            actor=request.user,
+            module="users",
+            action="delete",
+            target_model="User",
+            target_id=user_id,
+            target_label=target.username,
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -391,6 +416,15 @@ class ManageUserDetailView(BaseManageUsersView):
         serializer.save()
         target.refresh_from_db()
         target = self.get_target_user(user_id)
+        log_admin_action(
+            actor=request.user,
+            module="roles",
+            action="assign",
+            target_model="User",
+            target_id=target.id,
+            target_label=target.username,
+            metadata={"role_keys": request.data.get("role_keys", [])},
+        )
         return Response(self.build_payload(request, target))
 
 
@@ -430,6 +464,15 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         serializer.is_valid(raise_exception=True)
         serializer.apply(target, True)
         target = self.get_target_user(user_id)
+        log_admin_action(
+            actor=request.user,
+            module="permissions",
+            action="allow_override",
+            target_model="User",
+            target_id=target.id,
+            target_label=target.username,
+            metadata={"permission_key": serializer.validated_data["permission_key"]},
+        )
         return Response(
             self.build_payload(request, target),
             status=status.HTTP_200_OK,
@@ -449,6 +492,15 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         serializer.is_valid(raise_exception=True)
         serializer.apply(target, False)
         target = self.get_target_user(user_id)
+        log_admin_action(
+            actor=request.user,
+            module="permissions",
+            action="deny_override",
+            target_model="User",
+            target_id=target.id,
+            target_label=target.username,
+            metadata={"permission_key": serializer.validated_data["permission_key"]},
+        )
         return Response(
             self.build_payload(request, target),
             status=status.HTTP_200_OK,
