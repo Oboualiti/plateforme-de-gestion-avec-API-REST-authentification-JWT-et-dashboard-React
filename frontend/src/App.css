@@ -69,6 +69,7 @@
 .sidebar-utility-row {
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .app-topbar-title {
@@ -435,12 +436,7 @@
 }
 
 .request-conversation-grid {
-  grid-template-columns: minmax(360px, 1.1fr) minmax(0, 1fr);
-}
-
-.summary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 18px 0;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
 }
 
 .editorial-grid {
@@ -484,11 +480,10 @@
 }
 
 .subline {
-  margin-top: 4px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #334155;
-  opacity: 1;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .metric-highlight {
@@ -615,10 +610,8 @@ button,
 }
 
 .filter-bar {
-  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-top: 14px;
+  gap: 0.75rem;
 }
 
 .link-button,
@@ -664,6 +657,14 @@ button,
   background: #fafafa;
 }
 
+.clickable-row {
+  cursor: pointer;
+}
+
+.readonly-row {
+  cursor: default;
+}
+
 .thread-head {
   align-items: flex-start;
   justify-content: space-between;
@@ -696,17 +697,8 @@ button,
   max-width: 82%;
 }
 
-.discussion-panel {
-  padding: 28px;
-}
-
-.discussion-panel .thread-list {
-  gap: 14px;
-  min-height: 280px;
-}
-
-.discussion-panel .stack-form {
-  margin-top: 22px;
+.thread-list {
+  align-content: start;
 }
 
 .thread-card.incoming {
@@ -721,34 +713,24 @@ button,
 }
 
 .thread-head {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-height: 2.75rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  text-transform: none;
-  letter-spacing: normal;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.625rem;
 }
 
 .thread-head strong {
-  font-size: 16px;
-  font-weight: 800;
-  color: #0f172a;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .thread-card p {
   margin: 0;
-  font-size: 17px;
+  font-size: 0.9375rem;
   line-height: 1.55;
-  font-weight: 700;
-  color: #0b1220;
-}
-
-.button-stack {
-  flex-direction: column;
+  font-weight: 400;
+  color: var(--text-soft);
 }
 
 .switch-row {

@@ -191,17 +191,15 @@ function PermissionManagementPage() {
 
   return (
     <main className="page-content">
-      <section className="panel">
-        <p className="eyebrow">Permission management</p>
-        <h1>Manageable users</h1>
-        {!state.loading && !state.error && (
-          <p className="muted-text">
-            Scope: {state.scope || '-'} | Entity: {state.currentEntityName || '-'}
-          </p>
-        )}
-        {!state.loading && !state.error && (
-          <div className="filter-bar">
-            <Link className="pill-link" to="/admin/users/create">
+      <section className="workspace-header">
+        <div className="panel-header">
+          <div className="page-intro">
+            <p className="eyebrow">Permissions</p>
+            <h1>Manageable users</h1>
+            <p>Review users, filter by scope, and open permission details for edits and overrides.</p>
+          </div>
+          <div className="toolbar-group">
+            <Link className="pill-link-primary pill-link" to="/admin/users/create">
               Add user
             </Link>
             <button type="button" className="ghost-button" onClick={() => exportUsers('csv')} disabled={Boolean(exporting)}>
@@ -216,114 +214,145 @@ function PermissionManagementPage() {
               onClick={() => importInputRef.current?.click()}
               disabled={importing}
             >
-              {importing ? 'Importing...' : 'Import CSV/Excel'}
+              {importing ? 'Importing...' : 'Import file'}
             </button>
-            <input
-              ref={importInputRef}
-              id="import-users-file"
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={importUsers}
-              disabled={importing}
-              style={{ display: 'none' }}
-            />
+          </div>
+        </div>
+        {!state.loading && !state.error && (
+          <div className="workspace-meta">
+            <span className="muted-text">Scope: {state.scope || '-'}</span>
+            <span className="muted-text">Entity: {state.currentEntityName || '-'}</span>
           </div>
         )}
+        <input
+          ref={importInputRef}
+          id="import-users-file"
+          type="file"
+          accept=".csv,.xlsx"
+          onChange={importUsers}
+          disabled={importing}
+          style={{ display: 'none' }}
+        />
         {!state.loading && !state.error && actionMessage && (
           <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
         )}
         {state.loading && <p className="muted-text">Loading users...</p>}
         {state.error && <p className="error-text">{state.error}</p>}
-        {!state.loading && !state.error && (
-          <div className="table-wrap">
-            <div className="filter-bar">
-              <input
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search by first or last name"
-              />
-              <select
-                className="app-select"
-                value={roleFilter}
-                onChange={(event) => setRoleFilter(event.target.value)}
-              >
-                {roleOptions.map((role) => (
-                  <option key={role.key} value={role.key}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="app-select"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-              >
-                <option value="all">All status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-              {showEntityTypeFilter && (
-                <select
-                  className="app-select"
-                  value={entityTypeFilter}
-                  onChange={(event) => setEntityTypeFilter(event.target.value)}
-                >
-                  <option value="all">All entity types</option>
-                  <option value="PROD">Prod</option>
-                  <option value="SUPPORT">Support</option>
-                  <option value="TDEV">T.Dev</option>
-                </select>
-              )}
-            </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Username</th>
-                  <th>Current roles</th>
-                  <th>Status</th>
-                  <th>Company / Entity</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={item.can_edit ? 'clickable-row' : 'readonly-row'}
-                    onClick={() => navigate(`/admin/permissions/${item.id}`)}
-                  >
-                    <td>{item.username}</td>
-                    <td>{item.roles.map((role) => role.name).join(', ') || 'No roles'}</td>
-                    <td>{item.is_active ? 'Active' : 'Inactive'}</td>
-                    <td>
-                      {item.company_name || '-'} / {item.entity_name || '-'} ({item.entity_type || '-'})
-                    </td>
-                    <td className="table-actions">
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={(event) => openDetailPage(event, item.id)}
-                        disabled={!item.can_edit}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={(event) => deleteUser(event, item.id, item.username)}
-                        disabled={!item.can_edit}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!filteredUsers.length && <p className="muted-text">No users match the filters.</p>}
-          </div>
-        )}
       </section>
+
+      {!state.loading && !state.error && (
+        <section className="table-wrap">
+          <div className="card-toolbar">
+            <div>
+              <p className="eyebrow">Filters</p>
+              <h2>User directory</h2>
+            </div>
+            <span className="muted-text">{filteredUsers.length} result(s)</span>
+          </div>
+          <div className="filter-bar table-caption">
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search by name or username"
+            />
+            <select
+              className="app-select"
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+            >
+              {roleOptions.map((role) => (
+                <option key={role.key} value={role.key}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="app-select"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            {showEntityTypeFilter ? (
+              <select
+                className="app-select"
+                value={entityTypeFilter}
+                onChange={(event) => setEntityTypeFilter(event.target.value)}
+              >
+                <option value="all">All entity types</option>
+                <option value="PROD">Prod</option>
+                <option value="SUPPORT">Support</option>
+                <option value="TDEV">T.Dev</option>
+              </select>
+            ) : (
+              <div />
+            )}
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Roles</th>
+                <th>Status</th>
+                <th>Scope</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td colSpan="5">No users match the filters.</td>
+                </tr>
+              )}
+              {filteredUsers.map((item) => (
+                <tr
+                  key={item.id}
+                  className={item.can_edit ? 'clickable-row' : 'readonly-row'}
+                  onClick={() => navigate(`/admin/permissions/${item.id}`)}
+                >
+                  <td>
+                    <div className="caption-grid">
+                      <strong>{item.username}</strong>
+                      <span className="muted-text">
+                        {[item.first_name, item.last_name].filter(Boolean).join(' ') || 'No full name'}
+                      </span>
+                    </div>
+                  </td>
+                  <td>{item.roles.map((role) => role.name).join(', ') || 'No roles'}</td>
+                  <td>
+                    <span className={`status-tag ${item.is_active ? 'active' : 'muted'}`}>
+                      {item.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td>
+                    {item.company_name || '-'} / {item.entity_name || '-'} ({item.entity_type || '-'})
+                  </td>
+                  <td className="table-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={(event) => openDetailPage(event, item.id)}
+                      disabled={!item.can_edit}
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={(event) => deleteUser(event, item.id, item.username)}
+                      disabled={!item.can_edit}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
     </main>
   )
 }

@@ -49,6 +49,16 @@ function RequestsPage() {
         ? 'Your requests'
         : 'Incoming Requests'
 
+  const metrics = useMemo(() => {
+    const requests = state.requests || []
+    return {
+      total: requests.length,
+      pending: requests.filter((item) => item.status === 'NEW').length,
+      inProgress: requests.filter((item) => item.status === 'IN_PROGRESS').length,
+      stuck: requests.filter((item) => item.is_stuck).length,
+    }
+  }, [state.requests])
+
   useEffect(() => {
     let active = true
     async function loadRequests() {
@@ -98,22 +108,52 @@ function RequestsPage() {
 
   return (
     <main className="page-content">
-      <section className="panel">
+      <section className="workspace-header">
         <div className="panel-header">
-          <div>
-            <p className="eyebrow">Requests Management</p>
+          <div className="page-intro">
+            <p className="eyebrow">Requests</p>
             <h1>{title}</h1>
+            <p>Use filters to narrow operational work and open requests for status updates, discussion, and routing.</p>
           </div>
           {user?.request_creation_allowed ? (
-            <Link className="pill-link" to="/requests/create">
-              Send Request
+            <Link className="pill-link-primary pill-link" to="/requests/create">
+              New request
             </Link>
           ) : (
-            <span className="muted-text">Request sending is not enabled for your user.</span>
+            <span className="muted-text">Request creation is not enabled for your user.</span>
           )}
         </div>
+      </section>
 
-        <div className="filter-bar">
+      <section className="kpi-grid">
+        <article className="summary-card summary-card-emphasis">
+          <span>Total requests</span>
+          <strong>{metrics.total}</strong>
+        </article>
+        <article className="summary-card">
+          <span>Pending</span>
+          <strong>{metrics.pending}</strong>
+        </article>
+        <article className="summary-card">
+          <span>In progress</span>
+          <strong>{metrics.inProgress}</strong>
+        </article>
+        <article className="summary-card">
+          <span>Stuck</span>
+          <strong>{metrics.stuck}</strong>
+        </article>
+      </section>
+
+      <section className="table-wrap">
+        <div className="card-toolbar">
+          <div>
+            <p className="eyebrow">Filters</p>
+            <h2>Request workspace</h2>
+          </div>
+          <span className="muted-text">{state.loading ? 'Loading...' : `${metrics.total} result(s)`}</span>
+        </div>
+
+        <div className="filter-bar table-caption">
           <input
             placeholder="Search by ref, title, description, creator"
             value={filters.search}
@@ -195,65 +235,65 @@ function RequestsPage() {
         )}
 
         {!state.loading && !state.error && (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Request</th>
+                <th>Status</th>
+                <th>Scope</th>
+                <th>Ownership</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.requests.length === 0 && (
                 <tr>
-                  <th>Ref</th>
-                  <th>Title</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Stuck</th>
-                  <th>Company</th>
-                  <th>Source</th>
-                  <th>Target</th>
-                  <th>Creator</th>
-                  <th>Assignee</th>
-                  <th>Created</th>
-                  <th>Action</th>
+                  <td colSpan="6">No requests found for the selected filters.</td>
                 </tr>
-              </thead>
-              <tbody>
-                {state.requests.length === 0 && (
-                  <tr>
-                    <td colSpan="12">No requests found for the selected filters.</td>
-                  </tr>
-                )}
-                {state.requests.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <strong>{item.reference_code || item.request_number}</strong>
-                    </td>
-                    <td>{item.title}</td>
-                    <td>{item.type}</td>
-                    <td>
+              )}
+              {state.requests.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <div className="caption-grid">
+                      <strong>{item.title}</strong>
+                      <span className="muted-text">
+                        {item.reference_code || item.request_number} · {item.type}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="caption-grid">
                       <span className={statusClassMap[item.status] || 'status-tag'}>
                         {statusLabelMap[item.status] || item.status}
                       </span>
-                    </td>
-                    <td>
-                      {item.is_stuck ? (
-                        <span className="status-tag danger">Yes</span>
-                      ) : (
-                        <span className="status-tag active">No</span>
-                      )}
-                    </td>
-                    <td>{item.company_name || '-'}</td>
-                    <td>{item.source_entity_name || '-'}</td>
-                    <td>{item.target_team_name || '-'}</td>
-                    <td>{item.creator_name || '-'}</td>
-                    <td>{item.current_assignee_name || 'Unassigned'}</td>
-                    <td>{new Date(item.created_at).toLocaleString()}</td>
-                    <td>
-                      <Link className="table-action" to={`/requests/${item.id}`}>
-                        Open
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {item.is_stuck ? <span className="status-tag danger">Stuck</span> : null}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="caption-grid">
+                      <span>{item.company_name || '-'}</span>
+                      <span className="muted-text">
+                        {item.source_entity_name || '-'} {'->'} {item.target_team_name || '-'}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="caption-grid">
+                      <span>{item.creator_name || '-'}</span>
+                      <span className="muted-text">{item.current_assignee_name || 'Unassigned'}</span>
+                    </div>
+                  </td>
+                  <td>{new Date(item.created_at).toLocaleString()}</td>
+                  <td>
+                    <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
+                      Open
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
     </main>

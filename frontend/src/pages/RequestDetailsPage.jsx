@@ -180,78 +180,105 @@ function RequestDetailsPage() {
 
   const request = state.request
   const needsResolutionNote = terminalStatuses.has(statusValue)
+  const lifecycleSteps = [
+    { label: 'New', value: 'NEW', helper: 'Awaiting review' },
+    { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
+    { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
+    { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
+    { label: 'Closed', value: 'CLOSED', helper: 'Request finalized' },
+  ]
 
   return (
     <main className="page-content">
-      <section className="panel">
+      <section className="workspace-header">
         <div className="panel-header">
-          <div>
+          <div className="page-intro">
             <p className="eyebrow">Request details</p>
             <h1>{request.title}</h1>
-            <div className="tag-row">
-              <span className={statusClassMap[request.status] || 'status-tag'}>
-                {statusLabelMap[request.status] || request.status}
-              </span>
-              <small>{request.reference_code || request.request_number}</small>
-            </div>
+            <p>{request.description}</p>
           </div>
-          <div className="button-row">
+          <div className="page-actions">
             {request.can_assign_to_me && (
               <button className="ghost-button" disabled={actionState.busy} onClick={assignToMe} type="button">
                 Assign to me
               </button>
             )}
-            <Link className="pill-link" to="/requests">
-              Back
+            <Link className="ghost-button pill-link" to="/requests">
+              Back to list
             </Link>
           </div>
         </div>
-
-        <div className="summary-grid request-meta-grid">
-          <div className="summary-card">
-            <span>Reference</span>
-            <strong>{request.reference_code || request.request_number}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Type</span>
-            <strong>{request.type}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Company</span>
-            <strong>{request.company_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Source</span>
-            <strong>{request.source_entity_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Target</span>
-            <strong>{request.target_team_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Creator</span>
-            <strong>{request.requester_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Created at</span>
-            <strong>{new Date(request.created_at).toLocaleString()}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Assignee</span>
-            <strong>{request.current_assignee_name || 'Unassigned'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Resolution note</span>
-            <strong>{request.resolution_note || 'Not resolved yet'}</strong>
-          </div>
+        <div className="workspace-meta">
+          <span className={statusClassMap[request.status] || 'status-tag'}>
+            {statusLabelMap[request.status] || request.status}
+          </span>
+          <span className="muted-text">{request.reference_code || request.request_number}</span>
+          <span className="muted-text">{request.type}</span>
         </div>
-
-        <p>{request.description}</p>
         {actionState.error && <p className="error-text">{actionState.error}</p>}
       </section>
 
+      <section className="summary-grid request-meta-grid">
+          <div className="summary-card">
+            <span>Reference</span>
+            <strong className="stat-value-small">{request.reference_code || request.request_number}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Type</span>
+            <strong className="stat-value-small">{request.type}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Company</span>
+            <strong className="stat-value-small">{request.company_name || '-'}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Source</span>
+            <strong className="stat-value-small">{request.source_entity_name || '-'}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Target</span>
+            <strong className="stat-value-small">{request.target_team_name || '-'}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Creator</span>
+            <strong className="stat-value-small">{request.requester_name || '-'}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Created at</span>
+            <strong className="stat-value-small">{new Date(request.created_at).toLocaleString()}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Assignee</span>
+            <strong className="stat-value-small">{request.current_assignee_name || 'Unassigned'}</strong>
+          </div>
+          <div className="summary-card">
+            <span>Resolution note</span>
+            <strong className="stat-value-small">{request.resolution_note || 'Not resolved yet'}</strong>
+          </div>
+      </section>
+
       <section className="detail-grid request-conversation-grid">
-        <section className="panel discussion-panel">
+        <section className="panel">
+          <div className="workspace-section-title">
+            <div>
+              <p className="eyebrow">Status</p>
+              <h2>Lifecycle</h2>
+            </div>
+          </div>
+          <div className="request-lifecycle">
+            {lifecycleSteps.map((step) => (
+              <div
+                key={step.value}
+                className={`request-lifecycle-step ${request.status === step.value ? 'request-lifecycle-step-active' : ''}`}
+              >
+                {step.label}
+                <span>{step.helper}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
           <p className="eyebrow">Comments</p>
           <h2>Discussion</h2>
           <div className="thread-list">
@@ -282,12 +309,12 @@ function RequestDetailsPage() {
               placeholder="Add a comment"
             />
             <button disabled={actionState.busy || !comment.trim()} type="submit">
-              Add comment
+              Send comment
             </button>
           </form>
         </section>
 
-        <section className="panel timeline-panel">
+        <section className="panel">
           <p className="eyebrow">Timeline</p>
           <h2>Activity</h2>
           <div className="timeline-list">
@@ -310,23 +337,31 @@ function RequestDetailsPage() {
           <p className="eyebrow">Support actions</p>
           <h2>Update status</h2>
           <form className="status-form" onSubmit={submitStatus}>
-            <select
-              className="app-select"
-              value={statusValue}
-              onChange={(event) => setStatusValue(event.target.value)}
-            >
-              {statusOptions.map((option) => (
-                <option key={option} value={option}>
-                  {statusLabelMap[option] || option}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className="app-textarea"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder={needsResolutionNote ? 'Resolution note is required' : 'Optional note'}
-            />
+            <div>
+              <label htmlFor="status">Status</label>
+              <select
+                id="status"
+                className="app-select"
+                value={statusValue}
+                onChange={(event) => setStatusValue(event.target.value)}
+              >
+                {statusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {statusLabelMap[option] || option}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="status-note">Note</label>
+              <textarea
+                id="status-note"
+                className="app-textarea"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder={needsResolutionNote ? 'Resolution note is required' : 'Optional note'}
+              />
+            </div>
             <button disabled={actionState.busy || (needsResolutionNote && !note.trim())} type="submit">
               Update status
             </button>
@@ -339,24 +374,32 @@ function RequestDetailsPage() {
           <p className="eyebrow">Admin actions</p>
           <h2>Reassign target team</h2>
           <form className="status-form" onSubmit={submitReassign}>
-            <select
-              className="app-select"
-              value={reassignTarget}
-              onChange={(event) => setReassignTarget(event.target.value)}
-            >
-              <option value="">Select target team</option>
-              {(request.available_reassignment_targets || []).map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.label}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className="app-textarea"
-              value={reassignNote}
-              onChange={(event) => setReassignNote(event.target.value)}
-              placeholder="Optional note for reassignment"
-            />
+            <div>
+              <label htmlFor="reassign-target">Target team</label>
+              <select
+                id="reassign-target"
+                className="app-select"
+                value={reassignTarget}
+                onChange={(event) => setReassignTarget(event.target.value)}
+              >
+                <option value="">Select target team</option>
+                {(request.available_reassignment_targets || []).map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="reassign-note">Note</label>
+              <textarea
+                id="reassign-note"
+                className="app-textarea"
+                value={reassignNote}
+                onChange={(event) => setReassignNote(event.target.value)}
+                placeholder="Optional note for reassignment"
+              />
+            </div>
             <button disabled={actionState.busy || !reassignTarget} type="submit">
               Reassign team
             </button>
