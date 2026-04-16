@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -251,111 +252,105 @@ function PermissionManagementPage() {
 
   return (
     <main className="page-content">
-      <section className="panel">
-        <p className="eyebrow">Permission management</p>
-        <h1>{pageTitle}</h1>
-        <p className="muted-text">{pageSubtitle}</p>
-        {!state.loading && !state.error && (
-          <p className="muted-text">
-            Scope: {state.scope || '-'} | Entity: {state.currentEntityName || '-'}
-          </p>
-        )}
-        {!state.loading && !state.error && (
-          <div className="filter-bar">
-            <Link className="pill-link" to="/admin/users/create">
-              Add user
-            </Link>
-            <button type="button" className="ghost-button" onClick={() => exportUsers('csv')} disabled={Boolean(exporting)}>
-              {exporting === 'csv' ? 'Exporting CSV...' : 'Export CSV'}
-            </button>
-            <button type="button" className="ghost-button" onClick={() => exportUsers('xlsx')} disabled={Boolean(exporting)}>
-              {exporting === 'xlsx' ? 'Exporting Excel...' : 'Export Excel'}
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => importInputRef.current?.click()}
-              disabled={importing}
-            >
-              {importing ? 'Importing...' : 'Import CSV/Excel'}
-            </button>
-            <input
-              ref={importInputRef}
-              id="import-users-file"
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={importUsers}
-              disabled={importing}
-              style={{ display: 'none' }}
-            />
+      <PageHeader
+        eyebrow="Permission management"
+        title={pageTitle}
+        description={pageSubtitle}
+        actions={
+          !state.loading && !state.error ? (
+            <>
+              <Link className="pill-link" to="/admin/users/create">
+                Add user
+              </Link>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => exportUsers('csv')}
+                disabled={Boolean(exporting)}
+              >
+                {exporting === 'csv' ? 'Exporting CSV...' : 'Export CSV'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => exportUsers('xlsx')}
+                disabled={Boolean(exporting)}
+              >
+                {exporting === 'xlsx' ? 'Exporting Excel...' : 'Export Excel'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => importInputRef.current?.click()}
+                disabled={importing}
+              >
+                {importing ? 'Importing...' : 'Import file'}
+              </button>
+            </>
+          ) : null
+        }
+        meta={
+          !state.loading && !state.error ? (
+            <>
+              <span className="muted-text">Scope: {state.scope || '-'}</span>
+              <span className="muted-text">Entity: {state.currentEntityName || '-'}</span>
+            </>
+          ) : null
+        }
+      />
+
+      <input
+        ref={importInputRef}
+        id="import-users-file"
+        type="file"
+        accept=".csv,.xlsx"
+        onChange={importUsers}
+        disabled={importing}
+        style={{ display: 'none' }}
+      />
+      {!state.loading && !state.error && actionMessage && (
+        <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
+      )}
+      {state.loading && <p className="muted-text">Loading users...</p>}
+      {state.error && <p className="error-text">{state.error}</p>}
+
+      {!state.loading && !state.error && (
+        <section className="table-wrap">
+          <div className="card-toolbar">
+            <div>
+              <p className="eyebrow">Filters</p>
+              <h2>User directory</h2>
+            </div>
+            <span className="muted-text">{filteredUsers.length} result(s)</span>
           </div>
-        )}
-        {!state.loading && !state.error && actionMessage && (
-          <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
-        )}
-        {state.loading && <p className="muted-text">Loading users...</p>}
-        {state.error && <p className="error-text">{state.error}</p>}
-        {!state.loading && !state.error && (
-          <div className="table-wrap">
-            <div className="filter-bar">
-              <input
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search by first or last name"
-              />
-              <select
-                className="app-select"
-                value={roleFilter}
-                onChange={(event) => setRoleFilter(event.target.value)}
-              >
-                {roleOptions.map((role) => (
-                  <option key={role.key} value={role.key}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="app-select"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-              >
-                <option value="all">All status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-              {showCompanyFilter && (
-                <select
-                  className="app-select"
-                  value={companyFilter}
-                  onChange={(event) => setCompanyFilter(event.target.value)}
-                >
-                  <option value="all">All companies</option>
-                  {companyOptions
-                    .filter((item) => item !== 'all')
-                    .map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                </select>
-              )}
-              {showEntityFilter && (
-                <select
-                  className="app-select"
-                  value={entityFilter}
-                  onChange={(event) => setEntityFilter(event.target.value)}
-                >
-                  <option value="all">All entities</option>
-                  {entityOptions
-                    .filter((item) => item !== 'all')
-                    .map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                </select>
-              )}
-              {showEntityTypeFilter && (
+          <div className="filter-bar table-caption">
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search by name or username"
+            />
+            <select
+              className="app-select"
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+            >
+              {roleOptions.map((role) => (
+                <option key={role.key} value={role.key}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="app-select"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            {showEntityTypeFilter ? (
+              <>
                 <select
                   className="app-select"
                   value={entityTypeFilter}
@@ -366,57 +361,89 @@ function PermissionManagementPage() {
                   <option value="SUPPORT">Support</option>
                   <option value="TDEV">T.Dev</option>
                 </select>
-              )}
-            </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Username</th>
-                  <th>Current roles</th>
-                  <th>Status</th>
-                  <th>Company / Entity</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={item.can_edit ? 'clickable-row' : 'readonly-row'}
-                    onClick={() => navigate(`/admin/users/${item.id}`)}
+                {showCompanyFilter && (
+                  <select
+                    className="app-select"
+                    value={companyFilter}
+                    onChange={(event) => setCompanyFilter(event.target.value)}
                   >
-                    <td>{item.username}</td>
-                    <td>{item.roles.map((role) => role.name).join(', ') || 'No roles'}</td>
-                    <td>{item.is_active ? 'Active' : 'Inactive'}</td>
-                    <td>
-                      {item.company_name || '-'} / {item.entity_name || '-'} ({item.entity_type || '-'})
-                    </td>
-                    <td className="table-actions">
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={(event) => openDetailPage(event, item.id)}
-                        disabled={!item.can_edit}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={(event) => deleteUser(event, item.id, item.username)}
-                        disabled={!item.can_edit}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!filteredUsers.length && <p className="muted-text">No users match the filters.</p>}
+                    <option value="all">All companies</option>
+                    {companyOptions
+                      .filter((item) => item !== 'all')
+                      .map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                  </select>
+                )}
+                {showEntityFilter && (
+                  <select
+                    className="app-select"
+                    value={entityFilter}
+                    onChange={(event) => setEntityFilter(event.target.value)}
+                  >
+                    <option value="all">All entities</option>
+                    {entityOptions
+                      .filter((item) => item !== 'all')
+                      .map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </>
+            ) : null}
           </div>
-        )}
-      </section>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Roles</th>
+                <th>Status</th>
+                <th>Scope</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.map((item) => (
+                <tr
+                  key={item.id}
+                  className={item.can_edit ? 'clickable-row' : 'readonly-row'}
+                  onClick={() => navigate(`/admin/users/${item.id}`)}
+                >
+                  <td>{item.username}</td>
+                  <td>{item.roles.map((role) => role.name).join(', ') || 'No roles'}</td>
+                  <td>{item.is_active ? 'Active' : 'Inactive'}</td>
+                  <td>
+                    {item.company_name || '-'} / {item.entity_name || '-'} ({item.entity_type || '-'})
+                  </td>
+                  <td className="table-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={(event) => openDetailPage(event, item.id)}
+                      disabled={!item.can_edit}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={(event) => deleteUser(event, item.id, item.username)}
+                      disabled={!item.can_edit}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!filteredUsers.length && <p className="muted-text">No users match the filters.</p>}
+        </section>
+      )}
     </main>
   )
 }

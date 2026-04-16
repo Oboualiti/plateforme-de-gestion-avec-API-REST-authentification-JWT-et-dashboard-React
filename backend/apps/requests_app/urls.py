@@ -7,6 +7,7 @@ from .views import (
     RequestCommentCreateView,
     RequestDetailView,
     RequestAssignToMeView,
+    RequestAssignUserView,
     RequestMessageViewSet,
     RequestListCreateView,
     RequestTargetReassignView,
@@ -50,5 +51,10 @@ urlpatterns = [
         "requests/<int:request_id>/reassign/",
         RequestTargetReassignView.as_view(),
         name="requests-reassign",
+    ),
+    path(
+        "requests/<int:request_id>/assign_user/",
+        RequestAssignUserView.as_view(),
+        name="requests-assign-user",
     ),
 ] + router.urls

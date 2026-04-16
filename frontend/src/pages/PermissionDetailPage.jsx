@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -218,39 +219,42 @@ function PermissionDetailPage() {
 
   return (
     <main className="page-content">
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-          <p className="eyebrow">Permission detail</p>
-            <h1>{user.username}</h1>
-          </div>
+      <PageHeader
+        eyebrow="Permission detail"
+        title={user.username}
+        description="Review profile, role, and effective permissions."
+        actions={
           <Link className="pill-link" to="/admin/users">
             Back
           </Link>
-        </div>
+        }
+      />
 
-        <div className="summary-grid">
-          <div className="summary-card">
-            <span>Email</span>
-            <strong>{user.email}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Company</span>
-            <strong>{user.company_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Entity</span>
-            <strong>
-              {user.entity_name || '-'} ({user.entity_type || '-'})
-            </strong>
-          </div>
+      <section className="summary-grid">
+        <div className="summary-card">
+          <span>Email</span>
+          <strong className="stat-value-small">{user.email || '-'}</strong>
+        </div>
+        <div className="summary-card">
+          <span>Company</span>
+          <strong className="stat-value-small">{user.company_name || '-'}</strong>
+        </div>
+        <div className="summary-card">
+          <span>Entity</span>
+          <strong className="stat-value-small">
+            {user.entity_name || '-'} ({user.entity_type || '-'})
+          </strong>
+        </div>
+        <div className="summary-card">
+          <span>Status</span>
+          <strong className="stat-value-small">{user.is_active ? 'Active' : 'Inactive'}</strong>
         </div>
       </section>
 
       <section className="detail-grid">
         <section className="panel">
-          <p className="eyebrow">User profile</p>
-          <h2>Edit user data</h2>
+          <p className="eyebrow">Profile</p>
+          <h2>User information</h2>
           {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
           <form
             className="stack-form"
@@ -333,68 +337,80 @@ function PermissionDetailPage() {
             </label>
 
             {canShowCompany && (
-              <select
-                className="app-select"
-                value={profileForm.company_id}
-                onChange={(event) =>
-                  setProfileForm((current) => ({
-                    ...current,
-                    company_id: event.target.value,
-                    entity_id: '',
-                    team_leader_id: '',
-                  }))
-                }
-                disabled={!canEdit}
-                required
-              >
-                <option value="">Select company</option>
-                {options.company_options.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label htmlFor="company_id">Company</label>
+                <select
+                  id="company_id"
+                  className="app-select"
+                  value={profileForm.company_id}
+                  onChange={(event) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      company_id: event.target.value,
+                      entity_id: '',
+                      team_leader_id: '',
+                    }))
+                  }
+                  disabled={!canEdit}
+                  required
+                >
+                  <option value="">Select company</option>
+                  {options.company_options.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
             {canShowEntity && (
-              <select
-                className="app-select"
-                value={profileForm.entity_id}
-                onChange={(event) =>
-                  setProfileForm((current) => ({
-                    ...current,
-                    entity_id: event.target.value,
-                    team_leader_id: '',
-                  }))
-                }
-                disabled={!canEdit}
-                required
-              >
-                <option value="">Select entity</option>
-                {filteredEntities.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label htmlFor="entity_id">Entity</label>
+                <select
+                  id="entity_id"
+                  className="app-select"
+                  value={profileForm.entity_id}
+                  onChange={(event) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      entity_id: event.target.value,
+                      team_leader_id: '',
+                    }))
+                  }
+                  disabled={!canEdit}
+                  required
+                >
+                  <option value="">Select entity</option>
+                  {filteredEntities.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
             {canShowTeamLeader && (
-              <select
-                className="app-select"
-                value={profileForm.team_leader_id}
-                onChange={(event) =>
-                  setProfileForm((current) => ({ ...current, team_leader_id: event.target.value }))
-                }
-                disabled={!canEdit}
-              >
-                <option value="">Select Team Leader</option>
-                {filteredTeamLeaders.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label htmlFor="team_leader_id">Team leader</label>
+                <select
+                  id="team_leader_id"
+                  className="app-select"
+                  value={profileForm.team_leader_id}
+                  onChange={(event) =>
+                    setProfileForm((current) => ({ ...current, team_leader_id: event.target.value }))
+                  }
+                  disabled={!canEdit}
+                >
+                  <option value="">Select team leader</option>
+                  {filteredTeamLeaders.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <button type="submit" disabled={!canEdit}>
@@ -432,8 +448,13 @@ function PermissionDetailPage() {
       </section>
 
       <section className="panel">
-        <p className="eyebrow">Permissions</p>
-        <h2>Permission matrix</h2>
+        <div className="workspace-section-title">
+          <div>
+            <p className="eyebrow">Permissions</p>
+            <h2>Permission matrix</h2>
+          </div>
+          <span className="muted-text">{user.permissions.length} permission(s)</span>
+        </div>
         <div className="permission-list">
           {user.permissions.map((permission) => (
             <article key={permission.key} className="permission-card">
@@ -442,35 +463,27 @@ function PermissionDetailPage() {
                 <div className="subline">{permission.key}</div>
                 <div className="tag-row">
                   <span className={`status-tag ${permission.inherited ? 'active' : 'muted'}`}>
-                    role: {permission.inherited ? 'inherited' : 'not inherited'}
+                    {permission.inherited ? 'Inherited' : 'Direct'}
                   </span>
                   <span className={`status-tag ${permission.effective ? 'active' : 'danger'}`}>
-                    current: {permission.effective ? 'allowed' : 'denied'}
+                    {permission.effective ? 'Allowed' : 'Denied'}
                   </span>
                 </div>
               </div>
-              <div className="button-stack">
-                <label className="switch-row">
-                  <span>{permission.effective ? 'ON' : 'OFF'}</span>
-                  <input
-                    type="checkbox"
-                    className="permission-switch"
-                    checked={permission.effective}
-                    onChange={(event) => updatePermission(permission.key, event.target.checked)}
-                    disabled={!canEdit}
-                  />
-                </label>
-              </div>
+              <label className="switch-row">
+                <span>{permission.effective ? 'On' : 'Off'}</span>
+                <input
+                  type="checkbox"
+                  className="permission-switch"
+                  checked={permission.effective}
+                  onChange={(event) => updatePermission(permission.key, event.target.checked)}
+                  disabled={!canEdit}
+                />
+              </label>
             </article>
           ))}
         </div>
       </section>
-
-      {message && (
-        <section className="panel">
-          <p className="muted-text">{message}</p>
-        </section>
-      )}
     </main>
   )
 }

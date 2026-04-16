@@ -150,13 +150,20 @@ class AdminCompaniesView(AdminBaseView):
     module_key = "companies"
 
     def get_queryset(self, user):
-        return self.scoped_companies(user).annotate(entity_count=Count("entities"), user_count=Count("users")).order_by("name")
+        return self.scoped_companies(user).annotate(
+            entity_count=Count("entities", filter=Q(entities__is_active=True), distinct=True),
+            user_count=Count("users", filter=Q(users__is_active=True), distinct=True),
+        ).order_by("name")
 
     def get(self, request):
         rows = []
         for company in self.get_queryset(request.user):
-            senior = User.objects.filter(company_id=company.id, assigned_roles__role__key="senior").first()
-            company.senior_name = senior.username if senior else ""
+            senior = User.objects.filter(
+                company_id=company.id,
+                assigned_roles__role__key="senior",
+                is_active=True,
+            ).first()
+            company.senior_name = senior.get_full_name() or senior.username if senior else ""
             rows.append(company)
         return Response(CompanyAdminSerializer(rows, many=True).data)
 
@@ -178,6 +185,7 @@ class AdminCompanyDetailView(AdminBaseView):
         serializer = CompanyWriteSerializer(company, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        company.refresh_from_db()
         log_admin_action(actor=request.user, module="companies", action="update", target_model="Company", target_id=company.id, target_label=company.name)
         return Response(CompanyAdminSerializer(company).data)
 
@@ -186,12 +194,23 @@ class AdminEntitiesView(AdminBaseView):
     module_key = "entities"
 
     def get_queryset(self, user):
-        return self.scoped_entities(user).annotate(user_count=Count("users")).order_by("company__name", "name")
+        return self.scoped_entities(user).annotate(
+            user_count=Count("users", filter=Q(users__is_active=True))
+        ).order_by("company__name", "name")
 
     def get(self, request):
+        queryset = self.get_queryset(request.user)
+        company_id = request.query_params.get("company_id")
+        if company_id:
+            queryset = queryset.filter(company_id=company_id)
+            
         rows = []
-        for entity in self.get_queryset(request.user):
-            manager = User.objects.filter(entity_id=entity.id, assigned_roles__role__key="manager").first()
+        for entity in queryset:
+            manager = User.objects.filter(
+                entity_id=entity.id,
+                assigned_roles__role__key="manager",
+                is_active=True,
+            ).first()
             entity.manager_name = manager.username if manager else ""
             rows.append(entity)
         return Response(EntityAdminSerializer(rows, many=True).data)
@@ -214,6 +233,7 @@ class AdminEntityDetailView(AdminBaseView):
         serializer = EntityWriteSerializer(entity, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        entity.refresh_from_db()
         log_admin_action(actor=request.user, module="entities", action="update", target_model="Entity", target_id=entity.id, target_label=entity.name)
         return Response(EntityAdminSerializer(entity).data)
 
@@ -226,19 +246,35 @@ class AdminHierarchyView(AdminBaseView):
         entities = []
         scoped_users = self.scoped_users(request.user)
         for company in self.scoped_companies(request.user).order_by("name"):
-            senior = User.objects.filter(company_id=company.id, assigned_roles__role__key="senior").first()
+            senior = User.objects.filter(
+                company_id=company.id,
+                assigned_roles__role__key="senior",
+                is_active=True,
+            ).first()
             companies.append(
                 {
                     "id": company.id,
                     "name": company.name,
                     "code": company.code,
                     "senior": senior.username if senior else "",
-                    "manager_count": User.objects.filter(company_id=company.id, assigned_roles__role__key="manager").count(),
+                    "manager_count": User.objects.filter(
+                        company_id=company.id,
+                        assigned_roles__role__key="manager",
+                        is_active=True,
+                    ).count(),
                 }
             )
         for entity in self.scoped_entities(request.user).order_by("company__name", "name"):
-            manager = User.objects.filter(entity_id=entity.id, assigned_roles__role__key="manager").first()
-            team_leaders = User.objects.filter(entity_id=entity.id, assigned_roles__role__key="team_leader").order_by("username")
+            manager = User.objects.filter(
+                entity_id=entity.id,
+                assigned_roles__role__key="manager",
+                is_active=True,
+            ).first()
+            team_leaders = User.objects.filter(
+                entity_id=entity.id,
+                assigned_roles__role__key="team_leader",
+                is_active=True,
+            ).order_by("username")
             entities.append(
                 {
                     "id": entity.id,
@@ -261,12 +297,12 @@ class AdminHierarchyView(AdminBaseView):
                 "companies": companies,
                 "entities": entities,
                 "senior_options": list(
-                    scoped_users.filter(assigned_roles__role__key="senior")
+                    scoped_users.filter(assigned_roles__role__key="senior", is_active=True)
                     .values("id", "username", "company_id")
                     .order_by("username")
                 ),
                 "manager_options": list(
-                    scoped_users.filter(assigned_roles__role__key="manager")
+                    scoped_users.filter(assigned_roles__role__key="manager", is_active=True)
                     .values("id", "username", "company_id", "entity_id")
                     .order_by("username")
                 ),
@@ -445,9 +481,28 @@ class AdminRequestDetailView(AdminBaseView):
         serializer.is_valid(raise_exception=True)
         changes = []
         if "target_entity_id" in serializer.validated_data:
-            target_entity = self.scoped_entities(request.user).filter(id=serializer.validated_data["target_entity_id"]).first()
+            new_target_id = serializer.validated_data["target_entity_id"]
+            target_entity = self.scoped_entities(request.user).filter(id=new_target_id).first()
             if target_entity is None:
                 return Response({"detail": "Target entity not found."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Assignment Rule 1: Same company
+            request_company_id = (
+                service_request.company_id or service_request.requester_user.company_id
+            )
+            if target_entity.company_id != request_company_id:
+                return Response(
+                    {"detail": "Target entity must belong to the same company as the request."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+                
+            # Assignment Rule 2: Support/Dev only (No Prod)
+            if target_entity.entity_type == Entity.EntityType.PROD:
+                return Response(
+                    {"detail": "Cannot assign to a production entity. Must be Support or Dev."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             service_request.target_entity = target_entity
             unit = OperationalUnit.objects.filter(code=target_entity.code).first()
             if unit:
@@ -482,7 +537,15 @@ class AdminRequestDetailView(AdminBaseView):
             )
         if changes:
             service_request.save()
-            log_admin_action(actor=request.user, module="requests", action="update", target_model="ServiceRequest", target_id=service_request.id, target_label=service_request.request_number, metadata={"changes": changes})
+            log_admin_action(
+                actor=request.user,
+                module="requests",
+                action="update",
+                target_model="ServiceRequest",
+                target_id=service_request.id,
+                target_label=service_request.request_number,
+                metadata={"changes": changes},
+            )
         return Response(RequestAdminSummarySerializer(service_request).data)
 
 
@@ -506,7 +569,30 @@ class AdminStatusTrackingView(AdminBaseView):
 
     def get(self, request):
         request_qs = self.scoped_requests(request.user)
-        stale_cutoff = timezone.now() - timedelta(days=7)
+        now = timezone.now()
+        
+        # Aging summary based on creation
+        aging_summary = {
+            "under_24h": request_qs.filter(created_at__gte=now - timedelta(hours=24)).count(),
+            "24h_48h": request_qs.filter(
+                created_at__lt=now - timedelta(hours=24), created_at__gte=now - timedelta(hours=48)
+            ).count(),
+            "over_48h": request_qs.filter(created_at__lt=now - timedelta(hours=48)).count(),
+        }
+
+        # Status distribution groups
+        status_groups = {
+            "new": request_qs.filter(status=ServiceRequest.Status.NEW).count(),
+            "active": request_qs.filter(
+                status__in=[ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.IN_PROGRESS]
+            ).count(),
+            "resolved": request_qs.filter(
+                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED]
+            ).count(),
+            "rejected": request_qs.filter(status=ServiceRequest.Status.REJECTED).count(),
+        }
+
+        stale_cutoff = now - timedelta(days=7)
         history = RequestStatusHistory.objects.filter(request__in=request_qs).select_related("request", "changed_by").order_by("-changed_at")[:100]
         stuck = request_qs.filter(
             status__in=[ServiceRequest.Status.NEW, ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.IN_PROGRESS],
@@ -514,6 +600,8 @@ class AdminStatusTrackingView(AdminBaseView):
         )
         return Response(
             {
+                "aging_summary": aging_summary,
+                "status_groups": status_groups,
                 "history": StatusTrackingSerializer(history, many=True).data,
                 "stuck_requests": RequestAdminSummarySerializer(stuck, many=True).data,
             }

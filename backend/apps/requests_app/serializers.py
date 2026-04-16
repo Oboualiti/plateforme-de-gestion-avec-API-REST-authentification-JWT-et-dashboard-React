@@ -65,10 +65,10 @@ class RequestMessageSerializer(serializers.ModelSerializer):
 class RequestSummarySerializer(serializers.ModelSerializer):
     reference_code = serializers.CharField(source="request_number", read_only=True)
     type = serializers.CharField(source="category", read_only=True)
-    target_team_name = serializers.SerializerMethodField()
+    target_entity_name = serializers.SerializerMethodField()
     source_entity_name = serializers.SerializerMethodField()
     creator_name = serializers.CharField(source="requester_user.username", read_only=True)
-    current_assignee_name = serializers.CharField(
+    assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
     )
     company_name = serializers.SerializerMethodField()
@@ -86,9 +86,9 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "created_at",
             "company_name",
             "source_entity_name",
-            "target_team_name",
+            "target_entity_name",
             "creator_name",
-            "current_assignee_name",
+            "assignee_name",
             "target_unit",
             "is_stuck",
         ]
@@ -96,7 +96,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     def get_source_entity_name(self, obj):
         return obj.source_entity.name if obj.source_entity_id else obj.requester_unit.name
 
-    def get_target_team_name(self, obj):
+    def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
 
     def get_company_name(self, obj):
@@ -218,11 +218,11 @@ class RequestTeamReassignmentEventSerializer(serializers.ModelSerializer):
 class RequestDetailSerializer(serializers.ModelSerializer):
     reference_code = serializers.CharField(source="request_number", read_only=True)
     type = serializers.CharField(source="category", read_only=True)
-    target_team_name = serializers.SerializerMethodField()
+    target_entity_name = serializers.SerializerMethodField()
     source_entity_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     requester_name = serializers.CharField(source="requester_user.username", read_only=True)
-    current_assignee_name = serializers.CharField(
+    assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
     )
     comments = RequestCommentSerializer(source="messages", many=True, read_only=True)
@@ -236,6 +236,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     can_update_status = serializers.SerializerMethodField()
     can_reassign_target_team = serializers.SerializerMethodField()
     available_reassignment_targets = serializers.SerializerMethodField()
+    potential_assignees = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
 
@@ -260,11 +261,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "source_entity_name",
             "target_entity",
             "target_unit",
-            "target_team_name",
+            "target_entity_name",
             "requester_user",
             "requester_name",
             "current_assignee",
-            "current_assignee_name",
+            "assignee_name",
             "comments",
             "status_history",
             "assignment_history",
@@ -275,6 +276,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "can_update_status",
             "can_reassign_target_team",
             "available_reassignment_targets",
+            "potential_assignees",
             "is_stuck",
         ]
 
@@ -287,7 +289,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     def get_source_entity_name(self, obj):
         return obj.source_entity.name if obj.source_entity_id else obj.requester_unit.name
 
-    def get_target_team_name(self, obj):
+    def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
 
     def get_company_name(self, obj):
@@ -314,6 +316,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
         targets = self.context.get("available_reassignment_targets") or []
         return targets
 
+    def get_potential_assignees(self, obj):
+        return self.context.get("potential_assignees") or []
+
     def get_is_stuck(self, obj):
         return bool(getattr(obj, "is_stuck", False))
 
@@ -329,7 +334,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
                 "kind": "sent",
                 "timestamp": obj.created_at,
                 "title": "Sent to target team",
-                "description": f"Sent from {self.get_source_entity_name(obj)} to {self.get_target_team_name(obj)}.",
+                "description": f"Sent from {self.get_source_entity_name(obj)} to {self.get_target_entity_name(obj)}.",
             },
         ]
 
@@ -421,3 +426,8 @@ class RequestStatusUpdateSerializer(serializers.Serializer):
                 {"note": "A resolution note is required for this status."}
             )
         return attrs
+
+
+class RequestAssignUserSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    note = serializers.CharField(required=False, allow_blank=True)

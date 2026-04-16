@@ -10,16 +10,13 @@ const enterpriseSections = [
   createSection('organization', 'Organization', 'org', [
     createItem('Companies', '/admin/companies'),
     createItem('Entities', '/admin/entities'),
-    createItem('Hierarchy', '/admin/hierarchy'),
   ]),
   createSection('access-control', 'Access Control', 'lock', [
     createItem('Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
     createItem('Roles', '/admin/roles'),
   ]),
   createSection('operations', 'Operations', 'ops', [
-    createItem('Requests', '/admin/requests'),
-    createItem('Assignments', '/admin/assignments'),
-    createItem('Status Tracking', '/admin/status-tracking'),
+    createItem('Requests', '/requests'),
   ]),
   createSection('monitoring', 'Monitoring', 'monitor', [
     createItem('Reports', '/admin/reports'),
@@ -43,7 +40,7 @@ const roleVariantMap = {
     auditLogsSection,
   ],
   senior: [
-    createSection('oversight', 'Overview', 'home', [
+    createSection('platform', 'Platform', 'home', [
       createItem('Dashboard', '/admin/dashboard', ['/dashboard']),
     ]),
     createSection('company-users', 'Users', 'team', [
@@ -60,25 +57,15 @@ const roleVariantMap = {
       createItem('Hierarchy', '/admin/hierarchy'),
     ]),
     createSection('requests', 'Requests', 'ops', [
-      createItem('Team Requests', '/admin/requests', ['/requests']),
-    ]),
-    createSection('assignments', 'Assignments', 'assign', [
-      createItem('Assignments', '/admin/assignments'),
-    ]),
-    createSection('tracking', 'Tracking', 'track', [
-      createItem('Status Tracking', '/admin/status-tracking'),
+      createItem('Team Requests', '/requests'),
+      createItem('Requests', '/requests'),
       createItem('Reports', '/admin/reports'),
     ]),
     auditLogsSection,
   ],
   team_leader: [
-    createSection('team-queue', 'Team Queue', 'queue', [
-      createItem('Incoming Queue', '/admin/requests', ['/requests']),
-      createItem('Assignments', '/admin/assignments'),
-    ]),
     createSection('requests', 'Requests', 'ops', [
-      createItem('Open Requests', '/requests'),
-      createItem('Request Tracking', '/admin/status-tracking'),
+      createItem('Team Requests', '/requests'),
     ]),
     createSection('team-members', 'Team Members', 'team', [
       createItem('Members', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
@@ -92,23 +79,16 @@ const roleVariantMap = {
     createSection('workspace', 'My Workspace', 'home', [
       createItem('Create Request', '/requests/create'),
       createItem('My Requests', '/requests'),
-      createItem('Request Tracking', '/requests'),
     ]),
   ],
   support_team_user: [
     createSection('team-queue', 'Team Queue', 'queue', [
-      createItem('Incoming Requests', '/requests'),
-      createItem('Assigned to Me', '/requests'),
-      createItem('Status Updates', '/requests'),
-      createItem('Queue History', '/requests'),
+      createItem('Requests', '/requests'),
     ]),
   ],
   development_team_user: [
     createSection('dev-queue', 'Dev Queue', 'queue', [
-      createItem('Incoming Requests', '/requests'),
-      createItem('Assigned to Me', '/requests'),
-      createItem('In Progress', '/requests'),
-      createItem('Completed / Tracking', '/requests'),
+      createItem('Requests', '/requests'),
     ]),
   ],
   default: [

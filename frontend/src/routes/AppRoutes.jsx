@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import MainLayout from '../components/layout/MainLayout'
 import { useAuth } from '../context/AuthContext'
@@ -17,7 +17,6 @@ import ProtectedRoute from './ProtectedRoute'
 
 function LoginPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { login, isAuthenticated } = useAuth()
   const [form, setForm] = useState({ username: 'prod', password: 'test12345' })
   const [loading, setLoading] = useState(false)
@@ -98,13 +97,13 @@ function LoginPage() {
             <span>Alternative access</span>
           </div>
 
-          <button type="button" className="ghost-button login-sso-button">
+          <button type="button" className="ghost-button login-sso-button" disabled title="SSO is not configured yet">
             Continue with SSO
           </button>
 
           <div className="login-footer">
             <p>
-              Need help? <span className="inline-link">Contact support</span>
+              Need help? <span className="muted-text">Contact support</span>
             </p>
             <div className="login-footer-links">
               <span>Privacy</span>
