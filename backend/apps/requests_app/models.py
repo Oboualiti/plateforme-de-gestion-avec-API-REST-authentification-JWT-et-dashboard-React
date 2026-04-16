@@ -199,3 +199,32 @@ class RequestMessage(models.Model):
 
     def __str__(self):
         return f"Message {self.id} on {self.request_id}"
+
+
+class RequestTeamReassignmentHistory(models.Model):
+    request = models.ForeignKey(
+        ServiceRequest, on_delete=models.CASCADE, related_name="team_reassignment_history"
+    )
+    old_target_entity = models.ForeignKey(
+        Entity,
+        on_delete=models.PROTECT,
+        related_name="request_team_reassignments_from",
+    )
+    new_target_entity = models.ForeignKey(
+        Entity,
+        on_delete=models.PROTECT,
+        related_name="request_team_reassignments_to",
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="request_team_reassignments_made",
+    )
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return (
+            f"{self.request_id}: {self.old_target_entity_id}"
+            f" -> {self.new_target_entity_id}"
+        )

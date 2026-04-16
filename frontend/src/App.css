@@ -122,6 +122,10 @@
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
 }
 
+.request-conversation-grid {
+  grid-template-columns: minmax(360px, 1.1fr) minmax(0, 1fr);
+}
+
 .summary-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 18px 0;
@@ -158,6 +162,9 @@
 .subline {
   margin-top: 4px;
   font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  opacity: 1;
 }
 
 .summary-card span,
@@ -230,7 +237,7 @@ button:disabled {
 
 .filter-bar {
   display: grid;
-  grid-template-columns: 1.2fr repeat(3, minmax(160px, 220px));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
@@ -301,12 +308,54 @@ button:disabled {
   background: rgba(248, 250, 252, 0.72);
 }
 
+.thread-card {
+  max-width: 82%;
+}
+
+.discussion-panel {
+  padding: 28px;
+}
+
+.discussion-panel .thread-list {
+  gap: 14px;
+  min-height: 280px;
+}
+
+.discussion-panel .stack-form {
+  margin-top: 22px;
+}
+
+.thread-card.incoming {
+  justify-self: start;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.thread-card.outgoing {
+  justify-self: end;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.24);
+}
+
 .thread-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.thread-head strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.thread-card p {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.55;
+  font-weight: 700;
+  color: #0b1220;
 }
 
 .button-stack {
@@ -404,6 +453,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .request-conversation-grid {
+    grid-template-columns: 1fr;
+  }
+
   .permission-card,
   .topbar,
   .panel-header {
@@ -414,6 +467,10 @@ button:disabled {
   .layout-content,
   .sidebar {
     padding: 18px;
+  }
+
+  .thread-card {
+    max-width: 100%;
   }
 
   .filter-bar {

@@ -1,5 +1,4 @@
 from rest_framework import serializers
-
 from apps.permissions_app.services import get_user_role_keys
 
 from .models import (
@@ -8,6 +7,7 @@ from .models import (
     RequestAssignmentHistory,
     RequestMessage,
     RequestStatusHistory,
+    RequestTeamReassignmentHistory,
     ServiceRequest,
     UnitMembership,
 )
@@ -72,6 +72,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
         source="current_assignee.username", read_only=True
     )
     company_name = serializers.SerializerMethodField()
+    is_stuck = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -89,6 +90,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "creator_name",
             "current_assignee_name",
             "target_unit",
+            "is_stuck",
         ]
 
     def get_source_entity_name(self, obj):
@@ -103,6 +105,9 @@ class RequestSummarySerializer(serializers.ModelSerializer):
         if obj.requester_user.company_id:
             return obj.requester_user.company.name
         return ""
+
+    def get_is_stuck(self, obj):
+        return bool(getattr(obj, "is_stuck", False))
 
 
 class RequestCommentSerializer(serializers.ModelSerializer):
@@ -181,6 +186,35 @@ class RequestAssignmentEventSerializer(serializers.ModelSerializer):
         return get_user_role_keys(obj.assignee)
 
 
+class RequestTeamReassignmentEventSerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.CharField(source="changed_by.username", read_only=True)
+    changed_by_role_keys = serializers.SerializerMethodField()
+    old_target_entity_name = serializers.CharField(
+        source="old_target_entity.name", read_only=True
+    )
+    new_target_entity_name = serializers.CharField(
+        source="new_target_entity.name", read_only=True
+    )
+
+    class Meta:
+        model = RequestTeamReassignmentHistory
+        fields = [
+            "id",
+            "old_target_entity",
+            "old_target_entity_name",
+            "new_target_entity",
+            "new_target_entity_name",
+            "changed_by",
+            "changed_by_name",
+            "changed_by_role_keys",
+            "note",
+            "created_at",
+        ]
+
+    def get_changed_by_role_keys(self, obj):
+        return get_user_role_keys(obj.changed_by)
+
+
 class RequestDetailSerializer(serializers.ModelSerializer):
     reference_code = serializers.CharField(source="request_number", read_only=True)
     type = serializers.CharField(source="category", read_only=True)
@@ -194,9 +228,15 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     comments = RequestCommentSerializer(source="messages", many=True, read_only=True)
     status_history = RequestHistorySerializer(many=True, read_only=True)
     assignment_history = RequestAssignmentEventSerializer(many=True, read_only=True)
+    team_reassignment_history = RequestTeamReassignmentEventSerializer(
+        many=True, read_only=True
+    )
     role_keys = serializers.SerializerMethodField()
     can_assign_to_me = serializers.SerializerMethodField()
     can_update_status = serializers.SerializerMethodField()
+    can_reassign_target_team = serializers.SerializerMethodField()
+    available_reassignment_targets = serializers.SerializerMethodField()
+    is_stuck = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
 
     class Meta:
@@ -228,10 +268,14 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "comments",
             "status_history",
             "assignment_history",
+            "team_reassignment_history",
             "activity_timeline",
             "role_keys",
             "can_assign_to_me",
             "can_update_status",
+            "can_reassign_target_team",
+            "available_reassignment_targets",
+            "is_stuck",
         ]
 
     def get_role_keys(self, obj):
@@ -263,6 +307,16 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     def get_can_update_status(self, obj):
         return bool(self.context.get("can_manage_incoming_request"))
 
+    def get_can_reassign_target_team(self, obj):
+        return bool(self.context.get("can_reassign_target_team"))
+
+    def get_available_reassignment_targets(self, obj):
+        targets = self.context.get("available_reassignment_targets") or []
+        return targets
+
+    def get_is_stuck(self, obj):
+        return bool(getattr(obj, "is_stuck", False))
+
     def get_activity_timeline(self, obj):
         events = [
             {
@@ -286,6 +340,20 @@ class RequestDetailSerializer(serializers.ModelSerializer):
                     "timestamp": item.created_at,
                     "title": "Assigned",
                     "description": f"{item.assigned_by.username} assigned the request to {item.assignee.username}.",
+                    "note": item.note,
+                }
+            )
+
+        for item in obj.team_reassignment_history.all():
+            events.append(
+                {
+                    "kind": "reassignment",
+                    "timestamp": item.created_at,
+                    "title": "Target team changed",
+                    "description": (
+                        f"{item.changed_by.username} reassigned target team from "
+                        f"{item.old_target_entity.name} to {item.new_target_entity.name}."
+                    ),
                     "note": item.note,
                 }
             )
@@ -321,6 +389,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             )
 
         return sorted(events, key=lambda event: event["timestamp"], reverse=True)
+
+
+class RequestTargetReassignSerializer(serializers.Serializer):
+    target_team = serializers.IntegerField()
+    note = serializers.CharField(required=False, allow_blank=True)
 
 
 class RequestCreateSerializer(serializers.Serializer):

@@ -2,7 +2,9 @@ from django.urls import path
 
 from .views import (
     ManageableUserCrudView,
+    ManageableUserExportView,
     ManageableUserFormOptionsView,
+    ManageableUserImportView,
     ManageableUserListView,
     ManageUserDetailView,
     ManageUserPermissionOverrideView,
@@ -10,6 +12,16 @@ from .views import (
 
 urlpatterns = [
     path("users/manageable/", ManageableUserListView.as_view(), name="manageable-users"),
+    path(
+        "users/manageable/export/",
+        ManageableUserExportView.as_view(),
+        name="manageable-users-export",
+    ),
+    path(
+        "users/manageable/import/",
+        ManageableUserImportView.as_view(),
+        name="manageable-users-import",
+    ),
     path(
         "users/manageable/options/",
         ManageableUserFormOptionsView.as_view(),

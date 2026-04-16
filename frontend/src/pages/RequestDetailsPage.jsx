@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
 const statusClassMap = {
@@ -37,6 +38,7 @@ function formatTimelineTitle(item) {
 
 function RequestDetailsPage() {
   const { requestId } = useParams()
+  const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
   const [comment, setComment] = useState('')
   const [statusValue, setStatusValue] = useState('IN_PROGRESS')
@@ -45,6 +47,8 @@ function RequestDetailsPage() {
     busy: false,
     error: '',
   })
+  const [reassignTarget, setReassignTarget] = useState('')
+  const [reassignNote, setReassignNote] = useState('')
 
   useEffect(() => {
     let active = true
@@ -54,6 +58,7 @@ function RequestDetailsPage() {
         if (active) {
           setState({ loading: false, error: '', request: response.data })
           setStatusValue(response.data.status)
+          setReassignTarget(String(response.data.target_entity || ''))
         }
       } catch (error) {
         if (active) {
@@ -71,14 +76,48 @@ function RequestDetailsPage() {
     }
   }, [requestId])
 
+  useEffect(() => {
+    if (!state.request) return undefined
+    let active = true
+    const intervalId = setInterval(async () => {
+      try {
+        const response = await api.get(`/requests/${requestId}/`)
+        if (!active) return
+        const currentComments = state.request.comments || []
+        const nextComments = response.data.comments || []
+        if (nextComments.length !== currentComments.length) {
+          setState((current) => ({ ...current, request: response.data }))
+          setStatusValue(response.data.status)
+          setReassignTarget(String(response.data.target_entity || ''))
+          return
+        }
+        const currentLast = currentComments[currentComments.length - 1]
+        const nextLast = nextComments[nextComments.length - 1]
+        if ((currentLast?.id || null) !== (nextLast?.id || null)) {
+          setState((current) => ({ ...current, request: response.data }))
+          setStatusValue(response.data.status)
+          setReassignTarget(String(response.data.target_entity || ''))
+        }
+      } catch {
+      }
+    }, 2500)
+
+    return () => {
+      active = false
+      clearInterval(intervalId)
+    }
+  }, [requestId, state.request])
+
   async function refreshFromResponse(requestPromise) {
     setActionState({ busy: true, error: '' })
     try {
       const response = await requestPromise
       setState((current) => ({ ...current, request: response.data }))
       setStatusValue(response.data.status)
+      setReassignTarget(String(response.data.target_entity || ''))
       setComment('')
       setNote('')
+      setReassignNote('')
       setActionState({ busy: false, error: '' })
     } catch (error) {
       setActionState({
@@ -106,6 +145,17 @@ function RequestDetailsPage() {
 
   async function assignToMe() {
     await refreshFromResponse(api.post(`/requests/${requestId}/assign/`))
+  }
+
+  async function submitReassign(event) {
+    event.preventDefault()
+    if (!reassignTarget) return
+    await refreshFromResponse(
+      api.post(`/requests/${requestId}/reassign/`, {
+        target_team: Number(reassignTarget),
+        note: reassignNote,
+      }),
+    )
   }
 
   if (state.loading) {
@@ -200,14 +250,17 @@ function RequestDetailsPage() {
         {actionState.error && <p className="error-text">{actionState.error}</p>}
       </section>
 
-      <section className="detail-grid">
-        <section className="panel">
+      <section className="detail-grid request-conversation-grid">
+        <section className="panel discussion-panel">
           <p className="eyebrow">Comments</p>
           <h2>Discussion</h2>
           <div className="thread-list">
             {request.comments.length === 0 && <p className="muted-text">No comments yet.</p>}
             {request.comments.map((item) => (
-              <article key={item.id} className="thread-card">
+              <article
+                key={item.id}
+                className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}
+              >
                 <div className="thread-head">
                   <div>
                     <strong>{item.sender_name}</strong>
@@ -234,7 +287,7 @@ function RequestDetailsPage() {
           </form>
         </section>
 
-        <section className="panel">
+        <section className="panel timeline-panel">
           <p className="eyebrow">Timeline</p>
           <h2>Activity</h2>
           <div className="timeline-list">
@@ -276,6 +329,36 @@ function RequestDetailsPage() {
             />
             <button disabled={actionState.busy || (needsResolutionNote && !note.trim())} type="submit">
               Update status
+            </button>
+          </form>
+        </section>
+      )}
+
+      {request.can_reassign_target_team && (
+        <section className="panel">
+          <p className="eyebrow">Admin actions</p>
+          <h2>Reassign target team</h2>
+          <form className="status-form" onSubmit={submitReassign}>
+            <select
+              className="app-select"
+              value={reassignTarget}
+              onChange={(event) => setReassignTarget(event.target.value)}
+            >
+              <option value="">Select target team</option>
+              {(request.available_reassignment_targets || []).map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.label}
+                </option>
+              ))}
+            </select>
+            <textarea
+              className="app-textarea"
+              value={reassignNote}
+              onChange={(event) => setReassignNote(event.target.value)}
+              placeholder="Optional note for reassignment"
+            />
+            <button disabled={actionState.busy || !reassignTarget} type="submit">
+              Reassign team
             </button>
           </form>
         </section>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
@@ -20,6 +20,9 @@ function PermissionManagementPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [entityTypeFilter, setEntityTypeFilter] = useState('all')
   const [actionMessage, setActionMessage] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState('')
+  const importInputRef = useRef(null)
   const isSuccessMessage = actionMessage && !actionMessage.toLowerCase().includes('could not')
   const showEntityTypeFilter = useMemo(() => {
     const roleKeys = user?.role_keys || []
@@ -124,6 +127,68 @@ function PermissionManagementPage() {
     navigate(`/admin/permissions/${userId}`)
   }
 
+  async function exportUsers(format) {
+    setExporting(format)
+    setActionMessage('')
+    try {
+      const response = await api.get(`/admin/users/manageable/export/?file_format=${format}`, {
+        responseType: 'blob',
+      })
+      const url = window.URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = format === 'xlsx' ? 'users_export.xlsx' : 'users_export.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      setActionMessage(`Users exported as ${format.toUpperCase()}.`)
+    } catch (error) {
+      setActionMessage(error.response?.data?.detail || 'Could not export users.')
+    } finally {
+      setExporting('')
+    }
+  }
+
+  async function importUsers(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    setActionMessage('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await api.post('/admin/users/manageable/import/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const data = response.data || {}
+      if (data.created_users?.length) {
+        setState((current) => {
+          const existingIds = new Set(current.users.map((item) => item.id))
+          const additions = data.created_users.filter((item) => !existingIds.has(item.id))
+          return { ...current, users: [...additions, ...current.users] }
+        })
+      }
+      const summary = `Import done. Created ${data.created_count || 0} user(s). Errors: ${data.error_count || 0}.`
+      if (data.error_count) {
+        const firstError = data.errors?.[0]
+        const errorKey = firstError ? Object.keys(firstError.errors || {})[0] : ''
+        const errorText = firstError && errorKey
+          ? `${errorKey}: ${Array.isArray(firstError.errors[errorKey]) ? firstError.errors[errorKey][0] : firstError.errors[errorKey]}`
+          : 'Check import rows.'
+        setActionMessage(`${summary} First error at line ${firstError?.line || '-'} (${errorText})`)
+      } else {
+        setActionMessage(summary)
+      }
+    } catch (error) {
+      const detail = error.response?.data?.detail
+      setActionMessage(typeof detail === 'string' ? detail : 'Could not import users.')
+    } finally {
+      setImporting(false)
+      event.target.value = ''
+    }
+  }
+
   return (
     <main className="page-content">
       <section className="panel">
@@ -139,6 +204,29 @@ function PermissionManagementPage() {
             <Link className="pill-link" to="/admin/users/create">
               Add user
             </Link>
+            <button type="button" className="ghost-button" onClick={() => exportUsers('csv')} disabled={Boolean(exporting)}>
+              {exporting === 'csv' ? 'Exporting CSV...' : 'Export CSV'}
+            </button>
+            <button type="button" className="ghost-button" onClick={() => exportUsers('xlsx')} disabled={Boolean(exporting)}>
+              {exporting === 'xlsx' ? 'Exporting Excel...' : 'Export Excel'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importing}
+            >
+              {importing ? 'Importing...' : 'Import CSV/Excel'}
+            </button>
+            <input
+              ref={importInputRef}
+              id="import-users-file"
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={importUsers}
+              disabled={importing}
+              style={{ display: 'none' }}
+            />
           </div>
         )}
         {!state.loading && !state.error && actionMessage && (

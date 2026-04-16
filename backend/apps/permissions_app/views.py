@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
@@ -17,6 +18,13 @@ from .serializers import (
     UserPermissionAdminDetailSerializer,
     UserPermissionOverrideSerializer,
     UserRoleUpdateSerializer,
+)
+from .import_export import (
+    USER_IMPORT_COLUMNS,
+    build_users_csv,
+    build_users_xlsx,
+    parse_csv_file,
+    parse_xlsx_file,
 )
 from .services import (
     ROLE_HIERARCHY,
@@ -216,6 +224,129 @@ class ManageableUserCrudView(BaseManageUsersView):
                 )
         target.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ManageableUserExportView(BaseManageUsersView):
+    def get(self, request):
+        export_format = (
+            request.query_params.get("file_format")
+            or request.query_params.get("format")
+            or "csv"
+        ).strip().lower()
+        if export_format not in {"csv", "xlsx"}:
+            return Response(
+                {"detail": "Unsupported export format. Use csv or xlsx."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = (
+            get_visible_users_queryset(request.user)
+            .select_related("company", "entity", "team_leader")
+            .prefetch_related("assigned_roles__role")
+        )
+        rows = []
+        for user in queryset:
+            role_key = (
+                user.assigned_roles.select_related("role")
+                .values_list("role__key", flat=True)
+                .first()
+                or ""
+            )
+            rows.append(
+                {
+                    "username": user.username,
+                    "email": user.email or "",
+                    "first_name": user.first_name or "",
+                    "last_name": user.last_name or "",
+                    "role_key": role_key,
+                    "company_id": user.company_id or "",
+                    "entity_id": user.entity_id or "",
+                    "team_leader_id": user.team_leader_id or "",
+                    "is_active": "true" if user.is_active else "false",
+                    "password": "",
+                    "job_title": user.job_title or "",
+                    "phone_number": user.phone_number or "",
+                }
+            )
+
+        if export_format == "csv":
+            content = build_users_csv(rows)
+            response = HttpResponse(content, content_type="text/csv; charset=utf-8")
+            response["Content-Disposition"] = 'attachment; filename="users_export.csv"'
+            return response
+
+        content = build_users_xlsx(rows)
+        response = HttpResponse(
+            content,
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = 'attachment; filename="users_export.xlsx"'
+        return response
+
+
+class ManageableUserImportView(BaseManageUsersView):
+    def post(self, request):
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response(
+                {"detail": "File is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        file_name = (upload.name or "").lower()
+        try:
+            if file_name.endswith(".csv"):
+                parsed_rows = parse_csv_file(upload)
+            elif file_name.endswith(".xlsx"):
+                parsed_rows = parse_xlsx_file(upload)
+            else:
+                return Response(
+                    {"detail": "Unsupported file type. Upload .csv or .xlsx."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_count = 0
+        created_users = []
+        errors = []
+        actor_level = get_user_max_role_level(request.user)
+        for item in parsed_rows:
+            payload = item["payload"]
+            serializer = ManagedUserCreateSerializer(
+                data=payload,
+                context={"request": request, "actor_level": actor_level},
+            )
+            if not serializer.is_valid():
+                errors.append({"line": item["line"], "errors": serializer.errors})
+                continue
+            user = serializer.create()
+            if payload.get("job_title"):
+                user.job_title = payload["job_title"]
+            if payload.get("phone_number"):
+                user.phone_number = payload["phone_number"]
+            if payload.get("job_title") or payload.get("phone_number"):
+                user.save(update_fields=["job_title", "phone_number"])
+            created_count += 1
+            created_users.append(
+                ManageableUserListSerializer(
+                    user, context={"actor_level": actor_level}
+                ).data
+            )
+
+        return Response(
+            {
+                "columns": USER_IMPORT_COLUMNS,
+                "total_rows": len(parsed_rows),
+                "created_count": created_count,
+                "error_count": len(errors),
+                "created_users": created_users,
+                "errors": errors,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ManageUserDetailView(BaseManageUsersView):

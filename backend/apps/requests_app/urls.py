@@ -9,6 +9,7 @@ from .views import (
     RequestAssignToMeView,
     RequestMessageViewSet,
     RequestListCreateView,
+    RequestTargetReassignView,
     RequestStatusUpdateView,
     RequestStatusHistoryViewSet,
     ServiceRequestViewSet,
@@ -44,5 +45,10 @@ urlpatterns = [
         "requests/<int:request_id>/assign/",
         RequestAssignToMeView.as_view(),
         name="requests-assign",
+    ),
+    path(
+        "requests/<int:request_id>/reassign/",
+        RequestTargetReassignView.as_view(),
+        name="requests-reassign",
     ),
 ] + router.urls
