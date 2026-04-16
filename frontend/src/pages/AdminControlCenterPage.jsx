@@ -1,0 +1,669 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+
+import { api } from '../lib/api'
+
+const sectionConfig = {
+  dashboard: { title: 'Dashboard', endpoint: '/admin/dashboard/' },
+  companies: { title: 'Companies', endpoint: '/admin/companies/' },
+  entities: { title: 'Entities', endpoint: '/admin/entities/' },
+  hierarchy: { title: 'Hierarchy', endpoint: '/admin/hierarchy/' },
+  users: { title: 'Users', endpoint: '/admin/users/manageable/' },
+  roles: { title: 'Roles', endpoint: '/admin/roles/' },
+  'permissions-catalog': { title: 'Permissions', endpoint: '/admin/permissions/catalog/' },
+  'delegation-rules': { title: 'Delegation rules', endpoint: '/admin/delegation-rules/' },
+  requests: { title: 'Requests', endpoint: '/admin/requests/' },
+  assignments: { title: 'Assignments', endpoint: '/admin/assignments/' },
+  'status-tracking': { title: 'Status tracking', endpoint: '/admin/status-tracking/' },
+  'audit-logs': { title: 'Audit logs', endpoint: '/admin/audit-logs/' },
+  notifications: { title: 'Notifications', endpoint: '/admin/notifications/' },
+  reports: { title: 'Reports', endpoint: '/admin/reports/' },
+}
+
+function useSectionKey() {
+  const location = useLocation()
+  const parts = location.pathname.split('/').filter(Boolean)
+  return parts[1] || 'dashboard'
+}
+
+function AdminControlCenterPage() {
+  const navigate = useNavigate()
+  const sectionKey = useSectionKey()
+  const config = sectionConfig[sectionKey] || sectionConfig.dashboard
+  const [state, setState] = useState({ loading: true, error: '', data: null })
+  const [message, setMessage] = useState('')
+  const [companyForm, setCompanyForm] = useState({ name: '', code: '', is_active: true })
+  const [entityForm, setEntityForm] = useState({
+    name: '',
+    code: '',
+    entity_type: 'PROD',
+    company: '',
+    is_active: true,
+  })
+  const [selectedPermissionUserId, setSelectedPermissionUserId] = useState('')
+
+  async function loadSection() {
+    setState({ loading: true, error: '', data: null })
+    try {
+      const params =
+        sectionKey === 'permissions-catalog' && selectedPermissionUserId
+          ? { params: { user_id: selectedPermissionUserId } }
+          : undefined
+      const response = await api.get(config.endpoint, params)
+      setState({ loading: false, error: '', data: response.data })
+    } catch (error) {
+      setState({
+        loading: false,
+        error: error.response?.data?.detail || 'Could not load admin section.',
+        data: null,
+      })
+    }
+  }
+
+  useEffect(() => {
+    loadSection()
+  }, [sectionKey, selectedPermissionUserId])
+
+  async function submitCompany(event) {
+    event.preventDefault()
+    try {
+      await api.post('/admin/companies/', companyForm)
+      setCompanyForm({ name: '', code: '', is_active: true })
+      setMessage('Company created.')
+      loadSection()
+    } catch (error) {
+      setMessage(error.response?.data?.detail || 'Could not create company.')
+    }
+  }
+
+  async function submitEntity(event) {
+    event.preventDefault()
+    try {
+      await api.post('/admin/entities/', {
+        ...entityForm,
+        company: Number(entityForm.company),
+      })
+      setEntityForm({ name: '', code: '', entity_type: 'PROD', company: '', is_active: true })
+      setMessage('Entity created.')
+      loadSection()
+    } catch (error) {
+      setMessage(error.response?.data?.detail || 'Could not create entity.')
+    }
+  }
+
+  async function patchRecord(endpoint, payload, successMessage) {
+    try {
+      await api.patch(endpoint, payload)
+      setMessage(successMessage)
+      loadSection()
+    } catch (error) {
+      setMessage(error.response?.data?.detail || 'Could not save changes.')
+    }
+  }
+
+  async function saveRolePermissions(roleId, permissionKeys) {
+    await patchRecord(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys }, 'Role permissions updated.')
+  }
+
+  async function saveDelegation(roleId, permissionKeys) {
+    await patchRecord(`/admin/delegation-rules/${roleId}/`, { permission_keys: permissionKeys }, 'Delegation rules updated.')
+  }
+
+  const sectionBody = useMemo(() => {
+    const data = state.data
+    if (!data) return null
+
+    if (sectionKey === 'dashboard') {
+      return (
+        <>
+          <div className="summary-grid">
+            {Object.entries(data.totals || {}).map(([key, value]) => (
+              <article key={key} className="summary-card">
+                <span>{key.replaceAll('_', ' ')}</span>
+                <strong>{value}</strong>
+              </article>
+            ))}
+            {Object.entries(data.queue || {}).map(([key, value]) => (
+              <article key={key} className="summary-card">
+                <span>{key.replaceAll('_', ' ')}</span>
+                <strong>{value}</strong>
+              </article>
+            ))}
+          </div>
+          <section className="detail-grid admin-detail-grid">
+            <div className="panel">
+              <p className="eyebrow">Requests</p>
+              <h2>Requests by status</h2>
+              <div className="thread-list">
+                {(data.requests_by_status || []).map((item) => (
+                  <article key={item.status} className="thread-card">
+                    <strong>{item.status}</strong>
+                    <p className="muted-text">{item.total} requests</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+            <div className="panel">
+              <p className="eyebrow">Activity</p>
+              <h2>Recent activity</h2>
+              <div className="timeline-list">
+                {(data.recent_activity || []).map((item) => (
+                  <article key={`${item.id}-${item.created_at}`} className="timeline-card">
+                    <strong>{item.action}</strong>
+                    <p>{item.target_label || item.target_model || 'Platform event'}</p>
+                    <p className="muted-text">
+                      {item.actor_name || '-'} | {new Date(item.created_at).toLocaleString()}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      )
+    }
+
+    if (sectionKey === 'companies') {
+      return (
+        <>
+          <section className="panel">
+            <p className="eyebrow">New company</p>
+            <h2>Add company</h2>
+            <form className="filter-bar" onSubmit={submitCompany}>
+              <input value={companyForm.name} onChange={(event) => setCompanyForm((current) => ({ ...current, name: event.target.value }))} placeholder="Company name" required />
+              <input value={companyForm.code} onChange={(event) => setCompanyForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" required />
+              <select className="app-select" value={String(companyForm.is_active)} onChange={(event) => setCompanyForm((current) => ({ ...current, is_active: event.target.value === 'true' }))}>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+              <button type="submit">Create</button>
+            </form>
+          </section>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Code</th>
+                  <th>Senior</th>
+                  <th>Entities</th>
+                  <th>Users</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.name}</td>
+                    <td>{item.code}</td>
+                    <td>{item.senior_name || '-'}</td>
+                    <td>{item.entity_count}</td>
+                    <td>{item.user_count}</td>
+                    <td>{item.is_active ? 'Active' : 'Inactive'}</td>
+                    <td>
+                      <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}>
+                        {item.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )
+    }
+
+    if (sectionKey === 'entities') {
+      const companies = Array.from(new Map(data.map((item) => [item.company, { id: item.company, name: item.company_name }])).values())
+      return (
+        <>
+          <section className="panel">
+            <p className="eyebrow">New entity</p>
+            <h2>Add entity</h2>
+            <form className="filter-bar" onSubmit={submitEntity}>
+              <input value={entityForm.name} onChange={(event) => setEntityForm((current) => ({ ...current, name: event.target.value }))} placeholder="Entity name" required />
+              <input value={entityForm.code} onChange={(event) => setEntityForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" required />
+              <select className="app-select" value={entityForm.entity_type} onChange={(event) => setEntityForm((current) => ({ ...current, entity_type: event.target.value }))}>
+                <option value="PROD">Prod</option>
+                <option value="SUPPORT">Support</option>
+                <option value="TDEV">Dev</option>
+              </select>
+              <select className="app-select" value={entityForm.company} onChange={(event) => setEntityForm((current) => ({ ...current, company: event.target.value }))} required>
+                <option value="">Select company</option>
+                {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <button type="submit">Create</button>
+            </form>
+          </section>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Type</th>
+                  <th>Manager</th>
+                  <th>Users</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.name}</td>
+                    <td>{item.company_name}</td>
+                    <td>{item.entity_type}</td>
+                    <td>{item.manager_name || '-'}</td>
+                    <td>{item.user_count}</td>
+                    <td>{item.is_active ? 'Active' : 'Inactive'}</td>
+                    <td>
+                      <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}>
+                        {item.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )
+    }
+
+    if (sectionKey === 'hierarchy') {
+      return (
+        <section className="detail-grid admin-detail-grid">
+          <div className="panel">
+            <p className="eyebrow">Company chain</p>
+            <h2>Seniors by company</h2>
+            <div className="timeline-list">
+              {(data.companies || []).map((item) => (
+                <article key={item.id} className="timeline-card">
+                  <strong>{item.name}</strong>
+                  <p className="muted-text">Senior: {item.senior || '-'}</p>
+                  <select className="app-select" defaultValue="" onChange={(event) => event.target.value && patchRecord(`/admin/hierarchy/companies/${item.id}/`, { senior_user_id: Number(event.target.value) }, 'Senior assignment updated.')}>
+                    <option value="">Assign senior</option>
+                    {(data.senior_options || []).filter((option) => option.company_id === item.id).map((option) => <option key={option.id} value={option.id}>{option.username}</option>)}
+                  </select>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div className="panel">
+            <p className="eyebrow">Entity chain</p>
+            <h2>Managers, TLs, users</h2>
+            <div className="timeline-list">
+              {(data.entities || []).map((item) => (
+                <article key={item.id} className="timeline-card">
+                  <strong>{item.name}</strong>
+                  <p className="muted-text">{item.company_name} | {item.entity_type}</p>
+                  <p>Manager: {item.manager || '-'}</p>
+                  <select className="app-select" defaultValue="" onChange={(event) => event.target.value && patchRecord(`/admin/hierarchy/entities/${item.id}/`, { manager_user_id: Number(event.target.value) }, 'Manager assignment updated.')}>
+                    <option value="">Assign manager</option>
+                    {(data.manager_options || []).filter((option) => option.entity_id === item.id).map((option) => <option key={option.id} value={option.id}>{option.username}</option>)}
+                  </select>
+                  <div className="tag-row wrap-row">
+                    {(item.team_leaders || []).map((teamLeader) => (
+                      <span key={teamLeader.id} className="status-tag">
+                        {teamLeader.username} ({teamLeader.users.length})
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )
+    }
+
+    if (sectionKey === 'users') {
+      return (
+        <div className="table-wrap">
+          <div className="filter-bar">
+            <Link className="pill-link" to="/admin/users/create">Add user</Link>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Company</th>
+                <th>Entity</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.results || []).map((item) => (
+                <tr key={item.id}>
+                  <td>{item.username}</td>
+                  <td>{item.roles.map((role) => role.name).join(', ') || '-'}</td>
+                  <td>{item.company_name || '-'}</td>
+                  <td>{item.entity_label || '-'}</td>
+                  <td>{item.is_active ? 'Active' : 'Inactive'}</td>
+                  <td>
+                    <Link className="table-action" to={`/admin/permissions/${item.id}`}>Open</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
+    if (sectionKey === 'roles') {
+      return (
+        <div className="timeline-list">
+          {(data.roles || []).map((item) => (
+            <EditableChecklistCard
+              key={item.id}
+              title={item.name}
+              subtitle={`Level ${item.level} | ${item.user_count} users`}
+              selectedKeys={item.default_permissions}
+              allItems={data.all_permission_keys || []}
+              onSave={(permissionKeys) => saveRolePermissions(item.id, permissionKeys)}
+            />
+          ))}
+        </div>
+      )
+    }
+
+    if (sectionKey === 'permissions-catalog') {
+      return (
+        <>
+          <section className="panel">
+            <p className="eyebrow">Effective state</p>
+            <h2>User permissions</h2>
+            <select className="app-select" value={selectedPermissionUserId} onChange={(event) => setSelectedPermissionUserId(event.target.value)}>
+              <option value="">Choose user</option>
+              {(data.users || []).map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
+            </select>
+            {data.selected_user ? (
+              <div className="permission-list">
+                {data.selected_user.permissions.map((permission) => (
+                  <article key={permission.key} className="permission-card">
+                    <div>
+                      <strong>{permission.name}</strong>
+                      <div className="subline">{permission.key}</div>
+                    </div>
+                    <div className="tag-row">
+                      <span className={`status-tag ${permission.inherited ? 'active' : 'muted'}`}>Inherited</span>
+                      <span className={`status-tag ${permission.effective ? 'active' : 'danger'}`}>{permission.effective ? 'Allowed' : 'Denied'}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-text">Select a user to inspect inherited and overridden permissions.</p>
+            )}
+          </section>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Permission</th>
+                  <th>Category</th>
+                  <th>Roles</th>
+                  <th>Overrides</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.catalog || []).map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.key}</td>
+                    <td>{item.category || '-'}</td>
+                    <td>{item.inherited_by_roles.join(', ') || '-'}</td>
+                    <td>{item.overridden_users.map((user) => `${user.user__username}:${user.is_allowed ? 'allow' : 'deny'}`).join(', ') || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )
+    }
+
+    if (sectionKey === 'delegation-rules') {
+      return (
+        <div className="timeline-list">
+          {Object.entries(data.rules || {}).map(([roleKey, item]) => (
+            <EditableChecklistCard
+              key={roleKey}
+              title={item.role_name}
+              subtitle={`Can manage: ${item.manageable_target_roles.join(', ') || 'none'}`}
+              selectedKeys={item.permissions}
+              allItems={data.all_permission_keys || []}
+              onSave={(permissionKeys) => saveDelegation(item.role_id, permissionKeys)}
+            />
+          ))}
+        </div>
+      )
+    }
+
+    if (sectionKey === 'requests') {
+      return <RequestSummaryTable rows={data} />
+    }
+
+    if (sectionKey === 'assignments') {
+      return (
+        <>
+          <section className="panel">
+            <p className="eyebrow">Current</p>
+            <h2>Assigned requests</h2>
+            <RequestSummaryTable rows={data.current_assignments || []} />
+          </section>
+          <section className="panel">
+            <p className="eyebrow">Unassigned</p>
+            <h2>Needs assignment</h2>
+            <RequestSummaryTable rows={data.unassigned_requests || []} />
+          </section>
+        </>
+      )
+    }
+
+    if (sectionKey === 'status-tracking') {
+      return (
+        <section className="detail-grid admin-detail-grid">
+          <div className="panel">
+            <p className="eyebrow">Delayed</p>
+            <h2>Stuck requests</h2>
+            <RequestSummaryTable rows={data.stuck_requests || []} />
+          </div>
+          <div className="panel">
+            <p className="eyebrow">History</p>
+            <h2>Status history</h2>
+            <div className="timeline-list">
+              {(data.history || []).map((item) => (
+                <article key={item.id} className="timeline-card">
+                  <strong>{item.request_number}</strong>
+                  <p>{item.old_status} {'->'} {item.new_status}</p>
+                  <p className="muted-text">{item.changed_by_name} | {new Date(item.changed_at).toLocaleString()}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )
+    }
+
+    if (sectionKey === 'audit-logs') {
+      return (
+        <div className="timeline-list">
+          {data.map((item) => (
+            <article key={item.id} className="timeline-card">
+              <strong>{item.module} / {item.action}</strong>
+              <p>{item.target_label || item.target_model || '-'}</p>
+              <p className="muted-text">{item.actor_name || '-'} | {new Date(item.created_at).toLocaleString()}</p>
+            </article>
+          ))}
+        </div>
+      )
+    }
+
+    if (sectionKey === 'notifications') {
+      return (
+        <>
+          <section className="panel">
+            <p className="eyebrow">Telegram</p>
+            <h2>Integration readiness</h2>
+            <p className="muted-text">{data.telegram_note}</p>
+          </section>
+          <div className="timeline-list">
+            {(data.settings || []).map((item) => (
+              <article key={item.id} className="timeline-card">
+                <strong>{item.label}</strong>
+                <div className="tag-row wrap-row">
+                  <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/notifications/${item.id}/`, { email_enabled: !item.email_enabled }, 'Notification updated.')}>
+                    Email: {item.email_enabled ? 'ON' : 'OFF'}
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/notifications/${item.id}/`, { in_app_enabled: !item.in_app_enabled }, 'Notification updated.')}>
+                    In-app: {item.in_app_enabled ? 'ON' : 'OFF'}
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/notifications/${item.id}/`, { telegram_enabled: !item.telegram_enabled }, 'Notification updated.')}>
+                    Telegram: {item.telegram_enabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      )
+    }
+
+    if (sectionKey === 'reports') {
+      return (
+        <div className="summary-grid">
+          <MetricCard title="Open" value={data.open_vs_resolved?.open || 0} />
+          <MetricCard title="Resolved" value={data.open_vs_resolved?.resolved || 0} />
+          <MetricCard title="Companies" value={(data.request_volume_by_company || []).length} />
+          <MetricCard title="Entities" value={(data.request_volume_by_entity || []).length} />
+          <MetricCard title="Types" value={(data.requests_by_type || []).length} />
+          <MetricCard title="Trend points" value={(data.trend_summaries || []).length} />
+        </div>
+      )
+    }
+
+    return <p className="muted-text">This section is ready for expansion.</p>
+  }, [sectionKey, state.data, selectedPermissionUserId])
+
+  return (
+    <main className="page-content">
+      <section className="workspace-header">
+        <div className="panel-header">
+          <div className="page-intro">
+            <p className="eyebrow">Administration</p>
+            <h1>{config.title}</h1>
+            <p>Manage structure, access, monitoring, and operational records from a consistent admin workspace.</p>
+          </div>
+          {sectionKey === 'requests' && (
+            <button type="button" className="ghost-button" onClick={() => navigate('/requests')}>
+              Open request workspace
+            </button>
+          )}
+        </div>
+        {message && <p className="success-text">{message}</p>}
+        {state.loading && <p className="muted-text">Loading section...</p>}
+        {state.error && <p className="error-text">{state.error}</p>}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Overview</p>
+            <h2>{config.title}</h2>
+          </div>
+        </div>
+        <p className="muted-text">Use the tables and forms below to review records, update configuration, and complete operational actions.</p>
+      </section>
+
+      {!state.loading && !state.error && sectionBody}
+    </main>
+  )
+}
+
+function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave }) {
+  const [localKeys, setLocalKeys] = useState(selectedKeys)
+
+  useEffect(() => {
+    setLocalKeys(selectedKeys)
+  }, [selectedKeys])
+
+  function toggleKey(key) {
+    setLocalKeys((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : current.concat(key),
+    )
+  }
+
+  return (
+    <article className="panel">
+      <p className="eyebrow">Policy</p>
+      <h2>{title}</h2>
+      <p className="muted-text">{subtitle}</p>
+      <div className="check-grid admin-check-grid">
+        {allItems.map((item) => (
+          <label key={item} className="checkbox-row">
+            <input type="checkbox" checked={localKeys.includes(item)} onChange={() => toggleKey(item)} />
+            <span>{item}</span>
+          </label>
+        ))}
+      </div>
+      <button type="button" onClick={() => onSave(localKeys)}>Save</button>
+    </article>
+  )
+}
+
+function RequestSummaryTable({ rows }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Company</th>
+            <th>Source</th>
+            <th>Target</th>
+            <th>Assignee</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan="7">No records found.</td>
+            </tr>
+          )}
+          {rows.map((item) => (
+            <tr key={item.id}>
+              <td>{item.request_number}</td>
+              <td>{item.title}</td>
+              <td>
+                <span className="status-tag info">{item.status}</span>
+              </td>
+              <td>{item.company_name || '-'}</td>
+              <td>{item.source_entity_name || '-'}</td>
+              <td>{item.target_entity_name || '-'}</td>
+              <td>{item.assignee_name || 'Unassigned'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function MetricCard({ title, value }) {
+  return (
+    <article className="summary-card">
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </article>
+  )
+}
+
+export default AdminControlCenterPage

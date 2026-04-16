@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import Dashboard from '../pages/Dashboard'
 import CreateRequestPage from '../pages/CreateRequestPage'
 import CreateManagedUserPage from '../pages/CreateManagedUserPage'
+import AdminControlCenterPage from '../pages/AdminControlCenterPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
@@ -39,39 +40,77 @@ function LoginPage() {
   }
 
   return (
-    <main className="page-shell">
-      <section className="hero-panel">
-        <p className="eyebrow">JWT Login</p>
-        <h1>Sign in to the operations portal</h1>
-        <p className="subtitle">
-          Authentication is handled with the API token flow and persists across refresh.
-        </p>
-      </section>
+    <main className="page-shell login-shell">
+      <section className="login-stack">
+        <div className="login-brand">
+          <div className="login-logo-mark" aria-hidden="true">
+            <svg fill="none" height="44" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 64 24" width="118">
+              <circle cx="10" cy="8" r="4.5" />
+              <path d="M10 12.5c3 0 5.5 2.4 5.5 5.5" />
+              <path d="M15 10.5c9 0 18 .1 31 .1" />
+              <path d="m40 8 12 2-12 2" />
+            </svg>
+          </div>
+          <div className="login-wordmark">W-Service</div>
+          <h1>Enterprise request operations</h1>
+          <p className="login-subtitle">
+            Manage requests, approvals, assignments, and team activity from one role-based workspace.
+          </p>
+          <div className="login-meta">
+            <span className="status-tag info">Secure access</span>
+            <span className="status-tag active">Role-based</span>
+          </div>
+        </div>
 
-      <form className="panel form-panel" onSubmit={handleSubmit}>
-        <h2>Login</h2>
-        <label htmlFor="username">Username</label>
-        <input
-          id="username"
-          value={form.username}
-          onChange={(event) =>
-            setForm((current) => ({ ...current, username: event.target.value }))
-          }
-        />
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={form.password}
-          onChange={(event) =>
-            setForm((current) => ({ ...current, password: event.target.value }))
-          }
-        />
-        <button type="submit" disabled={loading}>
-          {loading ? 'Signing in...' : 'Login'}
-        </button>
-        {error && <p className="error-text">{error}</p>}
-      </form>
+        <form className="panel form-panel login-panel login-panel-centered" onSubmit={handleSubmit}>
+          <div className="page-intro">
+            <p className="eyebrow">Authentication</p>
+            <h2>Sign in to continue</h2>
+            <p>Use your workspace credentials to access the platform.</p>
+          </div>
+          <label htmlFor="username">Username</label>
+          <input
+            id="username"
+            placeholder="name@w-service.com"
+            value={form.username}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, username: event.target.value }))
+            }
+          />
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            placeholder="Password"
+            value={form.password}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, password: event.target.value }))
+            }
+          />
+          <button type="submit" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+          {error && <p className="error-text">{error}</p>}
+
+          <div className="login-divider">
+            <span>Alternative access</span>
+          </div>
+
+          <button type="button" className="ghost-button login-sso-button">
+            Continue with SSO
+          </button>
+
+          <div className="login-footer">
+            <p>
+              Need help? <span className="inline-link">Contact support</span>
+            </p>
+            <div className="login-footer-links">
+              <span>Privacy</span>
+              <span>Terms</span>
+            </div>
+          </div>
+        </form>
+      </section>
     </main>
   )
 }
@@ -101,6 +140,8 @@ function AppRoutes() {
         }
       >
         <Route element={<MainLayout />}>
+          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/:section" element={<AdminControlCenterPage />} />
           <Route path="/admin/users/create" element={<CreateManagedUserPage />} />
           <Route path="/admin/permissions" element={<PermissionManagementPage />} />
           <Route

@@ -130,156 +130,201 @@ function RequestDetailsPage() {
 
   const request = state.request
   const needsResolutionNote = terminalStatuses.has(statusValue)
+  const lifecycleSteps = [
+    { label: 'New', value: 'NEW', helper: 'Awaiting review' },
+    { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
+    { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
+    { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
+    { label: 'Closed', value: 'CLOSED', helper: 'Request finalized' },
+  ]
 
   return (
     <main className="page-content">
-      <section className="panel">
+      <section className="workspace-header">
         <div className="panel-header">
-          <div>
+          <div className="page-intro">
             <p className="eyebrow">Request details</p>
             <h1>{request.title}</h1>
-            <div className="tag-row">
-              <span className={statusClassMap[request.status] || 'status-tag'}>
-                {statusLabelMap[request.status] || request.status}
-              </span>
-              <small>{request.reference_code || request.request_number}</small>
-            </div>
+            <p>{request.description}</p>
           </div>
-          <div className="button-row">
-            {request.can_assign_to_me && (
-              <button className="ghost-button" disabled={actionState.busy} onClick={assignToMe} type="button">
-                Assign to me
-              </button>
-            )}
-            <Link className="pill-link" to="/requests">
-              Back
+          <div className="page-actions">
+            <span className={statusClassMap[request.status] || 'status-tag'}>
+              {statusLabelMap[request.status] || request.status}
+            </span>
+            <Link className="ghost-button pill-link" to="/requests">
+              Back to list
             </Link>
           </div>
         </div>
-
-        <div className="summary-grid request-meta-grid">
-          <div className="summary-card">
-            <span>Reference</span>
-            <strong>{request.reference_code || request.request_number}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Type</span>
-            <strong>{request.type}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Company</span>
-            <strong>{request.company_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Source</span>
-            <strong>{request.source_entity_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Target</span>
-            <strong>{request.target_team_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Creator</span>
-            <strong>{request.requester_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Created at</span>
-            <strong>{new Date(request.created_at).toLocaleString()}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Assignee</span>
-            <strong>{request.current_assignee_name || 'Unassigned'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Resolution note</span>
-            <strong>{request.resolution_note || 'Not resolved yet'}</strong>
-          </div>
+        <div className="workspace-meta">
+          <span className="muted-text">{request.reference_code || request.request_number}</span>
+          <span className="muted-text">{request.company_name || '-'}</span>
+          <span className="muted-text">{request.target_team_name || '-'}</span>
         </div>
-
-        <p>{request.description}</p>
-        {actionState.error && <p className="error-text">{actionState.error}</p>}
       </section>
 
       <section className="detail-grid">
-        <section className="panel">
-          <p className="eyebrow">Comments</p>
-          <h2>Discussion</h2>
-          <div className="thread-list">
-            {request.comments.length === 0 && <p className="muted-text">No comments yet.</p>}
-            {request.comments.map((item) => (
-              <article key={item.id} className="thread-card">
-                <div className="thread-head">
-                  <div>
-                    <strong>{item.sender_name}</strong>
-                    <div className="subline">
-                      {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
-                    </div>
-                  </div>
-                  <small>{new Date(item.created_at).toLocaleString()}</small>
+        <div className="editorial-stack">
+          <section className="panel">
+            <div className="workspace-section-title">
+              <div>
+                <p className="eyebrow">Status</p>
+                <h2>Lifecycle</h2>
+              </div>
+              <div className="page-actions">
+                {request.can_assign_to_me && (
+                  <button className="ghost-button" disabled={actionState.busy} onClick={assignToMe} type="button">
+                    Assign to me
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="request-lifecycle">
+              {lifecycleSteps.map((step) => (
+                <div
+                  key={step.value}
+                  className={`request-lifecycle-step ${request.status === step.value ? 'request-lifecycle-step-active' : ''}`}
+                >
+                  {step.label}
+                  <span>{step.helper}</span>
                 </div>
-                <p>{item.message}</p>
-              </article>
-            ))}
-          </div>
-          <form className="stack-form" onSubmit={submitComment}>
-            <textarea
-              className="app-textarea"
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Add a comment"
-            />
-            <button disabled={actionState.busy || !comment.trim()} type="submit">
-              Add comment
-            </button>
-          </form>
-        </section>
-
-        <section className="panel">
-          <p className="eyebrow">Timeline</p>
-          <h2>Activity</h2>
-          <div className="timeline-list">
-            {request.activity_timeline.map((item, index) => (
-              <article key={`${item.kind}-${item.timestamp}-${index}`} className="timeline-card">
-                <div className="thread-head">
-                  <strong>{formatTimelineTitle(item)}</strong>
-                  <small>{new Date(item.timestamp).toLocaleString()}</small>
-                </div>
-                <p>{item.description}</p>
-                {item.note ? <p className="muted-text">{item.note}</p> : null}
-              </article>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      {request.can_update_status && (
-        <section className="panel">
-          <p className="eyebrow">Support actions</p>
-          <h2>Update status</h2>
-          <form className="status-form" onSubmit={submitStatus}>
-            <select
-              className="app-select"
-              value={statusValue}
-              onChange={(event) => setStatusValue(event.target.value)}
-            >
-              {statusOptions.map((option) => (
-                <option key={option} value={option}>
-                  {statusLabelMap[option] || option}
-                </option>
               ))}
-            </select>
-            <textarea
-              className="app-textarea"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder={needsResolutionNote ? 'Resolution note is required' : 'Optional note'}
-            />
-            <button disabled={actionState.busy || (needsResolutionNote && !note.trim())} type="submit">
-              Update status
-            </button>
-          </form>
-        </section>
-      )}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="workspace-section-title">
+              <div>
+                <p className="eyebrow">Discussion</p>
+                <h2>Comments</h2>
+              </div>
+              <span className="muted-text">{request.comments.length} item(s)</span>
+            </div>
+
+            <div className="thread-list">
+              {request.comments.length === 0 && <p className="muted-text">No comments yet.</p>}
+              {request.comments.map((item, index) => (
+                <article key={item.id} className={`thread-card ${index % 2 === 1 ? 'thread-bubble-dark' : ''}`}>
+                  <div className="thread-head">
+                    <div>
+                      <strong>{item.sender_name}</strong>
+                      <div className="subline">
+                        {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
+                      </div>
+                    </div>
+                    <small>{new Date(item.created_at).toLocaleString()}</small>
+                  </div>
+                  <p>{item.message}</p>
+                </article>
+              ))}
+            </div>
+
+            <form className="stack-form" onSubmit={submitComment}>
+              <label htmlFor="comment">Add comment</label>
+              <div className="request-comment-composer">
+                <textarea
+                  id="comment"
+                  className="app-textarea"
+                  value={comment}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder="Add a comment"
+                />
+                <button disabled={actionState.busy || !comment.trim()} type="submit">
+                  Send
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <aside className="editorial-stack">
+          <section className="panel">
+            <p className="eyebrow">Summary</p>
+            <h3>Request metadata</h3>
+            <div className="workspace-list">
+              <div className="workspace-list-item">
+                <div>
+                  <strong>Source</strong>
+                  <p className="muted-text">{request.source_entity_name || '-'}</p>
+                </div>
+              </div>
+              <div className="workspace-list-item">
+                <div>
+                  <strong>Target</strong>
+                  <p className="muted-text">{request.target_team_name || '-'}</p>
+                </div>
+              </div>
+              <div className="workspace-list-item">
+                <div>
+                  <strong>Requester</strong>
+                  <p className="muted-text">{request.requester_name || '-'}</p>
+                </div>
+              </div>
+              <div className="workspace-list-item">
+                <div>
+                  <strong>Assignee</strong>
+                  <p className="muted-text">{request.current_assignee_name || 'Unassigned'}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <p className="eyebrow">Activity</p>
+            <h3>Timeline</h3>
+            <div className="timeline-list">
+              {request.activity_timeline.slice(0, 5).map((item, index) => (
+                <article key={`${item.kind}-${item.timestamp}-${index}`} className="timeline-card">
+                  <div className="thread-head">
+                    <strong>{formatTimelineTitle(item)}</strong>
+                    <small>{new Date(item.timestamp).toLocaleString()}</small>
+                  </div>
+                  <p>{item.description}</p>
+                  {item.note ? <p className="muted-text">{item.note}</p> : null}
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {request.can_update_status && (
+            <section className="panel">
+              <p className="eyebrow">Actions</p>
+              <h3>Update status</h3>
+              <form className="status-form" onSubmit={submitStatus}>
+                <div>
+                  <label htmlFor="status">Status</label>
+                  <select
+                    id="status"
+                    className="app-select"
+                    value={statusValue}
+                    onChange={(event) => setStatusValue(event.target.value)}
+                  >
+                    {statusOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {statusLabelMap[option] || option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="note">Resolution note</label>
+                  <textarea
+                    id="note"
+                    className="app-textarea"
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder={needsResolutionNote ? 'Resolution note is required' : 'Optional note'}
+                  />
+                </div>
+                <button disabled={actionState.busy || (needsResolutionNote && !note.trim())} type="submit">
+                  Save status
+                </button>
+                {actionState.error && <p className="error-text">{actionState.error}</p>}
+              </form>
+            </section>
+          )}
+        </aside>
+      </section>
     </main>
   )
 }
