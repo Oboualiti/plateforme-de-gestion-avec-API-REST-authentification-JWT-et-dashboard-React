@@ -23,5 +23,6 @@ urlpatterns = [
     path('api/health/', health_check, name='health-check'),
     path('api/auth/', include('apps.users.urls')),
     path('api/admin/', include('apps.permissions_app.urls')),
+    path('api/notifications/', include('apps.notifications.urls')),
     path('api/', include('apps.requests_app.urls')),
 ]

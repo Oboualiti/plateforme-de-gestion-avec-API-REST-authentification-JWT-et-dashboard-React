@@ -8,6 +8,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.entities.models import Entity
+from apps.notifications.models import UserNotification
+from apps.notifications.services import (
+    create_bulk_notifications,
+    resolve_request_notification_recipients,
+)
 from apps.permissions_app.services import get_user_role_keys
 
 from .models import (
@@ -126,6 +131,23 @@ class RequestListCreateView(APIView):
             requester_unit=requester_unit,
             target_unit=target_unit,
         )
+        recipients = resolve_request_notification_recipients(
+            service_request, exclude_user_id=request.user.id
+        )
+        create_bulk_notifications(
+            users=recipients,
+            event_type=UserNotification.EventType.REQUEST_CREATED,
+            title=f"New request {service_request.request_number}",
+            message=(
+                f"{request.user.username} created a new request: "
+                f"{service_request.title}"
+            ),
+            link=f"/requests/{service_request.id}",
+            metadata={
+                "request_id": service_request.id,
+                "request_number": service_request.request_number,
+            },
+        )
         return Response(
             RequestDetailSerializer(
                 load_request(service_request.id),
@@ -173,6 +195,21 @@ class RequestCommentCreateView(APIView):
             request=service_request,
             sender=request.user,
             message=serializer.validated_data["message"],
+        )
+        recipients = resolve_request_notification_recipients(
+            service_request, exclude_user_id=request.user.id
+        )
+        create_bulk_notifications(
+            users=recipients,
+            event_type=UserNotification.EventType.REQUEST_MESSAGE,
+            title=f"New message on {service_request.request_number}",
+            message=f"{request.user.username}: {request_message.message}",
+            link=f"/requests/{service_request.id}",
+            metadata={
+                "request_id": service_request.id,
+                "request_number": service_request.request_number,
+                "message_id": request_message.id,
+            },
         )
         mirror_request_message_to_telegram(service_request, request_message)
         service_request = load_request(request_id)

@@ -9,6 +9,8 @@ import CreateManagedUserPage from '../pages/CreateManagedUserPage'
 import AdminControlCenterPage from '../pages/AdminControlCenterPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
+import NotificationsPage from '../pages/NotificationsPage'
+import ProfilePage from '../pages/ProfilePage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
 import ProtectedRoute from './ProtectedRoute'
@@ -123,6 +125,8 @@ function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:requestId" element={<RequestDetailsPage />} />
         </Route>
@@ -141,13 +145,15 @@ function AppRoutes() {
       >
         <Route element={<MainLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/requests" replace />} />
+          <Route path="/admin/audit-logs/:category" element={<AdminControlCenterPage />} />
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />
           <Route path="/admin/users/create" element={<CreateManagedUserPage />} />
+          <Route path="/admin/users" element={<PermissionManagementPage />} />
+          <Route path="/admin/users/:userId" element={<PermissionDetailPage />} />
           <Route path="/admin/permissions" element={<PermissionManagementPage />} />
-          <Route
-            path="/admin/permissions/:userId"
-            element={<PermissionDetailPage />}
-          />
+          <Route path="/admin/permissions/:userId" element={<PermissionDetailPage />} />
         </Route>
       </Route>
 

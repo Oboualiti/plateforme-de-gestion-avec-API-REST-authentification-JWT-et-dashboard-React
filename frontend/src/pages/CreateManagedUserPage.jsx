@@ -27,6 +27,17 @@ function CreateManagedUserPage() {
     team_leader_id: '',
   })
   const [message, setMessage] = useState('')
+  const roleKeys = user?.role_keys || []
+  const isSenior = roleKeys.includes('senior')
+  const isManager = roleKeys.includes('manager')
+  const isTeamLeader = roleKeys.includes('team_leader')
+  const subtitle = isSenior
+    ? 'Create a user inside your company scope.'
+    : isManager
+      ? 'Create a user for your current entity.'
+      : isTeamLeader
+        ? 'Create a user inside your own team.'
+        : 'Create a managed user.'
 
   useEffect(() => {
     let active = true
@@ -112,7 +123,7 @@ function CreateManagedUserPage() {
       }
       await api.post('/admin/users/manageable/', payload)
       setMessage('User created.')
-      navigate('/admin/permissions')
+      navigate('/admin/users')
     } catch (nextError) {
       const data = nextError.response?.data
       if (typeof data?.detail === 'string') {
@@ -152,6 +163,7 @@ function CreateManagedUserPage() {
       <section className="panel">
         <p className="eyebrow">User management</p>
         <h1>Create user</h1>
+        <p className="muted-text">{subtitle}</p>
         <form className="stack-form" onSubmit={onSubmit}>
           <input
             value={form.username}

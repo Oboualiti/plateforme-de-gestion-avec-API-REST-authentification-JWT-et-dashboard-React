@@ -2,6 +2,8 @@ from rest_framework import serializers
 
 from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
 from apps.companies.models import Company
+from apps.notifications.models import UserNotification
+from apps.notifications.services import create_notification
 from apps.roles.models import Role
 from apps.users.models import User
 from apps.entities.models import Entity
@@ -379,6 +381,7 @@ class ManagedUserCreateSerializer(serializers.Serializer):
 
     def create(self):
         attrs = self.validated_data
+        actor = self.context["request"].user
         password = attrs.get("password") or "test12345"
         user = User.objects.create(
             username=attrs["username"],
@@ -393,6 +396,17 @@ class ManagedUserCreateSerializer(serializers.Serializer):
         user.set_password(password)
         user.save()
         UserRole.objects.create(user=user, role=attrs["resolved_role"])
+        create_notification(
+            user=user,
+            event_type=UserNotification.EventType.USER_CREATED,
+            title="Your account has been created",
+            message=(
+                f"{actor.username} created your account with role "
+                f"{attrs['resolved_role'].key.replace('_', ' ')}."
+            ),
+            link="/profile",
+            metadata={"created_by_user_id": actor.id},
+        )
         return user
 
 

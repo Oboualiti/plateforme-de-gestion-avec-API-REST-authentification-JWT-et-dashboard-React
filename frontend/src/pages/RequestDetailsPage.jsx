@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
@@ -32,10 +32,6 @@ function formatRole(roleKeys) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function formatTimelineTitle(item) {
-  return item.title || item.kind
-}
-
 function RequestDetailsPage() {
   const { requestId } = useParams()
   const { user } = useAuth()
@@ -49,6 +45,12 @@ function RequestDetailsPage() {
   })
   const [reassignTarget, setReassignTarget] = useState('')
   const [reassignNote, setReassignNote] = useState('')
+  const discussionScrollRef = useRef(null)
+
+  const lastCommentId = useMemo(() => {
+    const comments = state.request?.comments || []
+    return comments.length ? comments[comments.length - 1].id : null
+  }, [state.request?.comments])
 
   useEffect(() => {
     let active = true
@@ -107,6 +109,12 @@ function RequestDetailsPage() {
       clearInterval(intervalId)
     }
   }, [requestId, state.request])
+
+  useEffect(() => {
+    const container = discussionScrollRef.current
+    if (!container) return
+    container.scrollTop = container.scrollHeight
+  }, [requestId, lastCommentId])
 
   async function refreshFromResponse(requestPromise) {
     setActionState({ busy: true, error: '' })
@@ -250,59 +258,40 @@ function RequestDetailsPage() {
         {actionState.error && <p className="error-text">{actionState.error}</p>}
       </section>
 
-      <section className="detail-grid request-conversation-grid">
-        <section className="panel discussion-panel">
-          <p className="eyebrow">Comments</p>
-          <h2>Discussion</h2>
-          <div className="thread-list">
-            {request.comments.length === 0 && <p className="muted-text">No comments yet.</p>}
-            {request.comments.map((item) => (
-              <article
-                key={item.id}
-                className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}
-              >
-                <div className="thread-head">
-                  <div>
-                    <strong>{item.sender_name}</strong>
-                    <div className="subline">
-                      {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
-                    </div>
+      <section className="panel discussion-panel">
+        <p className="eyebrow">Comments</p>
+        <h2>Discussion</h2>
+        <div className="thread-list discussion-scroll" ref={discussionScrollRef}>
+          {request.comments.length === 0 && <p className="muted-text">No comments yet.</p>}
+          {request.comments.map((item) => (
+            <article
+              key={item.id}
+              className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}
+            >
+              <div className="thread-head">
+                <div>
+                  <strong>{item.sender_name}</strong>
+                  <div className="subline">
+                    {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
                   </div>
-                  <small>{new Date(item.created_at).toLocaleString()}</small>
                 </div>
-                <p>{item.message}</p>
-              </article>
-            ))}
-          </div>
-          <form className="stack-form" onSubmit={submitComment}>
-            <textarea
-              className="app-textarea"
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Add a comment"
-            />
-            <button disabled={actionState.busy || !comment.trim()} type="submit">
-              Add comment
-            </button>
-          </form>
-        </section>
-
-        <section className="panel timeline-panel">
-          <p className="eyebrow">Timeline</p>
-          <h2>Activity</h2>
-          <div className="timeline-list">
-            {request.activity_timeline.map((item, index) => (
-              <article key={`${item.kind}-${item.timestamp}-${index}`} className="timeline-card">
-                <div className="thread-head">
-                  <strong>{formatTimelineTitle(item)}</strong>
-                  <small>{new Date(item.timestamp).toLocaleString()}</small>
-                </div>
-                <p>{item.description}</p>
-                {item.note ? <p className="muted-text">{item.note}</p> : null}
-              </article>
-            ))}
-          </div>
-        </section>
+                <small>{new Date(item.created_at).toLocaleString()}</small>
+              </div>
+              <p>{item.message}</p>
+            </article>
+          ))}
+        </div>
+        <form className="stack-form" onSubmit={submitComment}>
+          <textarea
+            className="app-textarea"
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="Add a comment"
+          />
+          <button disabled={actionState.busy || !comment.trim()} type="submit">
+            Add comment
+          </button>
+        </form>
       </section>
 
       {request.can_update_status && (

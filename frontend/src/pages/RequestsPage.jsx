@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
@@ -26,9 +26,11 @@ const requestTypeOptions = ['INFO', 'SCRIPT', 'TOOL', 'APP_PROJECT']
 
 function RequestsPage() {
   const { user, refreshUser } = useAuth()
+  const [searchParams] = useSearchParams()
+  const querySearch = searchParams.get('search') || ''
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
   const [filters, setFilters] = useState({
-    search: '',
+    search: querySearch,
     company: '',
     source_entity: '',
     target_entity: '',
@@ -48,6 +50,13 @@ function RequestsPage() {
       : user?.entity_type === 'PROD'
         ? 'Your requests'
         : 'Incoming Requests'
+
+  useEffect(() => {
+    setFilters((current) => {
+      if (current.search === querySearch) return current
+      return { ...current, search: querySearch }
+    })
+  }, [querySearch])
 
   useEffect(() => {
     let active = true

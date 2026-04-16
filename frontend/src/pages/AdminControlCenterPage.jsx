@@ -10,13 +10,10 @@ const sectionConfig = {
   hierarchy: { title: 'Hierarchy', endpoint: '/admin/hierarchy/' },
   users: { title: 'Users', endpoint: '/admin/users/manageable/' },
   roles: { title: 'Roles', endpoint: '/admin/roles/' },
-  'permissions-catalog': { title: 'Permissions', endpoint: '/admin/permissions/catalog/' },
-  'delegation-rules': { title: 'Delegation rules', endpoint: '/admin/delegation-rules/' },
   requests: { title: 'Requests', endpoint: '/admin/requests/' },
   assignments: { title: 'Assignments', endpoint: '/admin/assignments/' },
   'status-tracking': { title: 'Status tracking', endpoint: '/admin/status-tracking/' },
   'audit-logs': { title: 'Audit logs', endpoint: '/admin/audit-logs/' },
-  notifications: { title: 'Notifications', endpoint: '/admin/notifications/' },
   reports: { title: 'Reports', endpoint: '/admin/reports/' },
 }
 
@@ -26,12 +23,42 @@ function useSectionKey() {
   return parts[1] || 'dashboard'
 }
 
+const auditGroups = [
+  { key: 'requests', title: 'Request logs', modules: ['requests', 'assignments', 'status_tracking'] },
+  { key: 'users', title: 'User logs', modules: ['users'] },
+  { key: 'access', title: 'Access / role logs', modules: ['permissions', 'roles'] },
+  { key: 'organization', title: 'Organization logs', modules: ['companies', 'entities', 'hierarchy'] },
+  { key: 'notifications', title: 'Notification logs', modules: ['notifications'] },
+]
+
+function resolveAuditGroupKey(module) {
+  const matched = auditGroups.find((group) => group.modules.includes(module))
+  return matched ? matched.key : 'other'
+}
+
+function formatAuditAction(action) {
+  const labelMap = {
+    create: 'created',
+    update: 'edited',
+    delete: 'removed',
+    assign: 'assigned',
+    update_permissions: 'updated permissions',
+    allow_override: 'allowed override',
+    deny_override: 'denied override',
+    assign_senior: 'assigned senior',
+    assign_manager: 'assigned manager',
+  }
+  return labelMap[action] || action.replaceAll('_', ' ')
+}
+
 function AdminControlCenterPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const sectionKey = useSectionKey()
   const config = sectionConfig[sectionKey] || sectionConfig.dashboard
   const [state, setState] = useState({ loading: true, error: '', data: null })
   const [message, setMessage] = useState('')
+  const [auditGroupPages, setAuditGroupPages] = useState({})
   const [companyForm, setCompanyForm] = useState({ name: '', code: '', is_active: true })
   const [entityForm, setEntityForm] = useState({
     name: '',
@@ -40,15 +67,11 @@ function AdminControlCenterPage() {
     company: '',
     is_active: true,
   })
-  const [selectedPermissionUserId, setSelectedPermissionUserId] = useState('')
 
   async function loadSection() {
     setState({ loading: true, error: '', data: null })
     try {
-      const params =
-        sectionKey === 'permissions-catalog' && selectedPermissionUserId
-          ? { params: { user_id: selectedPermissionUserId } }
-          : undefined
+      const params = undefined
       const response = await api.get(config.endpoint, params)
       setState({ loading: false, error: '', data: response.data })
     } catch (error) {
@@ -60,9 +83,19 @@ function AdminControlCenterPage() {
     }
   }
 
+  const auditCategoryKey = useMemo(() => {
+    const parts = location.pathname.split('/').filter(Boolean)
+    return parts[0] === 'admin' && parts[1] === 'audit-logs' ? parts[2] || null : null
+  }, [location.pathname])
+
   useEffect(() => {
+    setAuditGroupPages({})
     loadSection()
-  }, [sectionKey, selectedPermissionUserId])
+  }, [sectionKey, auditCategoryKey])
+
+  function setAuditGroupPage(groupKey, nextPage) {
+    setAuditGroupPages((current) => ({ ...current, [groupKey]: nextPage }))
+  }
 
   async function submitCompany(event) {
     event.preventDefault()
@@ -103,10 +136,6 @@ function AdminControlCenterPage() {
 
   async function saveRolePermissions(roleId, permissionKeys) {
     await patchRecord(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys }, 'Role permissions updated.')
-  }
-
-  async function saveDelegation(roleId, permissionKeys) {
-    await patchRecord(`/admin/delegation-rules/${roleId}/`, { permission_keys: permissionKeys }, 'Delegation rules updated.')
   }
 
   const sectionBody = useMemo(() => {
@@ -373,78 +402,6 @@ function AdminControlCenterPage() {
       )
     }
 
-    if (sectionKey === 'permissions-catalog') {
-      return (
-        <>
-          <section className="panel">
-            <p className="eyebrow">Effective state</p>
-            <h2>User permissions</h2>
-            <select className="app-select" value={selectedPermissionUserId} onChange={(event) => setSelectedPermissionUserId(event.target.value)}>
-              <option value="">Choose user</option>
-              {(data.users || []).map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
-            </select>
-            {data.selected_user ? (
-              <div className="permission-list">
-                {data.selected_user.permissions.map((permission) => (
-                  <article key={permission.key} className="permission-card">
-                    <div>
-                      <strong>{permission.name}</strong>
-                      <div className="subline">{permission.key}</div>
-                    </div>
-                    <div className="tag-row">
-                      <span className={`status-tag ${permission.inherited ? 'active' : 'muted'}`}>Inherited</span>
-                      <span className={`status-tag ${permission.effective ? 'active' : 'danger'}`}>{permission.effective ? 'Allowed' : 'Denied'}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted-text">Select a user to inspect inherited and overridden permissions.</p>
-            )}
-          </section>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Permission</th>
-                  <th>Category</th>
-                  <th>Roles</th>
-                  <th>Overrides</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.catalog || []).map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.key}</td>
-                    <td>{item.category || '-'}</td>
-                    <td>{item.inherited_by_roles.join(', ') || '-'}</td>
-                    <td>{item.overridden_users.map((user) => `${user.user__username}:${user.is_allowed ? 'allow' : 'deny'}`).join(', ') || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )
-    }
-
-    if (sectionKey === 'delegation-rules') {
-      return (
-        <div className="timeline-list">
-          {Object.entries(data.rules || {}).map(([roleKey, item]) => (
-            <EditableChecklistCard
-              key={roleKey}
-              title={item.role_name}
-              subtitle={`Can manage: ${item.manageable_target_roles.join(', ') || 'none'}`}
-              selectedKeys={item.permissions}
-              allItems={data.all_permission_keys || []}
-              onSave={(permissionKeys) => saveDelegation(item.role_id, permissionKeys)}
-            />
-          ))}
-        </div>
-      )
-    }
-
     if (sectionKey === 'requests') {
       return <RequestSummaryTable rows={data} />
     }
@@ -492,46 +449,116 @@ function AdminControlCenterPage() {
     }
 
     if (sectionKey === 'audit-logs') {
-      return (
-        <div className="timeline-list">
-          {data.map((item) => (
-            <article key={item.id} className="timeline-card">
-              <strong>{item.module} / {item.action}</strong>
-              <p>{item.target_label || item.target_model || '-'}</p>
-              <p className="muted-text">{item.actor_name || '-'} | {new Date(item.created_at).toLocaleString()}</p>
-            </article>
-          ))}
-        </div>
-      )
-    }
+      const pageSize = 10
+      const allRows = data || []
+      const grouped = allRows.reduce((acc, item) => {
+        const groupKey = resolveAuditGroupKey(item.module)
+        if (!acc[groupKey]) {
+          const groupConfig = auditGroups.find((group) => group.key === groupKey)
+          acc[groupKey] = {
+            key: groupKey,
+            title: groupConfig?.title || 'Other logs',
+            rows: [],
+          }
+        }
+        acc[groupKey].rows.push(item)
+        return acc
+      }, {})
 
-    if (sectionKey === 'notifications') {
-      return (
-        <>
-          <section className="panel">
-            <p className="eyebrow">Telegram</p>
-            <h2>Integration readiness</h2>
-            <p className="muted-text">{data.telegram_note}</p>
-          </section>
-          <div className="timeline-list">
-            {(data.settings || []).map((item) => (
-              <article key={item.id} className="timeline-card">
-                <strong>{item.label}</strong>
-                <div className="tag-row wrap-row">
-                  <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/notifications/${item.id}/`, { email_enabled: !item.email_enabled }, 'Notification updated.')}>
-                    Email: {item.email_enabled ? 'ON' : 'OFF'}
-                  </button>
-                  <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/notifications/${item.id}/`, { in_app_enabled: !item.in_app_enabled }, 'Notification updated.')}>
-                    In-app: {item.in_app_enabled ? 'ON' : 'OFF'}
-                  </button>
-                  <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/notifications/${item.id}/`, { telegram_enabled: !item.telegram_enabled }, 'Notification updated.')}>
-                    Telegram: {item.telegram_enabled ? 'ON' : 'OFF'}
-                  </button>
+      const selectedGroup =
+        auditCategoryKey === 'all'
+          ? { key: 'all', title: 'All audit logs', rows: allRows }
+          : auditCategoryKey
+          ? grouped[auditCategoryKey]
+          : null
+
+      if (!selectedGroup) {
+        return (
+          <section className="timeline-list">
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Audit logs</p>
+                  <h2>Unknown category</h2>
                 </div>
-              </article>
-            ))}
-          </div>
-        </>
+              </div>
+              <p className="muted-text">The selected log category does not exist.</p>
+              <button type="button" className="ghost-button" onClick={() => navigate('/admin/audit-logs/requests')}>
+                Open request logs
+              </button>
+            </article>
+          </section>
+        )
+      }
+
+      const group = selectedGroup
+      const totalPages = Math.max(1, Math.ceil(group.rows.length / pageSize))
+      const currentPage = Math.min(auditGroupPages[group.key] || 1, totalPages)
+      const pagedRows = group.rows.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+      const userActionCounts =
+        group.key === 'users'
+          ? pagedRows.reduce((acc, row) => {
+              const action = formatAuditAction(row.action)
+              acc[action] = (acc[action] || 0) + 1
+              return acc
+            }, {})
+          : null
+
+      return (
+        <section className="timeline-list">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Audit category</p>
+                <h2>{group.title}</h2>
+              </div>
+              <div className="panel-actions">
+                <span className="status-tag info">{group.rows.length} log(s)</span>
+              </div>
+            </div>
+            {group.key === 'users' && (
+              <div className="tag-row wrap-row">
+                {Object.entries(userActionCounts || {}).map(([action, total]) => (
+                  <span key={action} className="status-tag">
+                    {action}: {total}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="timeline-list">
+              {pagedRows.map((item) => (
+                <article key={item.id} className="timeline-card">
+                  <strong>{item.module} / {formatAuditAction(item.action)}</strong>
+                  <p>{item.target_label || item.target_model || '-'}</p>
+                  <p className="muted-text">
+                    {item.actor_name || '-'} | {new Date(item.created_at).toLocaleString()}
+                  </p>
+                </article>
+              ))}
+            </div>
+            <div className="page-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setAuditGroupPage(group.key, Math.max(1, currentPage - 1))}
+                disabled={currentPage <= 1}
+              >
+                Previous
+              </button>
+              <span className="muted-text">
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setAuditGroupPage(group.key, Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                Next
+              </button>
+            </div>
+          </article>
+        </section>
       )
     }
 
@@ -549,7 +576,7 @@ function AdminControlCenterPage() {
     }
 
     return <p className="muted-text">This section is ready for expansion.</p>
-  }, [sectionKey, state.data, selectedPermissionUserId])
+  }, [sectionKey, state.data, auditGroupPages])
 
   return (
     <main className="page-content">
@@ -569,16 +596,6 @@ function AdminControlCenterPage() {
         {message && <p className="success-text">{message}</p>}
         {state.loading && <p className="muted-text">Loading section...</p>}
         {state.error && <p className="error-text">{state.error}</p>}
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Overview</p>
-            <h2>{config.title}</h2>
-          </div>
-        </div>
-        <p className="muted-text">Use the tables and forms below to review records, update configuration, and complete operational actions.</p>
       </section>
 
       {!state.loading && !state.error && sectionBody}

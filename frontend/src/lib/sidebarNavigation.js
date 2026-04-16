@@ -13,10 +13,8 @@ const enterpriseSections = [
     createItem('Hierarchy', '/admin/hierarchy'),
   ]),
   createSection('access-control', 'Access Control', 'lock', [
-    createItem('Users', '/admin/users', ['/admin/users/create', '/admin/permissions', '/admin/permissions/']),
+    createItem('Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
     createItem('Roles', '/admin/roles'),
-    createItem('Permissions', '/admin/permissions-catalog', ['/admin/permissions']),
-    createItem('Delegation Rules', '/admin/delegation-rules'),
   ]),
   createSection('operations', 'Operations', 'ops', [
     createItem('Requests', '/admin/requests'),
@@ -24,11 +22,17 @@ const enterpriseSections = [
     createItem('Status Tracking', '/admin/status-tracking'),
   ]),
   createSection('monitoring', 'Monitoring', 'monitor', [
-    createItem('Audit Logs', '/admin/audit-logs'),
-    createItem('Notifications', '/admin/notifications'),
     createItem('Reports', '/admin/reports'),
   ]),
 ]
+
+const auditLogsSection = createSection('audit-logs', 'Audit Logs', 'monitor', [
+  createItem('Request logs', '/admin/audit-logs/requests', ['/admin/audit-logs/requests']),
+  createItem('User logs', '/admin/audit-logs/users', ['/admin/audit-logs/users']),
+  createItem('Access / role logs', '/admin/audit-logs/access', ['/admin/audit-logs/access']),
+  createItem('Organization logs', '/admin/audit-logs/organization', ['/admin/audit-logs/organization']),
+  createItem('Notification logs', '/admin/audit-logs/notifications', ['/admin/audit-logs/notifications']),
+])
 
 const roleVariantMap = {
   super_admin: [
@@ -36,18 +40,23 @@ const roleVariantMap = {
       createItem('Dashboard', '/admin/dashboard', ['/dashboard']),
     ]),
     ...enterpriseSections,
+    auditLogsSection,
   ],
   senior: [
     createSection('oversight', 'Overview', 'home', [
       createItem('Dashboard', '/admin/dashboard', ['/dashboard']),
     ]),
+    createSection('company-users', 'Users', 'team', [
+      createItem('Company Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
+    ]),
     enterpriseSections[0],
     enterpriseSections[2],
     enterpriseSections[3],
+    auditLogsSection,
   ],
   manager: [
     createSection('team', 'Team / Users', 'team', [
-      createItem('Team Users', '/admin/users', ['/admin/users/create', '/admin/permissions']),
+      createItem('Team Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
       createItem('Hierarchy', '/admin/hierarchy'),
     ]),
     createSection('requests', 'Requests', 'ops', [
@@ -60,6 +69,7 @@ const roleVariantMap = {
       createItem('Status Tracking', '/admin/status-tracking'),
       createItem('Reports', '/admin/reports'),
     ]),
+    auditLogsSection,
   ],
   team_leader: [
     createSection('team-queue', 'Team Queue', 'queue', [
@@ -71,11 +81,12 @@ const roleVariantMap = {
       createItem('Request Tracking', '/admin/status-tracking'),
     ]),
     createSection('team-members', 'Team Members', 'team', [
-      createItem('Members', '/admin/users', ['/admin/users/create', '/admin/permissions']),
+      createItem('Members', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
     ]),
     createSection('tracking', 'Tracking', 'track', [
       createItem('Queue History', '/admin/status-tracking'),
     ]),
+    auditLogsSection,
   ],
   production_user: [
     createSection('workspace', 'My Workspace', 'home', [

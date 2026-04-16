@@ -110,7 +110,7 @@ function PermissionDetailPage() {
       setState((current) => ({ ...current, user: response.data }))
       setSelectedRole(response.data.roles[0]?.key || '')
       setMessage('Roles updated.')
-      navigate('/admin/permissions', {
+      navigate('/admin/users', {
         state: { successMessage: 'Saved successfully: roles updated.' },
       })
     } catch (error) {
@@ -146,7 +146,7 @@ function PermissionDetailPage() {
       await api.patch(`/admin/users/manageable/${userId}/`, payload)
       setMessage('User profile updated.')
       setProfileForm((current) => ({ ...current, password: '' }))
-      navigate('/admin/permissions', {
+      navigate('/admin/users', {
         state: { successMessage: 'Saved successfully: user updated.' },
       })
     } catch (error) {
@@ -221,10 +221,10 @@ function PermissionDetailPage() {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Permission detail</p>
+          <p className="eyebrow">Permission detail</p>
             <h1>{user.username}</h1>
           </div>
-          <Link className="pill-link" to="/admin/permissions">
+          <Link className="pill-link" to="/admin/users">
             Back
           </Link>
         </div>
@@ -317,16 +317,19 @@ function PermissionDetailPage() {
               placeholder="New password (optional)"
               disabled={!canEdit}
             />
-            <label className="checkbox-row">
+            <label className="switch-control" htmlFor="active-user-switch">
+              <span>Active user</span>
               <input
+                id="active-user-switch"
                 type="checkbox"
+                className="switch-input"
                 checked={profileForm.is_active}
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, is_active: event.target.checked }))
                 }
                 disabled={!canEdit}
               />
-              <span>Active user</span>
+              <span className="switch-slider" aria-hidden="true" />
             </label>
 
             {canShowCompany && (
@@ -404,11 +407,13 @@ function PermissionDetailPage() {
           <p className="eyebrow">Roles</p>
           <h2>Assigned role</h2>
           {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
-          <div className="check-grid">
-            {roleOptions.map((role) => (
-              <label key={role.key} className="checkbox-row">
+            <div className="check-grid role-options-grid">
+              {roleOptions.map((role) => (
+              <label key={role.key} className="role-radio-option" htmlFor={`role-${role.key}`}>
                 <input
+                  id={`role-${role.key}`}
                   type="radio"
+                  className="role-radio-input"
                   name="role-selection"
                   checked={selectedRole === role.key}
                   onChange={() => setSelectedRole(role.key)}
@@ -420,7 +425,7 @@ function PermissionDetailPage() {
               </label>
             ))}
           </div>
-          <button type="button" onClick={saveRoles} disabled={!canEdit}>
+          <button type="button" className="role-save-button" onClick={saveRoles} disabled={!canEdit}>
             Save roles
           </button>
         </section>

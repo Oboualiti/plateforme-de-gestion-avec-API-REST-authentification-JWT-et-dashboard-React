@@ -28,7 +28,6 @@
 .app-topbar,
 .app-topbar-title,
 .app-topbar-actions,
-.app-topbar-links,
 .app-user-chip,
 .button-row,
 .tag-row,
@@ -57,7 +56,6 @@
 
 .app-topbar-title,
 .app-topbar-actions,
-.app-topbar-links,
 .button-row,
 .tag-row,
 .page-actions,
@@ -107,7 +105,6 @@
   background: transparent;
 }
 
-.app-topbar-links a,
 .sidebar-footer-meta a {
   color: var(--text-muted);
   font-size: 0.875rem;
@@ -117,6 +114,15 @@
 .app-user-chip {
   padding-left: 1rem;
   border-left: 1px solid var(--border);
+}
+
+.app-user-chip-button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  min-height: auto;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .app-user-chip strong {
@@ -143,6 +149,186 @@
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.app-user-menu {
+  position: relative;
+}
+
+.app-notification-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  min-height: auto;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  text-decoration: none;
+}
+
+.app-notification-menu {
+  position: relative;
+}
+
+.app-notification-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  width: 340px;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 0.625rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 35;
+}
+
+.app-notification-menu:hover .app-notification-panel,
+.app-notification-menu-open .app-notification-panel,
+.app-notification-menu:focus-within .app-notification-panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.app-notification-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.app-notification-panel-head strong {
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.app-notification-panel-head span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.app-notification-preview-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.app-notification-preview-item {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.app-notification-preview-item:hover {
+  background: var(--surface-subtle);
+}
+
+.app-notification-preview-item strong {
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.app-notification-preview-item p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.app-notification-button:hover {
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.app-notification-badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.35rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+.app-user-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  width: 260px;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 0.5rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 30;
+}
+
+.app-user-menu-open .app-user-menu-panel,
+.app-user-menu:focus-within .app-user-menu-panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.app-user-menu-profile {
+  display: grid;
+  gap: 0.15rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-user-menu-profile strong {
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.app-user-menu-link {
+  width: 100%;
+  min-height: 2.125rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.5rem 0.625rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-soft);
+  text-decoration: none;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.app-user-menu-link:hover {
+  background: var(--surface-subtle);
+  color: var(--text);
 }
 
 .app-avatar-small {
@@ -558,6 +744,15 @@ input:focus,
   box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
 .app-textarea {
   min-height: 8rem;
   resize: vertical;
@@ -705,6 +900,12 @@ button,
   min-height: 280px;
 }
 
+.discussion-scroll {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
 .discussion-panel .stack-form {
   margin-top: 22px;
 }
@@ -718,6 +919,15 @@ button,
   justify-self: end;
   background: rgba(59, 130, 246, 0.14);
   border-color: rgba(59, 130, 246, 0.24);
+}
+
+.notification-unread {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.notification-read {
+  opacity: 0.9;
 }
 
 .thread-head {
@@ -760,6 +970,127 @@ button,
 .permission-switch {
   width: 2.5rem;
   height: 1.25rem;
+}
+
+.role-radio-option {
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+
+.role-radio-option:hover {
+  background: var(--surface-subtle);
+}
+
+.role-radio-input {
+  appearance: none;
+  width: 1.42rem;
+  height: 1.42rem;
+  border-radius: 999px;
+  border: 2px solid #94a3b8;
+  background: #fff;
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.role-radio-input:checked {
+  border-color: #0ea5e9;
+}
+
+.role-radio-input:checked::after {
+  content: "";
+  position: absolute;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: #0ea5e9;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.role-options-grid {
+  margin-top: 0.65rem;
+  row-gap: 1.1rem;
+}
+
+.switch-control {
+  margin: 0;
+  min-height: 2.125rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-transform: none;
+  letter-spacing: normal;
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
+}
+
+.switch-slider {
+  position: relative;
+  width: 3.25rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  border: 1px solid #dc2626;
+  background: #ef4444;
+  display: inline-block;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.switch-slider::before {
+  content: "";
+  position: absolute;
+  top: 0.14rem;
+  left: 0.14rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.switch-input:checked + .switch-slider {
+  border-color: #16a34a;
+  background: #22c55e;
+}
+
+.switch-input:checked + .switch-slider::before {
+  transform: translateX(1.38rem);
+}
+
+.switch-input:focus-visible + .switch-slider {
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+}
+
+.switch-input:disabled + .switch-slider {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.role-save-button {
+  margin-top: 0.95rem;
 }
 
 .status-tag,
