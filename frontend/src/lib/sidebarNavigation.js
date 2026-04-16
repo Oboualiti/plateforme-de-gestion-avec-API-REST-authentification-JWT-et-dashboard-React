@@ -10,18 +10,15 @@ const enterpriseSections = [
   createSection('organization', 'Organization', 'org', [
     createItem('Companies', '/admin/companies'),
     createItem('Entities', '/admin/entities'),
-    createItem('Hierarchy', '/admin/hierarchy'),
   ]),
   createSection('access-control', 'Access Control', 'lock', [
-    createItem('Users', '/admin/users', ['/admin/users/create', '/admin/permissions', '/admin/permissions/']),
+    createItem('Users', '/admin/permissions', ['/admin/users', '/admin/users/create', '/admin/permissions/']),
     createItem('Roles', '/admin/roles'),
     createItem('Permissions', '/admin/permissions-catalog', ['/admin/permissions']),
     createItem('Delegation Rules', '/admin/delegation-rules'),
   ]),
   createSection('operations', 'Operations', 'ops', [
-    createItem('Requests', '/admin/requests'),
-    createItem('Assignments', '/admin/assignments'),
-    createItem('Status Tracking', '/admin/status-tracking'),
+    createItem('Requests', '/requests'),
   ]),
   createSection('monitoring', 'Monitoring', 'monitor', [
     createItem('Audit Logs', '/admin/audit-logs'),
@@ -38,7 +35,7 @@ const roleVariantMap = {
     ...enterpriseSections,
   ],
   senior: [
-    createSection('oversight', 'Overview', 'home', [
+    createSection('platform', 'Platform', 'home', [
       createItem('Dashboard', '/admin/dashboard', ['/dashboard']),
     ]),
     enterpriseSections[0],
@@ -47,57 +44,36 @@ const roleVariantMap = {
   ],
   manager: [
     createSection('team', 'Team / Users', 'team', [
-      createItem('Team Users', '/admin/users', ['/admin/users/create', '/admin/permissions']),
-      createItem('Hierarchy', '/admin/hierarchy'),
+      createItem('Team Users', '/admin/permissions', ['/admin/users', '/admin/users/create', '/admin/permissions']),
     ]),
     createSection('requests', 'Requests', 'ops', [
-      createItem('Team Requests', '/admin/requests', ['/requests']),
-    ]),
-    createSection('assignments', 'Assignments', 'assign', [
-      createItem('Assignments', '/admin/assignments'),
-    ]),
-    createSection('tracking', 'Tracking', 'track', [
-      createItem('Status Tracking', '/admin/status-tracking'),
+      createItem('Team Requests', '/requests'),
+      createItem('Requests', '/requests'),
       createItem('Reports', '/admin/reports'),
     ]),
   ],
   team_leader: [
-    createSection('team-queue', 'Team Queue', 'queue', [
-      createItem('Incoming Queue', '/admin/requests', ['/requests']),
-      createItem('Assignments', '/admin/assignments'),
-    ]),
     createSection('requests', 'Requests', 'ops', [
-      createItem('Open Requests', '/requests'),
-      createItem('Request Tracking', '/admin/status-tracking'),
+      createItem('Team Requests', '/requests'),
     ]),
     createSection('team-members', 'Team Members', 'team', [
-      createItem('Members', '/admin/users', ['/admin/users/create', '/admin/permissions']),
-    ]),
-    createSection('tracking', 'Tracking', 'track', [
-      createItem('Queue History', '/admin/status-tracking'),
+      createItem('Members', '/admin/permissions', ['/admin/users', '/admin/users/create', '/admin/permissions']),
     ]),
   ],
   production_user: [
     createSection('workspace', 'My Workspace', 'home', [
       createItem('Create Request', '/requests/create'),
       createItem('My Requests', '/requests'),
-      createItem('Request Tracking', '/requests'),
     ]),
   ],
   support_team_user: [
     createSection('team-queue', 'Team Queue', 'queue', [
-      createItem('Incoming Requests', '/requests'),
-      createItem('Assigned to Me', '/requests'),
-      createItem('Status Updates', '/requests'),
-      createItem('Queue History', '/requests'),
+      createItem('Requests', '/requests'),
     ]),
   ],
   development_team_user: [
     createSection('dev-queue', 'Dev Queue', 'queue', [
-      createItem('Incoming Requests', '/requests'),
-      createItem('Assigned to Me', '/requests'),
-      createItem('In Progress', '/requests'),
-      createItem('Completed / Tracking', '/requests'),
+      createItem('Requests', '/requests'),
     ]),
   ],
   default: [

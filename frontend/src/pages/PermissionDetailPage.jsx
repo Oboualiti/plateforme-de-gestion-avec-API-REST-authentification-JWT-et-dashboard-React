@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -218,18 +219,18 @@ function PermissionDetailPage() {
 
   return (
     <main className="page-content">
-      <section className="workspace-header">
-        <div className="panel-header">
-          <div className="page-intro">
-            <p className="eyebrow">Permission detail</p>
-            <h1>{user.username}</h1>
-            <p>Manage profile data, role assignment, and effective permissions from one page.</p>
-          </div>
+      <PageHeader
+        eyebrow="Permission detail"
+        title={user.username}
+        description="Manage profile data, role assignment, and effective permissions from one page."
+        actions={
           <Link className="ghost-button pill-link" to="/admin/permissions">
             Back to users
           </Link>
-        </div>
-        <div className="summary-grid">
+        }
+      />
+
+      <section className="summary-grid">
           <div className="summary-card">
             <span>Email</span>
             <strong className="stat-value-small">{user.email || '-'}</strong>
@@ -248,7 +249,6 @@ function PermissionDetailPage() {
             <span>Status</span>
             <strong className="stat-value-small">{user.is_active ? 'Active' : 'Inactive'}</strong>
           </div>
-        </div>
       </section>
 
       <section className="detail-grid">

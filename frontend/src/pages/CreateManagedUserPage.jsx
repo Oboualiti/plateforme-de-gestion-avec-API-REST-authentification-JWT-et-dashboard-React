@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -149,13 +150,11 @@ function CreateManagedUserPage() {
 
   return (
     <main className="page-content">
-      <section className="workspace-header">
-        <div className="page-intro">
-          <p className="eyebrow">User management</p>
-          <h1>Create user</h1>
-          <p>Add a new managed user with the correct role and organizational assignment.</p>
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="User management"
+        title="Create user"
+        description="Add a new managed user with the correct role and organizational assignment."
+      />
 
       <section className="request-create-grid">
         <div className="request-create-main">

@@ -166,6 +166,7 @@ class RequestAdminSummarySerializer(serializers.ModelSerializer):
             "category",
             "status",
             "priority",
+            "company_id",
             "company_name",
             "source_entity_name",
             "target_entity_name",

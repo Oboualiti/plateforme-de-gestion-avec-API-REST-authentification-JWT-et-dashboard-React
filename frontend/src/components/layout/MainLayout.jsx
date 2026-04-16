@@ -15,6 +15,9 @@ function MainLayout() {
   const sidebarVariant = getSidebarVariant(user)
   const userName = user?.first_name || user?.username
   const userRole = user?.role_keys?.[0]?.replaceAll('_', ' ') || 'user'
+  const canAccessAdmin = (user?.role_keys || []).some((role) =>
+    ['super_admin', 'senior', 'manager', 'team_leader'].includes(role),
+  )
 
   return (
     <div className="layout-shell">
@@ -71,14 +74,14 @@ function MainLayout() {
                 <circle cx="11" cy="11" r="7" />
                 <path d="m20 20-3.5-3.5" />
               </svg>
-              <input placeholder="Search requests, users, entities" readOnly value="" />
+              <input disabled placeholder="Global search coming soon" readOnly value="" />
             </div>
           </div>
 
           <div className="app-topbar-actions">
             <div className="app-topbar-links">
               <Link to="/requests">Requests</Link>
-              <Link to="/admin/dashboard">Admin</Link>
+              {canAccessAdmin ? <Link to="/admin/dashboard">Admin</Link> : null}
             </div>
 
             <div className="app-user-chip">

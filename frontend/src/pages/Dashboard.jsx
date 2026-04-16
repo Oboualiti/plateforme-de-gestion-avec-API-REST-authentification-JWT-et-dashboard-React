@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 
 function Dashboard() {
@@ -12,16 +13,12 @@ function Dashboard() {
 
   return (
     <main className="page-content">
-      <section className="workspace-header">
-        <div className="panel-header">
-          <div className="page-intro">
-            <p className="eyebrow">Dashboard</p>
-            <h1>Operations overview</h1>
-            <p className="subtitle">
-              Monitor workload, ownership, and request flow from a single operational workspace.
-            </p>
-          </div>
-          <div className="page-actions">
+      <PageHeader
+        eyebrow="Dashboard"
+        title="Operations overview"
+        description="Monitor workload, ownership, and request flow from a single operational workspace."
+        actions={
+          <>
             {quickActions.map((action, index) => (
               <Link
                 key={action.to}
@@ -31,14 +28,16 @@ function Dashboard() {
                 {action.label}
               </Link>
             ))}
-          </div>
-        </div>
-        <div className="workspace-meta">
-          <span className="status-tag info">{user?.role_keys?.[0]?.replaceAll('_', ' ') || 'user'}</span>
-          <span className="muted-text">{user?.company_name || 'Global'}</span>
-          <span className="muted-text">{user?.entity_name || 'No entity assigned'}</span>
-        </div>
-      </section>
+          </>
+        }
+        meta={
+          <>
+            <span className="status-tag info">{user?.role_keys?.[0]?.replaceAll('_', ' ') || 'user'}</span>
+            <span className="muted-text">{user?.company_name || 'Global'}</span>
+            <span className="muted-text">{user?.entity_name || 'No entity assigned'}</span>
+          </>
+        }
+      />
 
       <section className="kpi-grid">
         <article className="summary-card summary-card-emphasis">

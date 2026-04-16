@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -35,6 +36,12 @@ from .serializers import (
     UnitMembershipSerializer,
 )
 from .telegram import mirror_request_message_to_telegram
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 
 class MainBranchViewSet(viewsets.ModelViewSet):
@@ -73,6 +80,14 @@ class RequestListCreateView(APIView):
     def get(self, request):
         queryset = get_visible_requests_queryset(request.user)
         queryset = apply_request_filters(queryset, request.query_params)
+
+        paginator = StandardResultsSetPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        if page is not None:
+            mark_requests_stuck(page)
+            serializer = RequestSummarySerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
         requests_list = list(queryset)
         mark_requests_stuck(requests_list)
         return Response(RequestSummarySerializer(requests_list, many=True).data)
@@ -272,6 +287,55 @@ class RequestAssignToMeView(APIView):
             assignee=request.user,
             note="Assigned to self",
         )
+        service_request = load_request(request_id)
+        mark_request_stuck(service_request)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+
+class RequestAssignUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not get_visible_requests_queryset(request.user).filter(id=service_request.id).exists():
+            return Response(
+                {"detail": "You cannot access this request."}, status=status.HTTP_403_FORBIDDEN
+            )
+
+        if not can_update_request_status(request.user, service_request):
+            return Response(
+                {"detail": "You do not have permission to assign this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = RequestAssignUserSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user_id = serializer.validated_data["user_id"]
+        note = serializer.validated_data.get("note", "Assigned via delegation")
+
+        assignee = User.objects.filter(id=user_id, is_active=True).first()
+        if not assignee:
+            return Response({"detail": "User not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        service_request.current_assignee = assignee
+        service_request.save(update_fields=["current_assignee"])
+
+        RequestAssignmentHistory.objects.create(
+            request=service_request,
+            assigned_by=request.user,
+            assignee=assignee,
+            note=note,
+        )
+
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
         return Response(
@@ -489,7 +553,20 @@ def build_request_detail_context(request, service_request):
         "available_reassignment_targets": get_available_reassignment_targets(
             request.user, service_request
         ),
+        "potential_assignees": get_potential_assignees(request.user, service_request),
     }
+
+
+def get_potential_assignees(user, service_request):
+    target_entity_id = get_request_target_entity_id(service_request)
+    if not target_entity_id:
+        return []
+
+    # Get users in target entity
+    queryset = User.objects.filter(entity_id=target_entity_id, is_active=True).order_by(
+        "username"
+    )
+    return [{"id": u.id, "username": u.username} for u in queryset]
 
 
 def get_available_reassignment_targets(user, service_request):
@@ -525,7 +602,10 @@ def apply_request_filters(queryset, params):
         )
 
     company = (params.get("company") or "").strip()
-    if company:
+    company_id = params.get("company_id")
+    if company_id:
+        queryset = queryset.filter(Q(company_id=company_id) | Q(requester_user__company_id=company_id))
+    elif company:
         queryset = queryset.filter(
             Q(company__name__icontains=company)
             | Q(company__code__icontains=company)
@@ -534,14 +614,22 @@ def apply_request_filters(queryset, params):
         )
 
     source_entity = (params.get("source_entity") or "").strip()
-    if source_entity:
+    source_entity_id = params.get("source_entity_id")
+    if source_entity_id:
+        queryset = queryset.filter(source_entity_id=source_entity_id)
+    elif source_entity:
         queryset = queryset.filter(
             Q(source_entity__name__icontains=source_entity)
             | Q(source_entity__code__icontains=source_entity)
         )
 
     target_entity = (params.get("target_entity") or "").strip()
-    if target_entity:
+    target_entity_id = params.get("target_entity_id")
+    if target_entity_id:
+        queryset = queryset.filter(
+            Q(target_entity_id=target_entity_id) | Q(target_unit__code__in=Entity.objects.filter(id=target_entity_id).values_list("code", flat=True))
+        )
+    elif target_entity:
         queryset = queryset.filter(
             Q(target_entity__name__icontains=target_entity)
             | Q(target_entity__code__icontains=target_entity)

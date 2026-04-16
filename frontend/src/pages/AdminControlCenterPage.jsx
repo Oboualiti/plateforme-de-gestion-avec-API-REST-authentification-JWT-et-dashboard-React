@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
 const sectionConfig = {
   dashboard: { title: 'Dashboard', endpoint: '/admin/dashboard/' },
   companies: { title: 'Companies', endpoint: '/admin/companies/' },
   entities: { title: 'Entities', endpoint: '/admin/entities/' },
-  hierarchy: { title: 'Hierarchy', endpoint: '/admin/hierarchy/' },
   users: { title: 'Users', endpoint: '/admin/users/manageable/' },
   roles: { title: 'Roles', endpoint: '/admin/roles/' },
   'permissions-catalog': { title: 'Permissions', endpoint: '/admin/permissions/catalog/' },
   'delegation-rules': { title: 'Delegation rules', endpoint: '/admin/delegation-rules/' },
-  requests: { title: 'Requests', endpoint: '/admin/requests/' },
-  assignments: { title: 'Assignments', endpoint: '/admin/assignments/' },
-  'status-tracking': { title: 'Status tracking', endpoint: '/admin/status-tracking/' },
   'audit-logs': { title: 'Audit logs', endpoint: '/admin/audit-logs/' },
   notifications: { title: 'Notifications', endpoint: '/admin/notifications/' },
   reports: { title: 'Reports', endpoint: '/admin/reports/' },
@@ -30,7 +28,12 @@ function AdminControlCenterPage() {
   const navigate = useNavigate()
   const sectionKey = useSectionKey()
   const config = sectionConfig[sectionKey] || sectionConfig.dashboard
-  const [state, setState] = useState({ loading: true, error: '', data: null })
+  const [state, setState] = useState({
+    loading: true,
+    error: '',
+    data: null,
+    sectionKey: 'dashboard',
+  })
   const [message, setMessage] = useState('')
   const [companyForm, setCompanyForm] = useState({ name: '', code: '', is_active: true })
   const [entityForm, setEntityForm] = useState({
@@ -41,21 +44,61 @@ function AdminControlCenterPage() {
     is_active: true,
   })
   const [selectedPermissionUserId, setSelectedPermissionUserId] = useState('')
+  const [expandedRowId, setExpandedRowId] = useState(null)
 
   async function loadSection() {
-    setState({ loading: true, error: '', data: null })
+    setState({ loading: true, error: '', data: null, sectionKey })
     try {
+      if (sectionKey === 'companies') {
+        const [companiesResponse, hierarchyResponse] = await Promise.all([
+          api.get(config.endpoint),
+          api.get('/admin/hierarchy/'),
+        ])
+        setState({
+          loading: false,
+          error: '',
+          data: {
+            companies: companiesResponse.data || [],
+            senior_options: hierarchyResponse.data.senior_options || [],
+          },
+          sectionKey,
+        })
+        setExpandedRowId(null)
+        return
+      }
+
+      if (sectionKey === 'entities') {
+        const [entitiesResponse, companiesResponse, hierarchyResponse] = await Promise.all([
+          api.get(config.endpoint),
+          api.get('/admin/companies/'),
+          api.get('/admin/hierarchy/'),
+        ])
+        setState({
+          loading: false,
+          error: '',
+          data: {
+            entities: entitiesResponse.data,
+            companies: companiesResponse.data,
+            manager_options: hierarchyResponse.data.manager_options || [],
+          },
+          sectionKey,
+        })
+        setExpandedRowId(null)
+        return
+      }
+
       const params =
         sectionKey === 'permissions-catalog' && selectedPermissionUserId
           ? { params: { user_id: selectedPermissionUserId } }
           : undefined
       const response = await api.get(config.endpoint, params)
-      setState({ loading: false, error: '', data: response.data })
+      setState({ loading: false, error: '', data: response.data, sectionKey })
     } catch (error) {
       setState({
         loading: false,
         error: error.response?.data?.detail || 'Could not load admin section.',
         data: null,
+        sectionKey,
       })
     }
   }
@@ -63,6 +106,10 @@ function AdminControlCenterPage() {
   useEffect(() => {
     loadSection()
   }, [sectionKey, selectedPermissionUserId])
+
+  useEffect(() => {
+    setMessage('')
+  }, [sectionKey])
 
   async function submitCompany(event) {
     event.preventDefault()
@@ -110,7 +157,7 @@ function AdminControlCenterPage() {
   }
 
   const sectionBody = useMemo(() => {
-    const data = state.data
+    const data = state.sectionKey === sectionKey ? state.data : null
     if (!data) return null
 
     if (sectionKey === 'dashboard') {
@@ -164,6 +211,8 @@ function AdminControlCenterPage() {
     }
 
     if (sectionKey === 'companies') {
+      const companies = data.companies || []
+      const seniorOptions = data.senior_options || []
       return (
         <>
           <section className="panel">
@@ -193,21 +242,84 @@ function AdminControlCenterPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.code}</td>
-                    <td>{item.senior_name || '-'}</td>
-                    <td>{item.entity_count}</td>
-                    <td>{item.user_count}</td>
-                    <td>{item.is_active ? 'Active' : 'Inactive'}</td>
-                    <td>
-                      <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}>
-                        {item.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {companies.map((item) => {
+                  const isExpanded = expandedRowId === `company-${item.id}`
+                  const companySeniors = seniorOptions.filter((opt) => opt.company_id === item.id)
+                  return (
+                    <>
+                      <tr key={item.id}>
+                        <td><strong>{item.name}</strong></td>
+                        <td>{item.code}</td>
+                        <td>
+                          <span className={`status-tag ${item.senior_name ? 'active' : 'muted'}`}>
+                            {item.senior_name || 'None'}
+                          </span>
+                        </td>
+                        <td>{item.entity_count}</td>
+                        <td>{item.user_count}</td>
+                        <td>
+                          <span className={`status-tag ${item.is_active ? 'active' : 'danger'}`}>
+                            {item.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="actions-cell">
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => setExpandedRowId(isExpanded ? null : `company-${item.id}`)}
+                          >
+                            {isExpanded ? 'Close' : 'Edit'}
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}
+                          >
+                            {item.is_active ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`company-edit-${item.id}`} className="expanded-edit-row">
+                          <td colSpan={7}>
+                            <div className="inline-edit-panel">
+                              <div className="inline-edit-group">
+                                <label className="inline-edit-label">Assign senior</label>
+                                <p className="muted-text" style={{ margin: '0 0 8px', fontSize: '12px' }}>
+                                  Current: <strong>{item.senior_name || 'None assigned'}</strong>
+                                </p>
+                                <div className="inline-edit-row">
+                                  <select
+                                    className="app-select"
+                                    defaultValue=""
+                                    onChange={(event) => {
+                                      if (!event.target.value) return
+                                      patchRecord(
+                                        `/admin/hierarchy/companies/${item.id}/`,
+                                        { senior_user_id: Number(event.target.value) },
+                                        'Senior assigned successfully.'
+                                      )
+                                    }}
+                                  >
+                                    <option value="">— Select senior —</option>
+                                    {companySeniors.map((opt) => (
+                                      <option key={opt.id} value={opt.id}>{opt.username}</option>
+                                    ))}
+                                  </select>
+                                  {companySeniors.length === 0 && (
+                                    <span className="muted-text" style={{ fontSize: '12px' }}>
+                                      No senior-role users found for this company.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -216,7 +328,9 @@ function AdminControlCenterPage() {
     }
 
     if (sectionKey === 'entities') {
-      const companies = Array.from(new Map(data.map((item) => [item.company, { id: item.company, name: item.company_name }])).values())
+      const entities = data.entities || []
+      const companies = data.companies || []
+      const managerOptions = data.manager_options || []
       return (
         <>
           <section className="panel">
@@ -251,21 +365,86 @@ function AdminControlCenterPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.company_name}</td>
-                    <td>{item.entity_type}</td>
-                    <td>{item.manager_name || '-'}</td>
-                    <td>{item.user_count}</td>
-                    <td>{item.is_active ? 'Active' : 'Inactive'}</td>
-                    <td>
-                      <button type="button" className="ghost-button" onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}>
-                        {item.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {entities.map((item) => {
+                  const isExpanded = expandedRowId === `entity-${item.id}`
+                  const entityManagers = managerOptions.filter((opt) => opt.entity_id === item.id)
+                  return (
+                    <>
+                      <tr key={item.id}>
+                        <td><strong>{item.name}</strong></td>
+                        <td>{item.company_name}</td>
+                        <td>
+                          <span className="status-tag info">{item.entity_type}</span>
+                        </td>
+                        <td>
+                          <span className={`status-tag ${item.manager_name ? 'active' : 'muted'}`}>
+                            {item.manager_name || 'None'}
+                          </span>
+                        </td>
+                        <td>{item.user_count}</td>
+                        <td>
+                          <span className={`status-tag ${item.is_active ? 'active' : 'danger'}`}>
+                            {item.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="actions-cell">
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => setExpandedRowId(isExpanded ? null : `entity-${item.id}`)}
+                          >
+                            {isExpanded ? 'Close' : 'Edit'}
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}
+                          >
+                            {item.is_active ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`entity-edit-${item.id}`} className="expanded-edit-row">
+                          <td colSpan={7}>
+                            <div className="inline-edit-panel">
+                              <div className="inline-edit-group">
+                                <label className="inline-edit-label">Assign manager</label>
+                                <p className="muted-text" style={{ margin: '0 0 8px', fontSize: '12px' }}>
+                                  Current: <strong>{item.manager_name || 'None assigned'}</strong>
+                                </p>
+                                <div className="inline-edit-row">
+                                  <select
+                                    className="app-select"
+                                    defaultValue=""
+                                    onChange={(event) => {
+                                      if (!event.target.value) return
+                                      patchRecord(
+                                        `/admin/hierarchy/entities/${item.id}/`,
+                                        { manager_user_id: Number(event.target.value) },
+                                        'Manager assigned successfully.'
+                                      )
+                                    }}
+                                  >
+                                    <option value="">— Select manager —</option>
+                                    {entityManagers.map((opt) => (
+                                      <option key={opt.id} value={opt.id}>{opt.username}</option>
+                                    ))}
+                                  </select>
+                                  {entityManagers.length === 0 && (
+                                    <span className="muted-text" style={{ fontSize: '12px' }}>
+                                      No manager-role users found for this entity.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -445,52 +624,6 @@ function AdminControlCenterPage() {
       )
     }
 
-    if (sectionKey === 'requests') {
-      return <RequestSummaryTable rows={data} />
-    }
-
-    if (sectionKey === 'assignments') {
-      return (
-        <>
-          <section className="panel">
-            <p className="eyebrow">Current</p>
-            <h2>Assigned requests</h2>
-            <RequestSummaryTable rows={data.current_assignments || []} />
-          </section>
-          <section className="panel">
-            <p className="eyebrow">Unassigned</p>
-            <h2>Needs assignment</h2>
-            <RequestSummaryTable rows={data.unassigned_requests || []} />
-          </section>
-        </>
-      )
-    }
-
-    if (sectionKey === 'status-tracking') {
-      return (
-        <section className="detail-grid admin-detail-grid">
-          <div className="panel">
-            <p className="eyebrow">Delayed</p>
-            <h2>Stuck requests</h2>
-            <RequestSummaryTable rows={data.stuck_requests || []} />
-          </div>
-          <div className="panel">
-            <p className="eyebrow">History</p>
-            <h2>Status history</h2>
-            <div className="timeline-list">
-              {(data.history || []).map((item) => (
-                <article key={item.id} className="timeline-card">
-                  <strong>{item.request_number}</strong>
-                  <p>{item.old_status} {'->'} {item.new_status}</p>
-                  <p className="muted-text">{item.changed_by_name} | {new Date(item.changed_at).toLocaleString()}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      )
-    }
-
     if (sectionKey === 'audit-logs') {
       return (
         <div className="timeline-list">
@@ -549,37 +682,73 @@ function AdminControlCenterPage() {
     }
 
     return <p className="muted-text">This section is ready for expansion.</p>
-  }, [sectionKey, state.data, selectedPermissionUserId])
+  }, [
+    sectionKey,
+    state.data,
+    state.sectionKey,
+    selectedPermissionUserId,
+    companyForm,
+    entityForm,
+    expandedRowId,
+  ])
+
+  const { user } = useAuth()
+
+  async function handleStartAssignment(request) {
+    setAssignmentState({
+      active: true,
+      request,
+      loadingEntities: true,
+      entities: [],
+      saving: false,
+    })
+
+    try {
+      // Find company ID - prefer company_id then search by name if needed, 
+      // but backend should provide it. Admin summary serializer might need update if ID is missing.
+      // For now assume request.id is available and we can fetch companies.
+      const response = await api.get('/admin/entities/', {
+        params: { company_id: request.company_id },
+      })
+      setAssignmentState(curr => ({
+        ...curr,
+        loadingEntities: false,
+        entities: response.data.filter(e => e.entity_type !== 'PROD'),
+      }))
+    } catch (err) {
+      setMessage('Failed to load target entities.')
+      setAssignmentState(curr => ({ ...curr, loadingEntities: false }))
+    }
+  }
+
+  async function handleConfirmAssignment(targetEntityId, note) {
+    setAssignmentState(curr => ({ ...curr, saving: true }))
+    try {
+      await api.patch(`/admin/requests/${assignmentState.request.id}/`, {
+        target_entity_id: Number(targetEntityId),
+        note,
+      })
+      setMessage('Request reassigned successfully.')
+      setAssignmentState({ active: false, request: null, loadingEntities: false, entities: [], saving: false })
+      loadSection()
+    } catch (err) {
+      setMessage(err.response?.data?.detail || 'Failed to reassign request.')
+      setAssignmentState(curr => ({ ...curr, saving: false }))
+    }
+  }
 
   return (
     <main className="page-content">
-      <section className="workspace-header">
-        <div className="panel-header">
-          <div className="page-intro">
-            <p className="eyebrow">Administration</p>
-            <h1>{config.title}</h1>
-            <p>Manage structure, access, monitoring, and operational records from a consistent admin workspace.</p>
-          </div>
-          {sectionKey === 'requests' && (
-            <button type="button" className="ghost-button" onClick={() => navigate('/requests')}>
-              Open request workspace
-            </button>
-          )}
-        </div>
-        {message && <p className="success-text">{message}</p>}
-        {state.loading && <p className="muted-text">Loading section...</p>}
-        {state.error && <p className="error-text">{state.error}</p>}
-      </section>
+      <PageHeader
+        eyebrow="Administration"
+        title={config.title}
+        description="Manage structure, access, monitoring, and operational records from a consistent admin workspace."
+        actions={null}
+      />
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Overview</p>
-            <h2>{config.title}</h2>
-          </div>
-        </div>
-        <p className="muted-text">Use the tables and forms below to review records, update configuration, and complete operational actions.</p>
-      </section>
+      {message && <p className="success-text">{message}</p>}
+      {state.loading && <p className="muted-text">Loading section...</p>}
+      {state.error && <p className="error-text">{state.error}</p>}
 
       {!state.loading && !state.error && sectionBody}
     </main>
@@ -617,45 +786,6 @@ function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave
   )
 }
 
-function RequestSummaryTable({ rows }) {
-  return (
-    <div className="table-wrap">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Ref</th>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Company</th>
-            <th>Source</th>
-            <th>Target</th>
-            <th>Assignee</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan="7">No records found.</td>
-            </tr>
-          )}
-          {rows.map((item) => (
-            <tr key={item.id}>
-              <td>{item.request_number}</td>
-              <td>{item.title}</td>
-              <td>
-                <span className="status-tag info">{item.status}</span>
-              </td>
-              <td>{item.company_name || '-'}</td>
-              <td>{item.source_entity_name || '-'}</td>
-              <td>{item.target_entity_name || '-'}</td>
-              <td>{item.assignee_name || 'Unassigned'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
 
 function MetricCard({ title, value }) {
   return (

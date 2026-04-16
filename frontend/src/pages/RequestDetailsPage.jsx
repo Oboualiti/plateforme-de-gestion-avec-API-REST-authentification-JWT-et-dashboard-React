@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -49,6 +50,8 @@ function RequestDetailsPage() {
   })
   const [reassignTarget, setReassignTarget] = useState('')
   const [reassignNote, setReassignNote] = useState('')
+  const [delegateTarget, setDelegateTarget] = useState('')
+  const [delegateNote, setDelegateNote] = useState('')
 
   useEffect(() => {
     let active = true
@@ -83,21 +86,30 @@ function RequestDetailsPage() {
       try {
         const response = await api.get(`/requests/${requestId}/`)
         if (!active) return
-        const currentComments = state.request.comments || []
-        const nextComments = response.data.comments || []
-        if (nextComments.length !== currentComments.length) {
-          setState((current) => ({ ...current, request: response.data }))
+        setState((current) => {
+          const currentRequest = current.request
+          if (!currentRequest) return current
+
+          const currentComments = currentRequest.comments || []
+          const nextComments = response.data.comments || []
+          const currentLast = currentComments[currentComments.length - 1]
+          const nextLast = nextComments[nextComments.length - 1]
+          const hasCommentChange =
+            nextComments.length !== currentComments.length ||
+            (currentLast?.id || null) !== (nextLast?.id || null)
+          const hasStatusChange = currentRequest.status !== response.data.status
+          const hasAssignmentChange =
+            currentRequest.current_assignee_name !== response.data.current_assignee_name ||
+            currentRequest.target_entity !== response.data.target_entity
+
+          if (!hasCommentChange && !hasStatusChange && !hasAssignmentChange) {
+            return current
+          }
+
           setStatusValue(response.data.status)
           setReassignTarget(String(response.data.target_entity || ''))
-          return
-        }
-        const currentLast = currentComments[currentComments.length - 1]
-        const nextLast = nextComments[nextComments.length - 1]
-        if ((currentLast?.id || null) !== (nextLast?.id || null)) {
-          setState((current) => ({ ...current, request: response.data }))
-          setStatusValue(response.data.status)
-          setReassignTarget(String(response.data.target_entity || ''))
-        }
+          return { ...current, request: response.data }
+        })
       } catch {
       }
     }, 2500)
@@ -106,7 +118,7 @@ function RequestDetailsPage() {
       active = false
       clearInterval(intervalId)
     }
-  }, [requestId, state.request])
+  }, [requestId, Boolean(state.request)])
 
   async function refreshFromResponse(requestPromise) {
     setActionState({ busy: true, error: '' })
@@ -118,6 +130,8 @@ function RequestDetailsPage() {
       setComment('')
       setNote('')
       setReassignNote('')
+      setDelegateNote('')
+      setDelegateTarget('')
       setActionState({ busy: false, error: '' })
     } catch (error) {
       setActionState({
@@ -158,6 +172,17 @@ function RequestDetailsPage() {
     )
   }
 
+  async function submitDelegate(event) {
+    event.preventDefault()
+    if (!delegateTarget) return
+    await refreshFromResponse(
+      api.post(`/requests/${requestId}/assign_user/`, {
+        user_id: Number(delegateTarget),
+        note: delegateNote,
+      }),
+    )
+  }
+
   if (state.loading) {
     return (
       <main className="page-content">
@@ -190,14 +215,12 @@ function RequestDetailsPage() {
 
   return (
     <main className="page-content">
-      <section className="workspace-header">
-        <div className="panel-header">
-          <div className="page-intro">
-            <p className="eyebrow">Request details</p>
-            <h1>{request.title}</h1>
-            <p>{request.description}</p>
-          </div>
-          <div className="page-actions">
+      <PageHeader
+        eyebrow="Request details"
+        title={request.title}
+        description={request.description}
+        actions={
+          <>
             {request.can_assign_to_me && (
               <button className="ghost-button" disabled={actionState.busy} onClick={assignToMe} type="button">
                 Assign to me
@@ -206,17 +229,20 @@ function RequestDetailsPage() {
             <Link className="ghost-button pill-link" to="/requests">
               Back to list
             </Link>
-          </div>
-        </div>
-        <div className="workspace-meta">
-          <span className={statusClassMap[request.status] || 'status-tag'}>
-            {statusLabelMap[request.status] || request.status}
-          </span>
-          <span className="muted-text">{request.reference_code || request.request_number}</span>
-          <span className="muted-text">{request.type}</span>
-        </div>
-        {actionState.error && <p className="error-text">{actionState.error}</p>}
-      </section>
+          </>
+        }
+        meta={
+          <>
+            <span className={statusClassMap[request.status] || 'status-tag'}>
+              {statusLabelMap[request.status] || request.status}
+            </span>
+            <span className="muted-text">{request.reference_code || request.request_number}</span>
+            <span className="muted-text">{request.type}</span>
+          </>
+        }
+      />
+
+      {actionState.error && <p className="error-text">{actionState.error}</p>}
 
       <section className="summary-grid request-meta-grid">
           <div className="summary-card">
@@ -402,6 +428,44 @@ function RequestDetailsPage() {
             </div>
             <button disabled={actionState.busy || !reassignTarget} type="submit">
               Reassign team
+            </button>
+          </form>
+        </section>
+      )}
+
+      {request.potential_assignees?.length > 0 && (user?.role_keys?.includes('super_admin') || user?.role_keys?.includes('senior')) && (
+        <section className="panel">
+          <p className="eyebrow">Admin actions</p>
+          <h2>Delegate assignment</h2>
+          <form className="status-form" onSubmit={submitDelegate}>
+            <div>
+              <label htmlFor="delegate-target">Assign to member</label>
+              <select
+                id="delegate-target"
+                className="app-select"
+                value={delegateTarget}
+                onChange={(event) => setDelegateTarget(event.target.value)}
+              >
+                <option value="">Select team member</option>
+                {request.potential_assignees.map((assignee) => (
+                  <option key={assignee.id} value={assignee.id}>
+                    {assignee.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="delegate-note">Note</label>
+              <textarea
+                id="delegate-note"
+                className="app-textarea"
+                value={delegateNote}
+                onChange={(event) => setDelegateNote(event.target.value)}
+                placeholder="Optional note for assignment"
+              />
+            </div>
+            <button disabled={actionState.busy || !delegateTarget} type="submit">
+              Assign to member
             </button>
           </form>
         </section>

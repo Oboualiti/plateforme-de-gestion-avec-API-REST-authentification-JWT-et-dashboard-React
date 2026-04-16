@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -191,13 +192,11 @@ function PermissionManagementPage() {
 
   return (
     <main className="page-content">
-      <section className="workspace-header">
-        <div className="panel-header">
-          <div className="page-intro">
-            <p className="eyebrow">Permissions</p>
-            <h1>Manageable users</h1>
-            <p>Review users, filter by scope, and open permission details for edits and overrides.</p>
-          </div>
+      <PageHeader
+        eyebrow="Permissions"
+        title="Manageable users"
+        description="Review users, filter by scope, and open permission details for edits and overrides."
+        actions={
           <div className="toolbar-group">
             <Link className="pill-link-primary pill-link" to="/admin/users/create">
               Add user
@@ -217,13 +216,17 @@ function PermissionManagementPage() {
               {importing ? 'Importing...' : 'Import file'}
             </button>
           </div>
-        </div>
-        {!state.loading && !state.error && (
-          <div className="workspace-meta">
-            <span className="muted-text">Scope: {state.scope || '-'}</span>
-            <span className="muted-text">Entity: {state.currentEntityName || '-'}</span>
-          </div>
-        )}
+        }
+        meta={
+          !state.loading && !state.error ? (
+            <>
+              <span className="muted-text">Scope: {state.scope || '-'}</span>
+              <span className="muted-text">Entity: {state.currentEntityName || '-'}</span>
+            </>
+          ) : null
+        }
+      />
+
         <input
           ref={importInputRef}
           id="import-users-file"
@@ -233,12 +236,11 @@ function PermissionManagementPage() {
           disabled={importing}
           style={{ display: 'none' }}
         />
-        {!state.loading && !state.error && actionMessage && (
-          <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
-        )}
-        {state.loading && <p className="muted-text">Loading users...</p>}
-        {state.error && <p className="error-text">{state.error}</p>}
-      </section>
+      {!state.loading && !state.error && actionMessage && (
+        <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
+      )}
+      {state.loading && <p className="muted-text">Loading users...</p>}
+      {state.error && <p className="error-text">{state.error}</p>}
 
       {!state.loading && !state.error && (
         <section className="table-wrap">
