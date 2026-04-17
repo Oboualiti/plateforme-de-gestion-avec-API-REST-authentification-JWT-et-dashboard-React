@@ -7,9 +7,9 @@
 6 silly config load:file:C:\Users\fst1\AppData\Roaming\npm\etc\npmrc
 7 verbose title npm run build
 8 verbose argv "run" "build"
-9 verbose logfile logs-max:10 dir:F:\Adil\New folder\request_project\frontend\.npm-cache\_logs\2026-04-17T08_48_28_540Z-
-10 verbose logfile F:\Adil\New folder\request_project\frontend\.npm-cache\_logs\2026-04-17T08_48_28_540Z-debug-0.log
-11 silly logfile start cleaning logs, removing 1 files
+9 verbose logfile logs-max:10 dir:F:\Adil\New folder\request_project\frontend\.npm-cache\_logs\2026-04-17T10_19_58_631Z-
+10 verbose logfile F:\Adil\New folder\request_project\frontend\.npm-cache\_logs\2026-04-17T10_19_58_631Z-debug-0.log
+11 silly logfile start cleaning logs, removing 3 files
 12 silly logfile done cleaning log files
 13 verbose cwd F:\Adil\New folder\request_project\frontend
 14 verbose os Windows_NT 10.0.17763

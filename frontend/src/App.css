@@ -2294,6 +2294,54 @@ button,
   justify-self: start;
 }
 
+.request-detail-main-refined {
+  max-width: 1180px;
+}
+
+.request-detail-hero-refined {
+  align-items: start;
+}
+
+.request-activity-card {
+  padding: 1.5rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 249, 0.98));
+}
+
+.request-activity-stream {
+  gap: 1rem;
+}
+
+.request-activity-item {
+  background: rgba(242, 244, 246, 0.72);
+}
+
+.request-attachments-block {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.request-attachments-block span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.request-attachments-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.875rem;
+}
+
+.request-attachment-item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.125rem;
+  border-radius: 1rem;
+  background: rgba(242, 244, 246, 0.82);
+}
+
 .request-timeline-list {
   gap: 0.875rem;
 }

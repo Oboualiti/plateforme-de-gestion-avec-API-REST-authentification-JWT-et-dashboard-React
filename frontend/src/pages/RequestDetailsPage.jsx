@@ -23,10 +23,10 @@ const statusLabelMap = {
 }
 
 const timelineKindMap = {
-  created: 'Origin',
+  created: 'Created',
   sent: 'Routing',
   assignment: 'Assignment',
-  reassignment: 'Redirect',
+  reassignment: 'Routing update',
   status: 'Status',
   comment: 'Comment',
 }
@@ -63,8 +63,6 @@ function RequestDetailsPage() {
   const [actionState, setActionState] = useState({ busy: false, error: '' })
   const [reassignTarget, setReassignTarget] = useState('')
   const [reassignNote, setReassignNote] = useState('')
-  const [delegateTarget, setDelegateTarget] = useState('')
-  const [delegateNote, setDelegateNote] = useState('')
   const discussionScrollRef = useRef(null)
 
   const request = state.request
@@ -236,45 +234,44 @@ function RequestDetailsPage() {
     )
   }
 
-  // const request = state.request
-  // const comments = request.comments || []
-  // const needsResolutionNote = terminalStatuses.has(statusValue)
-  // const lifecycleSteps = [
-  //   { label: 'New', value: 'NEW', helper: 'Awaiting review' },
-  //   { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
-  //   { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
-  //   { label: 'Rejected', value: 'REJECTED', helper: 'Stopped or declined' },
-  //   { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
-  //   { label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
-  // ]
+  const lifecycleSteps = [
+    { label: 'New', value: 'NEW', helper: 'Awaiting review' },
+    { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
+    { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
+    { label: 'Rejected', value: 'REJECTED', helper: 'Stopped or declined' },
+    { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
+    { label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
+  ]
 
   const activeLifecycleIndex = lifecycleSteps.findIndex((step) => step.value === request.status)
   const comments = request.comments || []
   const timelineItems = request.activity_timeline || []
+  const attachments = request.attachments || []
   const summaryItems = [
     { label: 'Created', value: formatDateTime(request.created_at) },
     { label: 'Company', value: request.company_name || '-' },
-    { label: 'Source entity', value: request.source_entity_name || '-' },
-    { label: 'Target entity', value: request.target_entity_name || '-' },
+    { label: 'Source Entity', value: request.source_entity_name || '-' },
+    { label: 'Target Entity', value: request.target_entity_name || '-' },
     { label: 'Creator', value: request.requester_name || '-' },
     { label: 'Type', value: request.type || '-' },
     { label: 'Assignee', value: request.assignee_name || 'Unassigned' },
-    { label: 'Current status', value: statusLabelMap[request.status] || request.status },
+    { label: 'Current Status', value: statusLabelMap[request.status] || request.status },
   ]
 
   return (
     <main className="page-content">
       <div className="request-detail-shell">
-        <section className="panel request-detail-hero">
+        <section className="panel request-detail-hero request-detail-hero-refined">
           <div className="request-detail-hero-copy">
             <div className="request-hero-status">
               <span className="request-reference-chip">{request.reference_code || request.request_number}</span>
               <span className={statusClassMap[request.status] || 'status-tag'}>
                 {statusLabelMap[request.status] || request.status}
               </span>
+              {request.is_stuck ? <span className="status-tag danger">Stuck</span> : null}
             </div>
             <div className="request-hero-heading">
-              <p className="eyebrow">Architectural review</p>
+              <p className="eyebrow">Request overview</p>
               <h1>{request.title}</h1>
               <p className="subtitle">
                 {request.description || 'This request is ready for review, routing, status oversight, and discussion.'}
@@ -299,7 +296,7 @@ function RequestDetailsPage() {
           </div>
         </section>
 
-        {actionState.error && <p className="error-text">{actionState.error}</p>}
+        {actionState.error ? <p className="error-text">{actionState.error}</p> : null}
 
         <section className="request-detail-meta-grid">
           {summaryItems.map((item) => (
@@ -310,161 +307,186 @@ function RequestDetailsPage() {
           ))}
         </section>
 
-        <section className="request-detail-layout">
-          <div className="request-detail-main">
-            <section className="panel request-detail-summary-card">
-              <div className="workspace-section-title">
-                <div>
-                  <p className="eyebrow">Executive summary</p>
-                  <h2>Report narrative</h2>
-                </div>
-              </div>
-              <div className="request-summary-copy">
-                <p>{request.description || 'No detailed description was provided for this request.'}</p>
-                <div className="request-summary-highlight">
-                  <span>Resolution note</span>
-                  <strong>{request.resolution_note || 'No resolution note yet.'}</strong>
-                </div>
-              </div>
-            </section>
+        <section className="panel request-process-card">
+          <div className="workspace-section-title">
+            <div>
+              <p className="eyebrow">Lifecycle</p>
+              <h2>Request journey</h2>
+            </div>
+          </div>
 
-            <section className="panel request-process-card">
-              <div className="workspace-section-title">
-                <div>
-                  <p className="eyebrow">Process tracking</p>
-                  <h2>Journey map</h2>
-                </div>
-              </div>
+          <div className="request-lifecycle-shell">
+            <div className="request-lifecycle request-lifecycle-expanded">
+              {lifecycleSteps.map((step, index) => {
+                const isActive = request.status === step.value
+                const isComplete = activeLifecycleIndex > index
+                return (
+                  <button
+                    type="button"
+                    key={step.value}
+                    disabled={!canChangeStatus || actionState.busy}
+                    onClick={() => handleLifecycleStatusChange(step.value)}
+                    className={[
+                      'request-lifecycle-step',
+                      canChangeStatus ? 'request-lifecycle-step-clickable' : '',
+                      isActive ? 'request-lifecycle-step-active' : '',
+                      isComplete ? 'request-lifecycle-step-complete' : '',
+                    ].join(' ').trim()}
+                  >
+                    <span>{step.helper}</span>
+                    <strong>{step.label}</strong>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </section>
 
-              <div className="request-lifecycle-shell">
-                <div className="request-lifecycle request-lifecycle-expanded">
-                  {lifecycleSteps.map((step, index) => {
-                    const isActive = request.status === step.value
-                    const isComplete = activeLifecycleIndex > index
-                    return (
-                      <button
-                        type="button"
-                        key={step.value}
-                        disabled={!canChangeStatus || actionState.busy}
-                        onClick={() => handleLifecycleStatusChange(step.value)}
-                        className={[
-                          'request-lifecycle-step',
-                          canChangeStatus ? 'request-lifecycle-step-clickable' : '',
-                          isActive ? 'request-lifecycle-step-active' : '',
-                          isComplete ? 'request-lifecycle-step-complete' : '',
-                        ].join(' ').trim()}
-                      >
-                        <span>{step.helper}</span>
-                        <strong>{step.label}</strong>
-                      </button>
-                    )
-                  })}
-                </div>
+        <div className="request-detail-main request-detail-main-refined">
+          <section className="panel request-detail-summary-card">
+            <div className="workspace-section-title">
+              <div>
+                <p className="eyebrow">Executive summary</p>
+                <h2>Request summary</h2>
               </div>
-            </section>
-</div>
-      <section className="panel discussion-panel">
-        <p className="eyebrow">Comments</p>
-        <h2>Discussion</h2>
-        <div className="thread-list discussion-scroll" ref={discussionScrollRef}>
-          {comments.length === 0 && <p className="muted-text">No comments yet.</p>}
-          {comments.map((item) => (
-            <article
-              key={item.id}
-              className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}
-            >
-              <div className="thread-head">
-                <div>
-                  <strong>{item.sender_name}</strong>
-                  <div className="subline">
-                    {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
+            </div>
+            <div className="request-summary-copy">
+              <p>{request.description || 'No detailed description was provided for this request.'}</p>
+              <div className="request-summary-highlight">
+                <span>Resolution note</span>
+                <strong>{request.resolution_note || 'No resolution note yet.'}</strong>
+              </div>
+              {attachments.length ? (
+                <div className="request-attachments-block">
+                  <span>Attachments</span>
+                  <div className="request-attachments-list">
+                    {attachments.map((item) => (
+                      <article className="request-attachment-item" key={item.id || item.name}>
+                        <strong>{item.name || 'Attachment'}</strong>
+                        <p className="muted-text">{item.size_label || item.type || 'Available file'}</p>
+                      </article>
+                    ))}
                   </div>
                 </div>
-                <small>{new Date(item.created_at).toLocaleString()}</small>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="panel request-discussion-card">
+            <div className="workspace-section-title">
+              <div>
+                <p className="eyebrow">Discussion</p>
+                <h2>Comments</h2>
               </div>
-              <p>{item.message}</p>
-            </article>
-          ))}
-        </div>
-        <form className="stack-form" onSubmit={submitComment}>
-          <textarea
-            className="app-textarea"
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-            placeholder="Add a comment"
-          />
-          <button disabled={actionState.busy || !comment.trim()} type="submit">
-            Add comment
-          </button>
-        </form>
-      </section>
-<aside>
-            <section className="panel request-rail-card">
-              <div className="workspace-section-title">
-                <div>
-                  <p className="eyebrow">Timeline</p>
-                  <h2>Recorded activity</h2>
-                </div>
-              </div>
-              <div className="request-timeline-list">
-                {timelineItems.length === 0 ? <p className="muted-text">No recorded activity yet.</p> : null}
-                {timelineItems.slice(0, 8).map((item, index) => (
-                  <article className="request-timeline-item" key={`${item.timestamp}-${item.title}-${index}`}>
-                    <div className="request-timeline-kicker">
-                      <span>{timelineKindMap[item.kind] || 'Event'}</span>
-                      <small>{formatDateTime(item.timestamp)}</small>
+            </div>
+
+            <div className="request-discussion-stack">
+              <div className="thread-list request-thread-list" ref={discussionScrollRef}>
+                {comments.length === 0 ? <p className="muted-text">No comments yet.</p> : null}
+                {comments.map((item) => (
+                  <article
+                    key={item.id}
+                    className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}
+                  >
+                    <div className="request-comment-card">
+                      <div className="request-comment-avatar">{getInitials(item.sender_name)}</div>
+                      <div className="request-comment-body">
+                        <div className="thread-head">
+                          <div>
+                            <strong>{item.sender_name}</strong>
+                            <div className="subline request-thread-meta">
+                              {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
+                            </div>
+                          </div>
+                          <small>{formatDateTime(item.created_at)}</small>
+                        </div>
+                        <p>{item.message}</p>
+                      </div>
                     </div>
-                    <strong>{item.title}</strong>
-                    <p>{item.description}</p>
-                    {item.note ? <p className="muted-text">{item.note}</p> : null}
                   </article>
                 ))}
               </div>
-            </section>
 
-            {request.can_reassign_target_team && isSuperAdmin ? (
-              <section className="panel request-rail-card">
-                <div className="workspace-section-title">
-                  <div>
-                    <p className="eyebrow">Admin action</p>
-                    <h2>Route request</h2>
+              <form className="stack-form request-comment-composer" onSubmit={submitComment}>
+                <textarea
+                  className="app-textarea"
+                  value={comment}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder="Add a comment"
+                />
+                <button disabled={actionState.busy || !comment.trim()} type="submit">
+                  Send comment
+                </button>
+              </form>
+            </div>
+          </section>
+
+          <section className="panel request-activity-card">
+            <div className="workspace-section-title">
+              <div>
+                <p className="eyebrow">Activity</p>
+                <h2>History</h2>
+              </div>
+            </div>
+
+            <div className="request-timeline-list request-activity-stream">
+              {timelineItems.length === 0 ? <p className="muted-text">No recorded activity yet.</p> : null}
+              {timelineItems.map((item, index) => (
+                <article className="request-timeline-item request-activity-item" key={`${item.timestamp}-${item.title}-${index}`}>
+                  <div className="request-timeline-kicker">
+                    <span>{timelineKindMap[item.kind] || 'Event'}</span>
+                    <small>{formatDateTime(item.timestamp)}</small>
                   </div>
+                  <strong>{item.title}</strong>
+                  <p>{item.description}</p>
+                  {item.note ? <p className="muted-text">{item.note}</p> : null}
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {request.can_reassign_target_team && isSuperAdmin ? (
+            <section className="panel request-detail-summary-card">
+              <div className="workspace-section-title">
+                <div>
+                  <p className="eyebrow">Admin action</p>
+                  <h2>Route request</h2>
                 </div>
-                <form className="status-form" onSubmit={submitReassign}>
-                  <div>
-                    <label htmlFor="reassign-target">Target team</label>
-                    <select
-                      id="reassign-target"
-                      className="app-select"
-                      value={reassignTarget}
-                      onChange={(event) => setReassignTarget(event.target.value)}
-                    >
-                      <option value="">Select target team</option>
-                      {(request.available_reassignment_targets || []).map((target) => (
-                        <option key={target.id} value={target.id}>
-                          {target.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="reassign-note">Routing note</label>
-                    <textarea
-                      id="reassign-note"
-                      className="app-textarea"
-                      value={reassignNote}
-                      onChange={(event) => setReassignNote(event.target.value)}
-                      placeholder="Optional note for routing"
-                    />
-                  </div>
-                  <button disabled={actionState.busy || !reassignTarget} type="submit">
-                    Update target team
-                  </button>
-                </form>
-              </section>
-            ) : null}
-          </aside>
-        </section>
+              </div>
+              <form className="status-form" onSubmit={submitReassign}>
+                <div>
+                  <label htmlFor="reassign-target">Target team</label>
+                  <select
+                    id="reassign-target"
+                    className="app-select"
+                    value={reassignTarget}
+                    onChange={(event) => setReassignTarget(event.target.value)}
+                  >
+                    <option value="">Select target team</option>
+                    {(request.available_reassignment_targets || []).map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="reassign-note">Routing note</label>
+                  <textarea
+                    id="reassign-note"
+                    className="app-textarea"
+                    value={reassignNote}
+                    onChange={(event) => setReassignNote(event.target.value)}
+                    placeholder="Optional note for routing"
+                  />
+                </div>
+                <button disabled={actionState.busy || !reassignTarget} type="submit">
+                  Update target team
+                </button>
+              </form>
+            </section>
+          ) : null}
+        </div>
       </div>
     </main>
   )

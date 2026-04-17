@@ -133,16 +133,6 @@ function MainLayout() {
             </Link>
           )}
 
-          <div className="brand-card">
-            <p className="eyebrow">Workspace</p>
-            <h3>{user?.company_name || 'Global operations'}</h3>
-            <p className="muted-text">{user?.entity_name || 'No entity assigned'}</p>
-            <div className="sidebar-footer-meta">
-              <Link to="/requests">Requests</Link>
-              <Link to="/dashboard">Dashboard</Link>
-            </div>
-          </div>
-
           <button type="button" className="ghost-button sidebar-logout" onClick={logout}>
             Log out
           </button>

@@ -93,14 +93,6 @@ function LoginPage() {
           </button>
           {error && <p className="error-text">{error}</p>}
 
-          <div className="login-divider">
-            <span>Alternative access</span>
-          </div>
-
-          <button type="button" className="ghost-button login-sso-button" disabled title="SSO is not configured yet">
-            Continue with SSO
-          </button>
-
           <div className="login-footer">
             <p>
               Need help? <span className="muted-text">Contact support</span>
