@@ -21,6 +21,23 @@ USER_IMPORT_COLUMNS = [
 ]
 
 XLSX_NAMESPACE = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+HEADER_ALIASES = {
+    "user_name": "username",
+    "first_nam": "first_name",
+    "firstname": "first_name",
+    "first name": "first_name",
+    "lastname": "last_name",
+    "last name": "last_name",
+    "role": "role_key",
+    "company": "company_id",
+    "company_code": "company_id",
+    "entity": "entity_id",
+    "entity_code": "entity_id",
+    "team_leader": "team_leader_id",
+    "team_leader_username": "team_leader_id",
+    "teamleader": "team_leader_id",
+    "active": "is_active",
+}
 
 
 def _normalize_header(value):
@@ -35,9 +52,9 @@ def _normalize_cell(value):
 
 def _parse_boolean(value):
     normalized = (value or "").strip().lower()
-    if normalized in {"1", "true", "yes", "y"}:
+    if normalized in {"1", "true", "yes", "y", "vrai", "oui"}:
         return True
-    if normalized in {"0", "false", "no", "n"}:
+    if normalized in {"0", "false", "no", "n", "faux", "non"}:
         return False
     raise ValueError("Expected boolean value (true/false).")
 
@@ -47,6 +64,37 @@ def _parse_int(value):
     if not cleaned:
         return None
     return int(cleaned)
+
+
+def _parse_ref(value):
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError:
+        return cleaned
+
+
+def _canonical_header(value):
+    normalized = _normalize_header(value)
+    return HEADER_ALIASES.get(normalized, normalized)
+
+
+def _normalize_role_key(value):
+    normalized = _normalize_header(value).replace("-", "_").replace(" ", "_")
+    role_aliases = {
+        "superadmin": "super_admin",
+        "super_admin": "super_admin",
+        "senior": "senior",
+        "manager": "manager",
+        "teamleader": "team_leader",
+        "team_leader": "team_leader",
+        "teamlead": "team_leader",
+        "tl": "team_leader",
+        "user": "user",
+    }
+    return role_aliases.get(normalized, normalized)
 
 
 def _extract_cell_text(cell, shared_strings):
@@ -132,7 +180,7 @@ def parse_xlsx_file(file_obj):
 
 
 def _rows_from_reader(fieldnames, rows):
-    normalized_headers = [_normalize_header(item) for item in fieldnames]
+    normalized_headers = [_canonical_header(item) for item in fieldnames]
     missing_required = [col for col in ["username", "role_key"] if col not in normalized_headers]
     if missing_required:
         raise ValueError(f"Missing required columns: {', '.join(missing_required)}.")
@@ -140,7 +188,11 @@ def _rows_from_reader(fieldnames, rows):
     normalized_rows = []
     for idx, row in enumerate(rows, start=2):
         if isinstance(row, dict):
-            source = {k.lower(): _normalize_cell(v) for k, v in row.items() if k is not None}
+            source = {
+                _canonical_header(k): _normalize_cell(v)
+                for k, v in row.items()
+                if k is not None
+            }
         else:
             source = {}
         normalized_row = {column: _normalize_cell(source.get(column, "")) for column in USER_IMPORT_COLUMNS}
@@ -152,16 +204,16 @@ def _rows_from_reader(fieldnames, rows):
         payload["email"] = normalized_row["email"]
         payload["first_name"] = normalized_row["first_name"]
         payload["last_name"] = normalized_row["last_name"]
-        payload["role_key"] = normalized_row["role_key"]
+        payload["role_key"] = _normalize_role_key(normalized_row["role_key"])
         payload["password"] = normalized_row["password"]
         payload["job_title"] = normalized_row["job_title"]
         payload["phone_number"] = normalized_row["phone_number"]
         if normalized_row["company_id"]:
-            payload["company_id"] = _parse_int(normalized_row["company_id"])
+            payload["company_id"] = _parse_ref(normalized_row["company_id"])
         if normalized_row["entity_id"]:
-            payload["entity_id"] = _parse_int(normalized_row["entity_id"])
+            payload["entity_id"] = _parse_ref(normalized_row["entity_id"])
         if normalized_row["team_leader_id"]:
-            payload["team_leader_id"] = _parse_int(normalized_row["team_leader_id"])
+            payload["team_leader_id"] = _parse_ref(normalized_row["team_leader_id"])
         if normalized_row["is_active"]:
             payload["is_active"] = _parse_boolean(normalized_row["is_active"])
         normalized_rows.append({"line": idx, "payload": payload})

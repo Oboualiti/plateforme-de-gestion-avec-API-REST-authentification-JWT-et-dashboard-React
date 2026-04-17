@@ -312,6 +312,94 @@ class ManageableUserExportView(BaseManageUsersView):
 
 
 class ManageableUserImportView(BaseManageUsersView):
+    def _resolve_company_reference(self, reference):
+        if reference in (None, ""):
+            return None
+        if isinstance(reference, int):
+            company = Company.objects.filter(id=reference, is_active=True).first()
+            return company.id if company else None
+        text = str(reference).strip()
+        if not text:
+            return None
+        if text.isdigit():
+            company = Company.objects.filter(id=int(text), is_active=True).first()
+            if company:
+                return company.id
+        company = Company.objects.filter(is_active=True).filter(code__iexact=text).first()
+        if company:
+            return company.id
+        company = Company.objects.filter(is_active=True).filter(name__iexact=text).first()
+        return company.id if company else None
+
+    def _resolve_entity_reference(self, reference, company_id=None):
+        if reference in (None, ""):
+            return None
+        base_qs = Entity.objects.filter(is_active=True)
+        if company_id:
+            base_qs = base_qs.filter(company_id=company_id)
+
+        if isinstance(reference, int):
+            direct = base_qs.filter(id=reference).first()
+            if direct:
+                return direct.id
+            # Fallback: spreadsheet often uses 1..N index inside company.
+            if company_id and reference > 0:
+                entity_ids = list(base_qs.order_by("id").values_list("id", flat=True))
+                idx = reference - 1
+                if idx < len(entity_ids):
+                    return entity_ids[idx]
+            return None
+
+        text = str(reference).strip()
+        if not text:
+            return None
+        by_code = base_qs.filter(code__iexact=text).first()
+        if by_code:
+            return by_code.id
+        by_name = base_qs.filter(name__iexact=text).first()
+        if by_name:
+            return by_name.id
+        return None
+
+    def _resolve_team_leader_reference(self, reference, company_id=None, entity_id=None):
+        if reference in (None, ""):
+            return None
+        base_qs = User.objects.filter(is_active=True)
+        if company_id:
+            base_qs = base_qs.filter(company_id=company_id)
+        if entity_id:
+            base_qs = base_qs.filter(entity_id=entity_id)
+
+        if isinstance(reference, int):
+            user = base_qs.filter(id=reference).first()
+            return user.id if user else None
+
+        text = str(reference).strip()
+        if not text:
+            return None
+        user = base_qs.filter(username__iexact=text).first()
+        return user.id if user else None
+
+    def _prepare_payload(self, raw_payload):
+        payload = dict(raw_payload)
+        company_ref = payload.get("company_id")
+        company_id = self._resolve_company_reference(company_ref)
+        if company_id is not None:
+            payload["company_id"] = company_id
+
+        entity_ref = payload.get("entity_id")
+        entity_id = self._resolve_entity_reference(entity_ref, company_id=company_id)
+        if entity_id is not None:
+            payload["entity_id"] = entity_id
+
+        team_leader_ref = payload.get("team_leader_id")
+        team_leader_id = self._resolve_team_leader_reference(
+            team_leader_ref, company_id=company_id, entity_id=entity_id
+        )
+        if team_leader_id is not None:
+            payload["team_leader_id"] = team_leader_id
+        return payload
+
     def post(self, request):
         upload = request.FILES.get("file")
         if not upload:
@@ -339,7 +427,7 @@ class ManageableUserImportView(BaseManageUsersView):
         errors = []
         actor_level = get_user_max_role_level(request.user)
         for item in parsed_rows:
-            payload = item["payload"]
+            payload = self._prepare_payload(item["payload"])
             serializer = ManagedUserCreateSerializer(
                 data=payload,
                 context={"request": request, "actor_level": actor_level},

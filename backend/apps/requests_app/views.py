@@ -14,7 +14,7 @@ from apps.notifications.services import (
     create_bulk_notifications,
     resolve_request_notification_recipients,
 )
-from apps.permissions_app.services import get_user_role_keys
+from apps.permissions_app.services import get_primary_role_key, get_user_role_keys
 from apps.users.models import User
 
 from .models import (
@@ -526,6 +526,17 @@ def get_visible_requests_queryset(user):
     if not user.company_id or not user.entity_id:
         return ServiceRequest.objects.none()
 
+    role_keys = set(get_user_role_keys(user))
+    if "manager" in role_keys:
+        return base_queryset.filter(
+            Q(company_id=user.company_id)
+            | Q(company__isnull=True, requester_user__company_id=user.company_id),
+            Q(source_entity_id=user.entity_id)
+            | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
+            | Q(target_entity_id=user.entity_id)
+            | Q(target_entity__isnull=True, target_unit__code=user.entity.code),
+        )
+
     if user.entity.entity_type == Entity.EntityType.PROD:
         return base_queryset.filter(requester_user_id=user.id)
 
@@ -559,13 +570,16 @@ def get_request_target_entity_id(service_request):
 
 
 def is_global_requests_manager(user):
-    role_keys = set(get_user_role_keys(user))
-    return "super_admin" in role_keys or user.is_staff
+    primary_role = get_primary_role_key(user)
+    # is_staff should not grant global request visibility; many non-global roles
+    # need Django admin access. Keep global scope only for primary super_admin
+    # role (and Django superuser).
+    return primary_role == "super_admin" or user.is_superuser
 
 
 def is_company_scoped_manager(user):
-    role_keys = set(get_user_role_keys(user))
-    return "senior" in role_keys and bool(user.company_id)
+    primary_role = get_primary_role_key(user)
+    return primary_role == "senior" and bool(user.company_id)
 
 
 def can_update_request_status(user, service_request):

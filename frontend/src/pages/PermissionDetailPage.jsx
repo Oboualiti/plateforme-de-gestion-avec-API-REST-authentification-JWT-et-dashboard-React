@@ -462,23 +462,22 @@ function PermissionDetailPage() {
                 <strong>{permission.name}</strong>
                 <div className="subline">{permission.key}</div>
                 <div className="tag-row">
-                  <span className={`status-tag ${permission.inherited ? 'active' : 'muted'}`}>
-                    {permission.inherited ? 'Inherited' : 'Direct'}
-                  </span>
                   <span className={`status-tag ${permission.effective ? 'active' : 'danger'}`}>
                     {permission.effective ? 'Allowed' : 'Denied'}
                   </span>
                 </div>
               </div>
-              <label className="switch-row">
-                <span>{permission.effective ? 'On' : 'Off'}</span>
+              <label className="switch-control" htmlFor={`permission-${permission.key}`}>
+                <span>{permission.effective ? 'ON' : 'OFF'}</span>
                 <input
+                  id={`permission-${permission.key}`}
                   type="checkbox"
-                  className="permission-switch"
+                  className="switch-input"
                   checked={permission.effective}
                   onChange={(event) => updatePermission(permission.key, event.target.checked)}
                   disabled={!canEdit}
                 />
+                <span className="switch-slider" aria-hidden="true" />
               </label>
             </article>
           ))}

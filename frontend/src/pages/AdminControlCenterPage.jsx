@@ -775,6 +775,46 @@ function AdminControlCenterPage() {
   )
 }
 
+function RequestSummaryTable({ rows = [] }) {
+  if (!rows.length) {
+    return <p className="muted-text">No requests found.</p>
+  }
+
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Status</th>
+            <th>Company</th>
+            <th>Source</th>
+            <th>Target</th>
+            <th>Assignee</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((item) => (
+            <tr key={item.id || item.request_number}>
+              <td>
+                <strong>{item.request_number || '-'}</strong>
+                <div className="muted-text">{item.title || '-'}</div>
+              </td>
+              <td>{item.status || '-'}</td>
+              <td>{item.company_name || '-'}</td>
+              <td>{item.source_entity_name || '-'}</td>
+              <td>{item.target_entity_name || '-'}</td>
+              <td>{item.assignee_name || 'Unassigned'}</td>
+              <td>{item.created_at ? new Date(item.created_at).toLocaleString() : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave }) {
   const [localKeys, setLocalKeys] = useState(selectedKeys)
 

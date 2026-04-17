@@ -46,6 +46,8 @@ function RequestDetailsPage() {
   })
   const [reassignTarget, setReassignTarget] = useState('')
   const [reassignNote, setReassignNote] = useState('')
+  const [delegateTarget, setDelegateTarget] = useState('')
+  const [delegateNote, setDelegateNote] = useState('')
   const discussionScrollRef = useRef(null)
 
   const lastCommentId = useMemo(() => {
@@ -210,6 +212,7 @@ function RequestDetailsPage() {
   }
 
   const request = state.request
+  const comments = request.comments || []
   const needsResolutionNote = terminalStatuses.has(statusValue)
   const lifecycleSteps = [
     { label: 'New', value: 'NEW', helper: 'Awaiting review' },
@@ -293,8 +296,8 @@ function RequestDetailsPage() {
         <p className="eyebrow">Comments</p>
         <h2>Discussion</h2>
         <div className="thread-list discussion-scroll" ref={discussionScrollRef}>
-          {request.comments.length === 0 && <p className="muted-text">No comments yet.</p>}
-          {request.comments.map((item) => (
+          {comments.length === 0 && <p className="muted-text">No comments yet.</p>}
+          {comments.map((item) => (
             <article
               key={item.id}
               className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}

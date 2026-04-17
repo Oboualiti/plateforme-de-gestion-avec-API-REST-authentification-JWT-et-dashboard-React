@@ -1,0 +1,19 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.14.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:F:\OUSSAMA\request project 2\request_project\frontend\.npmrc
+5 silly config load:file:C:\Users\fst2\.npmrc
+6 silly config load:file:C:\Users\fst2\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm run build
+8 verbose argv "run" "build"
+9 verbose logfile logs-max:10 dir:F:\OUSSAMA\request project 2\request_project\frontend\.npm-cache\_logs\2026-04-16T15_31_32_149Z-
+10 verbose logfile F:\OUSSAMA\request project 2\request_project\frontend\.npm-cache\_logs\2026-04-16T15_31_32_149Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files
+13 verbose cwd F:\OUSSAMA\request project 2\request_project\frontend
+14 verbose os Windows_NT 10.0.17763
+15 verbose node v22.14.0
+16 verbose npm  v10.9.2
+17 verbose exit 0
+18 info ok
