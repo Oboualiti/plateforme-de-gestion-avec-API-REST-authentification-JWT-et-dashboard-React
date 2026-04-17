@@ -55,6 +55,7 @@ function formatAuditAction(action) {
 function AdminControlCenterPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
   const sectionKey = useSectionKey()
   const config = sectionConfig[sectionKey] || sectionConfig.dashboard
   const [state, setState] = useState({
@@ -74,6 +75,16 @@ function AdminControlCenterPage() {
     company: '',
     is_active: true,
   })
+  const [entityCompanyFilter, setEntityCompanyFilter] = useState('all')
+  const [entityTypeFilter, setEntityTypeFilter] = useState('all')
+  const [entityStatusFilter, setEntityStatusFilter] = useState('all')
+  const isSenior = (user?.role_keys || []).includes('senior')
+
+  useEffect(() => {
+    if (isSenior && sectionKey === 'companies') {
+      navigate('/admin/entities', { replace: true })
+    }
+  }, [isSenior, sectionKey, navigate])
 
   async function loadSection() {
     setState({ loading: true, error: '', data: null, sectionKey })
@@ -87,13 +98,12 @@ function AdminControlCenterPage() {
       }
 
       if (sectionKey === 'entities' && Array.isArray(normalizedData)) {
-        const companiesResponse = await api.get('/admin/companies/')
-        const companiesPayload = companiesResponse.data
         normalizedData = {
           entities: normalizedData,
-          companies: Array.isArray(companiesPayload)
-            ? companiesPayload
-            : companiesPayload?.companies || [],
+          companies:
+            user?.company && user?.company_name
+              ? [{ id: user.company, name: user.company_name }]
+              : [],
           manager_options: [],
         }
       }
@@ -343,6 +353,17 @@ function AdminControlCenterPage() {
       const entities = data.entities || []
       const companies = data.companies || []
       const managerOptions = data.manager_options || []
+      const filteredEntities = entities.filter((item) => {
+        const matchesCompany =
+          entityCompanyFilter === 'all' || String(item.company) === entityCompanyFilter
+        const matchesType =
+          entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
+        const matchesStatus =
+          entityStatusFilter === 'all' ||
+          (entityStatusFilter === 'active' ? item.is_active : !item.is_active)
+        return matchesCompany && matchesType && matchesStatus
+      })
+
       return (
         <>
           <section className="panel">
@@ -364,6 +385,57 @@ function AdminControlCenterPage() {
             </form>
           </section>
           <div className="table-wrap">
+            <div className="card-toolbar">
+              <div>
+                <p className="eyebrow">Filters</p>
+                <h2>Entity directory</h2>
+              </div>
+              <span className="muted-text">{filteredEntities.length} result(s)</span>
+            </div>
+            <div className="filter-bar table-caption">
+              <select
+                className="app-select"
+                value={entityCompanyFilter}
+                onChange={(event) => setEntityCompanyFilter(event.target.value)}
+              >
+                <option value="all">All companies</option>
+                {companies.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="app-select"
+                value={entityTypeFilter}
+                onChange={(event) => setEntityTypeFilter(event.target.value)}
+              >
+                <option value="all">All entity types</option>
+                <option value="PROD">Prod</option>
+                <option value="SUPPORT">Support</option>
+                <option value="TDEV">T.Dev</option>
+              </select>
+              <select
+                className="app-select"
+                value={entityStatusFilter}
+                onChange={(event) => setEntityStatusFilter(event.target.value)}
+              >
+                <option value="all">All status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setEntityCompanyFilter('all')
+                  setEntityTypeFilter('all')
+                  setEntityStatusFilter('all')
+                }}
+              >
+                Clear
+              </button>
+            </div>
             <table className="data-table">
               <thead>
                 <tr>
@@ -377,7 +449,7 @@ function AdminControlCenterPage() {
                 </tr>
               </thead>
               <tbody>
-                {entities.map((item) => {
+                {filteredEntities.map((item) => {
                   const isExpanded = expandedRowId === `entity-${item.id}`
                   const entityManagers = managerOptions.filter((opt) => opt.entity_id === item.id)
                   return (
@@ -459,6 +531,11 @@ function AdminControlCenterPage() {
                 })}
               </tbody>
             </table>
+            {!filteredEntities.length && (
+              <p className="muted-text" style={{ padding: '20px' }}>
+                No entities match the selected filters.
+              </p>
+            )}
           </div>
         </>
       )
@@ -746,6 +823,9 @@ function AdminControlCenterPage() {
     auditCategoryKey,
     companyForm,
     entityForm,
+    entityCompanyFilter,
+    entityTypeFilter,
+    entityStatusFilter,
     expandedRowId,
     navigate,
   ])

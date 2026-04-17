@@ -16,6 +16,10 @@ function PermissionManagementPage() {
     scope: '',
     currentEntityName: '',
   })
+  const [directoryOptions, setDirectoryOptions] = useState({
+    companies: [],
+    entities: [],
+  })
   const [searchText, setSearchText] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -56,9 +60,13 @@ function PermissionManagementPage() {
     let active = true
     async function loadUsers() {
       try {
-        const usersResponse = await api.get('/admin/users/manageable/')
+        const [usersResponse, optionsResponse] = await Promise.all([
+          api.get('/admin/users/manageable/'),
+          api.get('/admin/users/manageable/options/'),
+        ])
         if (active) {
           const results = usersResponse.data.results || []
+          const optionsPayload = optionsResponse.data || {}
           setState({
             loading: false,
             error: '',
@@ -66,6 +74,10 @@ function PermissionManagementPage() {
             scope: usersResponse.data.scope || '',
             currentEntityName:
               usersResponse.data.current_entity_name || results[0]?.entity_name || '-',
+          })
+          setDirectoryOptions({
+            companies: optionsPayload.company_options || [],
+            entities: optionsPayload.entity_options || [],
           })
         }
       } catch (error) {
@@ -77,6 +89,7 @@ function PermissionManagementPage() {
             scope: '',
             currentEntityName: '',
           })
+          setDirectoryOptions({ companies: [], entities: [] })
         }
       }
     }
@@ -106,20 +119,33 @@ function PermissionManagementPage() {
   }, [state.users])
 
   const companyOptions = useMemo(() => {
-    const uniqueCompanies = new Set()
-    state.users.forEach((item) => {
-      if (item.company_name) uniqueCompanies.add(item.company_name)
-    })
-    return ['all', ...Array.from(uniqueCompanies).sort((a, b) => a.localeCompare(b))]
-  }, [state.users])
+    const names = directoryOptions.companies
+      .map((item) => item.name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+    return ['all', ...names]
+  }, [directoryOptions.companies])
 
   const entityOptions = useMemo(() => {
-    const uniqueEntities = new Set()
-    state.users.forEach((item) => {
-      if (item.entity_name) uniqueEntities.add(item.entity_name)
+    const filteredEntities = directoryOptions.entities.filter((item) => {
+      if (companyFilter === 'all') return true
+      return item.company_name === companyFilter
     })
-    return ['all', ...Array.from(uniqueEntities).sort((a, b) => a.localeCompare(b))]
-  }, [state.users])
+    const names = filteredEntities
+      .map((item) => item.name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+    return ['all', ...names]
+  }, [companyFilter, directoryOptions.entities])
+
+  useEffect(() => {
+    if (companyFilter === 'all') return
+    if (entityFilter === 'all') return
+    const hasMatch = entityOptions.includes(entityFilter)
+    if (!hasMatch) {
+      setEntityFilter('all')
+    }
+  }, [companyFilter, entityFilter, entityOptions])
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
@@ -365,7 +391,10 @@ function PermissionManagementPage() {
                   <select
                     className="app-select"
                     value={companyFilter}
-                    onChange={(event) => setCompanyFilter(event.target.value)}
+                    onChange={(event) => {
+                      setCompanyFilter(event.target.value)
+                      setEntityFilter('all')
+                    }}
                   >
                     <option value="all">All companies</option>
                     {companyOptions

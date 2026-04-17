@@ -1,41 +1,59 @@
-:root {
-  --background: #f5f6f8;
-  --surface: #ffffff;
-  --surface-subtle: #f8fafc;
-  --surface-muted: #f1f5f9;
-  --surface-strong: #e2e8f0;
-  --sidebar: #fbfcfd;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --text: #0f172a;
-  --text-soft: #334155;
-  --text-muted: #64748b;
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --accent-soft: #ccfbf1;
-  --success-soft: #dcfce7;
-  --success-text: #166534;
-  --warning-soft: #fef3c7;
-  --warning-text: #92400e;
-  --danger-soft: #fee2e2;
-  --danger-text: #b91c1c;
-  --info-soft: #dbeafe;
-  --info-text: #1d4ed8;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.06);
-  --sans: "Inter", "Segoe UI", sans-serif;
-  --heading: "Work Sans", "Inter", "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Work+Sans:ital,wght@0,100..900;1,100..900&display=swap');
 
-  font: 15px/1.5 var(--sans);
+:root {
+  --background: #f7f9fb;
+  --layer-main: #f2f4f6;
+  --surface: #ffffff;
+  --surface-subtle: #fbfcfd;
+  --surface-muted: #edf1f4;
+  --surface-strong: #dde5ea;
+  --surface-glass: rgba(255, 255, 255, 0.82);
+  --accent: #005258;
+  --accent-light: #1a6b72;
+  --accent-strong: #003d42;
+  --brand-gradient: linear-gradient(135deg, #005258, #1a6b72);
+  --sidebar: #ffffff;
+  --text: #16202a;
+  --text-soft: #4a5568;
+  --text-muted: #718096;
+  --text-on-accent: #ffffff;
+  --border: rgba(148, 163, 184, 0.18);
+  --border-strong: rgba(71, 85, 105, 0.22);
+  --border-subtle: rgba(148, 163, 184, 0.12);
+  --ghost-border: 1px solid rgba(22, 32, 42, 0.12);
+  --success: #0d9488;
+  --success-soft: rgba(13, 148, 136, 0.12);
+  --success-text: #0f766e;
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --warning-text: #b45309;
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+  --danger-text: #b91c1c;
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.1);
+  --info-text: #1d4ed8;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --radius: 8px;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 12px 30px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 18px 50px rgba(15, 23, 42, 0.08);
+  --sans: "Inter", system-ui, -apple-system, sans-serif;
+  --heading: "Work Sans", "Inter", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font: 15px/1.6 var(--sans);
   color-scheme: light;
   color: var(--text-soft);
   background: var(--background);
   font-synthesis: none;
-  text-rendering: geometricPrecision;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -53,8 +71,9 @@ body,
 body {
   margin: 0;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 246, 248, 0.96)),
-    var(--background);
+    radial-gradient(circle at top left, rgba(0, 82, 88, 0.06), transparent 28%),
+    linear-gradient(180deg, #f7f9fb 0%, #f4f6f8 100%);
+  color: var(--text-soft);
 }
 
 #root {
@@ -64,31 +83,27 @@ body {
   flex-direction: column;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+h1, h2, h3, h4, h5, h6 {
   font-family: var(--heading);
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   color: var(--text);
   margin: 0;
 }
 
 h1 {
-  font-size: clamp(1.9rem, 2.4vw, 2.4rem);
+  font-size: clamp(2.2rem, 3vw, 3.5rem);
   line-height: 1.1;
+  font-weight: 700;
 }
 
 h2 {
-  font-size: clamp(1.25rem, 1.6vw, 1.5rem);
+  font-size: 1.5rem;
   line-height: 1.2;
 }
 
 h3 {
-  font-size: 1rem;
+  font-size: 1.125rem;
   line-height: 1.35;
 }
 
@@ -98,6 +113,16 @@ p {
 
 a {
   color: inherit;
+  text-decoration: none;
+}
+
+strong {
+  color: var(--text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 button,
@@ -105,6 +130,28 @@ input,
 textarea,
 select {
   font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+}
+
+input,
+textarea,
+select {
+  border: 0;
+  background: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(0, 82, 88, 0.2);
+  outline-offset: 2px;
 }
 
 code {
@@ -115,8 +162,17 @@ code {
   color: var(--text);
 }
 
-@media (max-width: 1024px) {
-  :root {
-    font-size: 16px;
-  }
+/* Scrollbar Styles for Architectural Feel */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }

@@ -116,6 +116,7 @@ function MainLayout() {
               <path d="M3 9h18L12 4 3 9Z" />
             </svg>
           </div>
+          <p className="eyebrow">Architectural Unity</p>
           <h2>Request Platform</h2>
           <p className="muted-text">Operations workspace</p>
           <p className="sidebar-variant-label">{sidebarVariant.replaceAll('_', ' ')}</p>

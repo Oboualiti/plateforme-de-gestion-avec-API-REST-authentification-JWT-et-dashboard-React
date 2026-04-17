@@ -60,7 +60,7 @@ ADMIN_MODULE_PERMISSIONS = {
     "requests": {"super_admin", "senior", "manager", "team_leader"},
     "assignments": {"super_admin", "senior", "manager", "team_leader"},
     "status_tracking": {"super_admin", "senior", "manager", "team_leader"},
-    "audit_logs": {"super_admin", "senior"},
+    "audit_logs": {"super_admin", "senior", "manager", "team_leader"},
     "notifications": {"super_admin", "senior"},
     "reports": {"super_admin", "senior", "manager"},
 }
@@ -110,6 +110,13 @@ class AdminBaseView(APIView):
                 "company", "source_entity", "target_entity", "requester_user", "current_assignee"
             ).order_by("-created_at")
         return get_visible_requests_queryset(user)
+
+    def scoped_audit_logs(self, user):
+        queryset = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
+        if self.role_key(user) == "super_admin":
+            return queryset
+        visible_actor_ids = list(self.scoped_users(user).values_list("id", flat=True))
+        return queryset.filter(actor_id__in=visible_actor_ids)
 
 
 class AdminDashboardView(AdminBaseView):
@@ -612,12 +619,10 @@ class AdminAuditLogsView(AdminBaseView):
     module_key = "audit_logs"
 
     def get(self, request):
-        queryset = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
+        queryset = self.scoped_audit_logs(request.user)
         module = request.query_params.get("module")
         if module:
             queryset = queryset.filter(module=module)
-        if self.role_key(request.user) != "super_admin":
-            queryset = queryset.filter(Q(actor=request.user) | Q(actor__company_id=request.user.company_id))
         return Response(AuditLogSerializer(queryset[:200], many=True).data)
 
 

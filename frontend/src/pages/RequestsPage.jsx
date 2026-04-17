@@ -176,7 +176,8 @@ function RequestsPage() {
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const isGlobalAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
-  const isManagerView = isGlobalAdmin || isSenior
+  const isManager = roleKeys.includes('manager')
+  const isCompanyScopedView = isSenior || isManager
   const title = isGlobalAdmin
     ? 'All requests'
     : isSenior
@@ -197,13 +198,7 @@ function RequestsPage() {
 
   // Load companies for the filter
   useEffect(() => {
-    setFilters((current) => {
-      if (current.search === querySearch) return current
-      return { ...current, search: querySearch }
-    })
-  }, [querySearch])
-
-  useEffect(() => {
+    if (!isGlobalAdmin) return
     let active = true
     async function fetchCompanies() {
       try {
@@ -220,7 +215,7 @@ function RequestsPage() {
     return () => {
       active = false
     }
-  }, [isManagerView])
+  }, [isGlobalAdmin])
 
   // Load operational metrics for super admin
   useEffect(() => {
@@ -236,9 +231,9 @@ function RequestsPage() {
     fetchOperationalMetrics()
   }, [isGlobalAdmin])
 
-  // Load entities when company changes
+  // Load entities for the current scope
   useEffect(() => {
-    const companyId = filters.company_id
+    const companyId = isGlobalAdmin ? filters.company_id : user?.company_id
     if (!companyId) {
       setOptions((curr) => ({ ...curr, sourceEntities: [], targetEntities: [] }))
       return
@@ -261,7 +256,7 @@ function RequestsPage() {
       }
     }
     fetchEntities()
-  }, [filters.company_id])
+  }, [filters.company_id, isGlobalAdmin, user?.company_id])
 
   async function loadRequests() {
     try {
@@ -270,7 +265,7 @@ function RequestsPage() {
         page: pagination.page,
         page_size: pagination.pageSize,
         search: filters.search || undefined,
-        company_id: filters.company_id || undefined,
+        company_id: isGlobalAdmin ? filters.company_id || undefined : user?.company_id || undefined,
         source_entity_id: filters.source_entity_id || undefined,
         target_entity_id: filters.target_entity_id || undefined,
         type: filters.type || undefined,
@@ -339,7 +334,7 @@ function RequestsPage() {
   function resetFilters() {
     setFilters({
       search: '',
-      company_id: '',
+      company_id: isGlobalAdmin ? '' : user?.company_id ? String(user.company_id) : '',
       source_entity_id: '',
       target_entity_id: '',
       type: '',
@@ -415,27 +410,28 @@ function RequestsPage() {
             onChange={(event) => handleFilterChange('search', event.target.value)}
           />
 
-          <select
-            className="app-select"
-            value={filters.company_id}
-            onChange={(event) => handleFilterChange('company_id', event.target.value)}
-            disabled={!isManagerView}
-          >
-            <option value="">All companies</option>
-            {options.companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          {isGlobalAdmin && (
+            <select
+              className="app-select"
+              value={filters.company_id}
+              onChange={(event) => handleFilterChange('company_id', event.target.value)}
+            >
+              <option value="">All companies</option>
+              {options.companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
 
           <select
             className="app-select"
             value={filters.source_entity_id}
             onChange={(event) => handleFilterChange('source_entity_id', event.target.value)}
-            disabled={!filters.company_id}
+            disabled={isGlobalAdmin ? !filters.company_id : !options.sourceEntities.length}
           >
-            <option value="">Source entity (Filter by company)</option>
+            <option value="">All source entities</option>
             {options.sourceEntities.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.name}
@@ -447,9 +443,9 @@ function RequestsPage() {
             className="app-select"
             value={filters.target_entity_id}
             onChange={(event) => handleFilterChange('target_entity_id', event.target.value)}
-            disabled={!filters.company_id}
+            disabled={isGlobalAdmin ? !filters.company_id : !options.targetEntities.length}
           >
-            <option value="">Target team (Filter by company)</option>
+            <option value="">All target teams</option>
             {options.targetEntities.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.name}
@@ -529,22 +525,27 @@ function RequestsPage() {
                     <td>{new Date(item.created_at).toLocaleString()}</td>
                     <td>
                       {isGlobalAdmin ? (
-                        isUnassigned ? (
-                          <button 
-                            type="button" 
-                            className="ghost-button pill-link"
-                            onClick={() => handleStartAssignment(item)}
-                          >
-                            Assign
-                          </button>
-                        ) : (
-                          <div className="caption-grid" style={{ alignItems: 'center' }}>
-                            <span className="status-tag active">Assigned</span>
-                            <span className="muted-text" style={{ fontSize: '11px' }}>
-                              {item.target_entity_name}
-                            </span>
-                          </div>
-                        )
+                        <div className="table-actions">
+                          <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
+                            Open
+                          </Link>
+                          {isUnassigned ? (
+                            <button 
+                              type="button" 
+                              className="ghost-button pill-link"
+                              onClick={() => handleStartAssignment(item)}
+                            >
+                              Assign
+                            </button>
+                          ) : (
+                            <div className="caption-grid" style={{ alignItems: 'center' }}>
+                              <span className="status-tag active">Assigned</span>
+                              <span className="muted-text" style={{ fontSize: '11px' }}>
+                                {item.target_entity_name}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
                           Open
