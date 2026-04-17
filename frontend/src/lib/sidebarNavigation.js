@@ -24,11 +24,9 @@ const enterpriseSections = [
 ]
 
 const auditLogsSection = createSection('audit-logs', 'Audit Logs', 'monitor', [
-  createItem('Request logs', '/admin/audit-logs/requests', ['/admin/audit-logs/requests']),
   createItem('User logs', '/admin/audit-logs/users', ['/admin/audit-logs/users']),
   createItem('Access / role logs', '/admin/audit-logs/access', ['/admin/audit-logs/access']),
   createItem('Organization logs', '/admin/audit-logs/organization', ['/admin/audit-logs/organization']),
-  createItem('Notification logs', '/admin/audit-logs/notifications', ['/admin/audit-logs/notifications']),
 ])
 
 const roleVariantMap = {

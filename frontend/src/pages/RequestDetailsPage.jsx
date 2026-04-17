@@ -22,15 +22,6 @@ const statusLabelMap = {
   CLOSED: 'Closed',
 }
 
-const timelineKindMap = {
-  created: 'Created',
-  sent: 'Routing',
-  assignment: 'Assignment',
-  reassignment: 'Routing update',
-  status: 'Status',
-  comment: 'Comment',
-}
-
 const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
 
 function formatRole(roleKeys) {
@@ -245,8 +236,6 @@ function RequestDetailsPage() {
 
   const activeLifecycleIndex = lifecycleSteps.findIndex((step) => step.value === request.status)
   const comments = request.comments || []
-  const timelineItems = request.activity_timeline || []
-  const attachments = request.attachments || []
   const summaryItems = [
     { label: 'Created', value: formatDateTime(request.created_at) },
     { label: 'Company', value: request.company_name || '-' },
@@ -271,16 +260,28 @@ function RequestDetailsPage() {
               {request.is_stuck ? <span className="status-tag danger">Stuck</span> : null}
             </div>
             <div className="request-hero-heading">
-              <p className="eyebrow">Request overview</p>
-              <h1>{request.title}</h1>
-              <p className="subtitle">
-                {request.description || 'This request is ready for review, routing, status oversight, and discussion.'}
-              </p>
+              <p className="eyebrow">Request details</p>
+              <h1>{request.title || 'Untitled request'}</h1>
+              <div className="request-hero-description">
+                <span>Description</span>
+                <p>
+                  {request.description || 'No description provided for this request.'}
+                </p>
+              </div>
             </div>
             <div className="request-hero-meta">
-              <span>{request.company_name || 'No company'}</span>
-              <span>{request.source_entity_name || 'Unknown source'}</span>
-              <span>{formatDateTime(request.created_at)}</span>
+              <span>
+                <small>Company</small>
+                <strong>{request.company_name || 'No company'}</strong>
+              </span>
+              <span>
+                <small>Source entity</small>
+                <strong>{request.source_entity_name || 'Unknown source'}</strong>
+              </span>
+              <span>
+                <small>Created</small>
+                <strong>{formatDateTime(request.created_at)}</strong>
+              </span>
             </div>
           </div>
 
@@ -335,6 +336,7 @@ function RequestDetailsPage() {
                   >
                     <span>{step.helper}</span>
                     <strong>{step.label}</strong>
+                    {isActive ? <em className="request-lifecycle-current">Current</em> : null}
                   </button>
                 )
               })}
@@ -343,35 +345,6 @@ function RequestDetailsPage() {
         </section>
 
         <div className="request-detail-main request-detail-main-refined">
-          <section className="panel request-detail-summary-card">
-            <div className="workspace-section-title">
-              <div>
-                <p className="eyebrow">Executive summary</p>
-                <h2>Request summary</h2>
-              </div>
-            </div>
-            <div className="request-summary-copy">
-              <p>{request.description || 'No detailed description was provided for this request.'}</p>
-              <div className="request-summary-highlight">
-                <span>Resolution note</span>
-                <strong>{request.resolution_note || 'No resolution note yet.'}</strong>
-              </div>
-              {attachments.length ? (
-                <div className="request-attachments-block">
-                  <span>Attachments</span>
-                  <div className="request-attachments-list">
-                    {attachments.map((item) => (
-                      <article className="request-attachment-item" key={item.id || item.name}>
-                        <strong>{item.name || 'Attachment'}</strong>
-                        <p className="muted-text">{item.size_label || item.type || 'Available file'}</p>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </section>
-
           <section className="panel request-discussion-card">
             <div className="workspace-section-title">
               <div>
@@ -418,30 +391,6 @@ function RequestDetailsPage() {
                   Send comment
                 </button>
               </form>
-            </div>
-          </section>
-
-          <section className="panel request-activity-card">
-            <div className="workspace-section-title">
-              <div>
-                <p className="eyebrow">Activity</p>
-                <h2>History</h2>
-              </div>
-            </div>
-
-            <div className="request-timeline-list request-activity-stream">
-              {timelineItems.length === 0 ? <p className="muted-text">No recorded activity yet.</p> : null}
-              {timelineItems.map((item, index) => (
-                <article className="request-timeline-item request-activity-item" key={`${item.timestamp}-${item.title}-${index}`}>
-                  <div className="request-timeline-kicker">
-                    <span>{timelineKindMap[item.kind] || 'Event'}</span>
-                    <small>{formatDateTime(item.timestamp)}</small>
-                  </div>
-                  <strong>{item.title}</strong>
-                  <p>{item.description}</p>
-                  {item.note ? <p className="muted-text">{item.note}</p> : null}
-                </article>
-              ))}
             </div>
           </section>
 

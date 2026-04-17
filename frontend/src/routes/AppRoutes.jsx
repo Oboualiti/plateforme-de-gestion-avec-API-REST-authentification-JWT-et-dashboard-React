@@ -137,7 +137,7 @@ function AppRoutes() {
         <Route element={<MainLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/requests" replace />} />
+          <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/users" replace />} />
           <Route path="/admin/audit-logs/:category" element={<AdminControlCenterPage />} />
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />
           <Route path="/admin/users/create" element={<CreateManagedUserPage />} />

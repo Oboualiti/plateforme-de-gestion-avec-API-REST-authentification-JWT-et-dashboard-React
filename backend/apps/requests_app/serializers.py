@@ -304,7 +304,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
         can_manage = self.context.get("can_manage_incoming_request")
         if not request or not can_manage:
             return False
-        return obj.current_assignee_id != request.user.id
+        return obj.current_assignee_id is None
 
     def get_can_update_status(self, obj):
         return bool(self.context.get("can_manage_incoming_request"))

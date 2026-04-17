@@ -25,11 +25,9 @@ function useSectionKey() {
 }
 
 const auditGroups = [
-  { key: 'requests', title: 'Request logs', modules: ['requests', 'assignments', 'status_tracking'] },
   { key: 'users', title: 'User logs', modules: ['users'] },
   { key: 'access', title: 'Access / role logs', modules: ['permissions', 'roles'] },
   { key: 'organization', title: 'Organization logs', modules: ['companies', 'entities', 'hierarchy'] },
-  { key: 'notifications', title: 'Notification logs', modules: ['notifications'] },
 ]
 
 function resolveAuditGroupKey(module) {
@@ -722,8 +720,8 @@ function AdminControlCenterPage() {
                 </div>
               </div>
               <p className="muted-text">The selected log category does not exist.</p>
-              <button type="button" className="ghost-button" onClick={() => navigate('/admin/audit-logs/requests')}>
-                Open request logs
+              <button type="button" className="ghost-button" onClick={() => navigate('/admin/audit-logs/users')}>
+                Open user logs
               </button>
             </article>
           </section>
