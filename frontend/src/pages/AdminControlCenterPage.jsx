@@ -5,6 +5,212 @@ import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
+function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
+  if (!editState.open) return null
+
+  return (
+    <div className="modal-overlay" onClick={editState.saving ? undefined : onClose}>
+      <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="page-intro">
+          <p className="eyebrow">Company edit</p>
+          <h2>Edit company</h2>
+          <p>Update company details and senior assignment.</p>
+        </div>
+
+        <form className="modal-body" onSubmit={onSubmit}>
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-company-name">Company name</label>
+            <input
+              id="edit-company-name"
+              value={editState.form.name}
+              onChange={(event) => onFieldChange('name', event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-company-code">Code</label>
+            <input
+              id="edit-company-code"
+              value={editState.form.code}
+              onChange={(event) => onFieldChange('code', event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label>Current senior</label>
+            <div className="data-row-static">{editState.currentSeniorName || 'None assigned'}</div>
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-company-senior">Assign senior</label>
+            <select
+              id="edit-company-senior"
+              className="app-select full-width"
+              value={editState.form.senior_user_id}
+              onChange={(event) => onFieldChange('senior_user_id', event.target.value)}
+            >
+              <option value="">Keep current senior</option>
+              {editState.seniorOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.username}
+                </option>
+              ))}
+            </select>
+            {editState.seniorOptions.length === 0 && (
+              <p className="muted-text" style={{ margin: 0, fontSize: '12px' }}>
+                No senior-role users found for this company.
+              </p>
+            )}
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-company-status">Status</label>
+            <select
+              id="edit-company-status"
+              className="app-select full-width"
+              value={String(editState.form.is_active)}
+              onChange={(event) => onFieldChange('is_active', event.target.value === 'true')}
+            >
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="ghost-button" onClick={onClose} disabled={editState.saving}>
+              Cancel
+            </button>
+            <button type="submit" disabled={editState.saving}>
+              {editState.saving ? 'Saving...' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmit }) {
+  if (!editState.open) return null
+
+  return (
+    <div className="modal-overlay" onClick={editState.saving ? undefined : onClose}>
+      <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="page-intro">
+          <p className="eyebrow">Entity edit</p>
+          <h2>Edit entity</h2>
+          <p>Update core fields and manager assignment for this entity.</p>
+        </div>
+
+        <form className="modal-body" onSubmit={onSubmit}>
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-entity-name">Entity name</label>
+            <input
+              id="edit-entity-name"
+              value={editState.form.name}
+              onChange={(event) => onFieldChange('name', event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-entity-code">Code</label>
+            <input
+              id="edit-entity-code"
+              value={editState.form.code}
+              onChange={(event) => onFieldChange('code', event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-entity-type">Entity type</label>
+            <select
+              id="edit-entity-type"
+              className="app-select full-width"
+              value={editState.form.entity_type}
+              onChange={(event) => onFieldChange('entity_type', event.target.value)}
+            >
+              <option value="PROD">Prod</option>
+              <option value="SUPPORT">Support</option>
+              <option value="TDEV">T.Dev</option>
+            </select>
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-entity-company">Company</label>
+            <select
+              id="edit-entity-company"
+              className="app-select full-width"
+              value={editState.form.company}
+              onChange={(event) => onFieldChange('company', event.target.value)}
+              required
+            >
+              <option value="">Select company</option>
+              {companies.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label>Current manager</label>
+            <div className="data-row-static">{editState.currentManagerName || 'None assigned'}</div>
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-entity-manager">Assign manager</label>
+            <select
+              id="edit-entity-manager"
+              className="app-select full-width"
+              value={editState.form.manager_user_id}
+              onChange={(event) => onFieldChange('manager_user_id', event.target.value)}
+            >
+              <option value="">Keep current manager</option>
+              {editState.managerOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.username}
+                </option>
+              ))}
+            </select>
+            {editState.managerOptions.length === 0 && (
+              <p className="muted-text" style={{ margin: 0, fontSize: '12px' }}>
+                No manager-role users found for this entity.
+              </p>
+            )}
+          </div>
+
+          <div className="info-stack" style={{ gap: '0.5rem' }}>
+            <label htmlFor="edit-entity-status">Status</label>
+            <select
+              id="edit-entity-status"
+              className="app-select full-width"
+              value={String(editState.form.is_active)}
+              onChange={(event) => onFieldChange('is_active', event.target.value === 'true')}
+            >
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="ghost-button" onClick={onClose} disabled={editState.saving}>
+              Cancel
+            </button>
+            <button type="submit" disabled={editState.saving}>
+              {editState.saving ? 'Saving...' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 const sectionConfig = {
   dashboard: { title: 'Dashboard', endpoint: '/admin/dashboard/' },
   companies: { title: 'Companies', endpoint: '/admin/companies/' },
@@ -13,7 +219,6 @@ const sectionConfig = {
   roles: { title: 'Roles', endpoint: '/admin/roles/' },
   requests: { title: 'Requests', endpoint: '/admin/requests/' },
   assignments: { title: 'Assignments', endpoint: '/admin/assignments/' },
-  'status-tracking': { title: 'Status tracking', endpoint: '/admin/status-tracking/' },
   'audit-logs': { title: 'Audit logs', endpoint: '/admin/audit-logs/' },
   reports: { title: 'Reports', endpoint: '/admin/reports/' },
 }
@@ -66,7 +271,6 @@ function AdminControlCenterPage() {
   })
   const [message, setMessage] = useState('')
   const [auditGroupPages, setAuditGroupPages] = useState({})
-  const [expandedRowId, setExpandedRowId] = useState(null)
   const [companyForm, setCompanyForm] = useState({ name: '', code: '', is_active: true })
   const [entityForm, setEntityForm] = useState({
     name: '',
@@ -78,13 +282,38 @@ function AdminControlCenterPage() {
   const [entityCompanyFilter, setEntityCompanyFilter] = useState('all')
   const [entityTypeFilter, setEntityTypeFilter] = useState('all')
   const [entityStatusFilter, setEntityStatusFilter] = useState('all')
-  const isSenior = (user?.role_keys || []).includes('senior')
-
-  useEffect(() => {
-    if (isSenior && sectionKey === 'companies') {
-      navigate('/admin/entities', { replace: true })
-    }
-  }, [isSenior, sectionKey, navigate])
+  const roleKeys = user?.role_keys || []
+  const isSuperAdmin = roleKeys.includes('super_admin')
+  const isSenior = roleKeys.includes('senior')
+  const actorCompanyId = Number(user?.company_id ?? user?.company ?? 0) || null
+  const [companyEditState, setCompanyEditState] = useState({
+    open: false,
+    saving: false,
+    companyId: null,
+    currentSeniorName: '',
+    seniorOptions: [],
+    form: {
+      name: '',
+      code: '',
+      senior_user_id: '',
+      is_active: true,
+    },
+  })
+  const [entityEditState, setEntityEditState] = useState({
+    open: false,
+    saving: false,
+    entityId: null,
+    currentManagerName: '',
+    managerOptions: [],
+    form: {
+      name: '',
+      code: '',
+      entity_type: 'PROD',
+      company: '',
+      manager_user_id: '',
+      is_active: true,
+    },
+  })
 
   async function loadSection() {
     setState({ loading: true, error: '', data: null, sectionKey })
@@ -135,6 +364,34 @@ function AdminControlCenterPage() {
 
   useEffect(() => {
     setMessage('')
+    setCompanyEditState({
+      open: false,
+      saving: false,
+      companyId: null,
+      currentSeniorName: '',
+      seniorOptions: [],
+      form: {
+        name: '',
+        code: '',
+        senior_user_id: '',
+        is_active: true,
+      },
+    })
+    setEntityEditState({
+      open: false,
+      saving: false,
+      entityId: null,
+      currentManagerName: '',
+      managerOptions: [],
+      form: {
+        name: '',
+        code: '',
+        entity_type: 'PROD',
+        company: '',
+        manager_user_id: '',
+        is_active: true,
+      },
+    })
   }, [sectionKey])
 
   async function submitCompany(event) {
@@ -176,6 +433,118 @@ function AdminControlCenterPage() {
 
   async function saveRolePermissions(roleId, permissionKeys) {
     await patchRecord(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys }, 'Role permissions updated.')
+  }
+
+  function updateCompanyEditField(field, value) {
+    setCompanyEditState((current) => ({
+      ...current,
+      form: {
+        ...current.form,
+        [field]: value,
+      },
+    }))
+  }
+
+  function closeCompanyEditModal() {
+    setCompanyEditState({
+      open: false,
+      saving: false,
+      companyId: null,
+      currentSeniorName: '',
+      seniorOptions: [],
+      form: {
+        name: '',
+        code: '',
+        senior_user_id: '',
+        is_active: true,
+      },
+    })
+  }
+
+  async function submitCompanyEdit(event) {
+    event.preventDefault()
+    if (!companyEditState.companyId) return
+
+    setCompanyEditState((current) => ({ ...current, saving: true }))
+
+    try {
+      await api.patch(`/admin/companies/${companyEditState.companyId}/`, {
+        name: companyEditState.form.name,
+        code: companyEditState.form.code,
+        is_active: Boolean(companyEditState.form.is_active),
+      })
+
+      if (companyEditState.form.senior_user_id) {
+        await api.patch(`/admin/hierarchy/companies/${companyEditState.companyId}/`, {
+          senior_user_id: Number(companyEditState.form.senior_user_id),
+        })
+      }
+
+      setMessage('Company updated.')
+      closeCompanyEditModal()
+      loadSection()
+    } catch (error) {
+      setCompanyEditState((current) => ({ ...current, saving: false }))
+      setMessage(error.response?.data?.detail || 'Could not update company.')
+    }
+  }
+
+  function updateEntityEditField(field, value) {
+    setEntityEditState((current) => ({
+      ...current,
+      form: {
+        ...current.form,
+        [field]: value,
+      },
+    }))
+  }
+
+  function closeEntityEditModal() {
+    setEntityEditState({
+      open: false,
+      saving: false,
+      entityId: null,
+      currentManagerName: '',
+      managerOptions: [],
+      form: {
+        name: '',
+        code: '',
+        entity_type: 'PROD',
+        company: '',
+        manager_user_id: '',
+        is_active: true,
+      },
+    })
+  }
+
+  async function submitEntityEdit(event) {
+    event.preventDefault()
+    if (!entityEditState.entityId) return
+
+    setEntityEditState((current) => ({ ...current, saving: true }))
+
+    try {
+      await api.patch(`/admin/entities/${entityEditState.entityId}/`, {
+        name: entityEditState.form.name,
+        code: entityEditState.form.code,
+        entity_type: entityEditState.form.entity_type,
+        company: Number(entityEditState.form.company),
+        is_active: Boolean(entityEditState.form.is_active),
+      })
+
+      if (entityEditState.form.manager_user_id) {
+        await api.patch(`/admin/hierarchy/entities/${entityEditState.entityId}/`, {
+          manager_user_id: Number(entityEditState.form.manager_user_id),
+        })
+      }
+
+      setMessage('Entity updated.')
+      closeEntityEditModal()
+      loadSection()
+    } catch (error) {
+      setEntityEditState((current) => ({ ...current, saving: false }))
+      setMessage(error.response?.data?.detail || 'Could not update entity.')
+    }
   }
 
   const sectionBody = useMemo(() => {
@@ -265,81 +634,61 @@ function AdminControlCenterPage() {
               </thead>
               <tbody>
                 {companies.map((item) => {
-                  const isExpanded = expandedRowId === `company-${item.id}`
+                  const canEditCompany = isSuperAdmin || (isSenior && actorCompanyId === Number(item.id))
                   const companySeniors = seniorOptions.filter((opt) => opt.company_id === item.id)
                   return (
-                    <>
-                      <tr key={item.id}>
-                        <td><strong>{item.name}</strong></td>
-                        <td>{item.code}</td>
-                        <td>
-                          <span className={`status-tag ${item.senior_name ? 'active' : 'muted'}`}>
-                            {item.senior_name || 'None'}
-                          </span>
-                        </td>
-                        <td>{item.entity_count}</td>
-                        <td>{item.user_count}</td>
-                        <td>
-                          <span className={`status-tag ${item.is_active ? 'active' : 'danger'}`}>
-                            {item.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="actions-cell">
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => setExpandedRowId(isExpanded ? null : `company-${item.id}`)}
-                          >
-                            {isExpanded ? 'Close' : 'Edit'}
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}
-                          >
-                            {item.is_active ? 'Deactivate' : 'Activate'}
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr key={`company-edit-${item.id}`} className="expanded-edit-row">
-                          <td colSpan={7}>
-                            <div className="inline-edit-panel">
-                              <div className="inline-edit-group">
-                                <label className="inline-edit-label">Assign senior</label>
-                                <p className="muted-text" style={{ margin: '0 0 8px', fontSize: '12px' }}>
-                                  Current: <strong>{item.senior_name || 'None assigned'}</strong>
-                                </p>
-                                <div className="inline-edit-row">
-                                  <select
-                                    className="app-select"
-                                    defaultValue=""
-                                    onChange={(event) => {
-                                      if (!event.target.value) return
-                                      patchRecord(
-                                        `/admin/hierarchy/companies/${item.id}/`,
-                                        { senior_user_id: Number(event.target.value) },
-                                        'Senior assigned successfully.'
-                                      )
-                                    }}
-                                  >
-                                    <option value="">— Select senior —</option>
-                                    {companySeniors.map((opt) => (
-                                      <option key={opt.id} value={opt.id}>{opt.username}</option>
-                                    ))}
-                                  </select>
-                                  {companySeniors.length === 0 && (
-                                    <span className="muted-text" style={{ fontSize: '12px' }}>
-                                      No senior-role users found for this company.
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
+                    <tr key={item.id}>
+                      <td><strong>{item.name}</strong></td>
+                      <td>{item.code}</td>
+                      <td>
+                        <span className={`status-tag ${item.senior_name ? 'active' : 'muted'}`}>
+                          {item.senior_name || 'None'}
+                        </span>
+                      </td>
+                      <td>{item.entity_count}</td>
+                      <td>{item.user_count}</td>
+                      <td>
+                        <span className={`status-tag ${item.is_active ? 'active' : 'danger'}`}>
+                          {item.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="actions-cell">
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={!canEditCompany}
+                          onClick={() => {
+                            if (!canEditCompany) return
+                            setCompanyEditState({
+                              open: true,
+                              saving: false,
+                              companyId: item.id,
+                              currentSeniorName: item.senior_name || '',
+                              seniorOptions: companySeniors,
+                              form: {
+                                name: item.name || '',
+                                code: item.code || '',
+                                senior_user_id: '',
+                                is_active: Boolean(item.is_active),
+                              },
+                            })
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={!canEditCompany}
+                          onClick={() => {
+                            if (!canEditCompany) return
+                            patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')
+                          }}
+                        >
+                          {item.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
                   )
                 })}
               </tbody>
@@ -450,83 +799,66 @@ function AdminControlCenterPage() {
               </thead>
               <tbody>
                 {filteredEntities.map((item) => {
-                  const isExpanded = expandedRowId === `entity-${item.id}`
+                  const canEditEntity =
+                    isSuperAdmin || (isSenior && actorCompanyId && Number(item.company) === actorCompanyId)
                   const entityManagers = managerOptions.filter((opt) => opt.entity_id === item.id)
                   return (
-                    <>
-                      <tr key={item.id}>
-                        <td><strong>{item.name}</strong></td>
-                        <td>{item.company_name}</td>
-                        <td>
-                          <span className="status-tag info">{item.entity_type}</span>
-                        </td>
-                        <td>
-                          <span className={`status-tag ${item.manager_name ? 'active' : 'muted'}`}>
-                            {item.manager_name || 'None'}
-                          </span>
-                        </td>
-                        <td>{item.user_count}</td>
-                        <td>
-                          <span className={`status-tag ${item.is_active ? 'active' : 'danger'}`}>
-                            {item.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="actions-cell">
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => setExpandedRowId(isExpanded ? null : `entity-${item.id}`)}
-                          >
-                            {isExpanded ? 'Close' : 'Edit'}
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}
-                          >
-                            {item.is_active ? 'Deactivate' : 'Activate'}
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr key={`entity-edit-${item.id}`} className="expanded-edit-row">
-                          <td colSpan={7}>
-                            <div className="inline-edit-panel">
-                              <div className="inline-edit-group">
-                                <label className="inline-edit-label">Assign manager</label>
-                                <p className="muted-text" style={{ margin: '0 0 8px', fontSize: '12px' }}>
-                                  Current: <strong>{item.manager_name || 'None assigned'}</strong>
-                                </p>
-                                <div className="inline-edit-row">
-                                  <select
-                                    className="app-select"
-                                    defaultValue=""
-                                    onChange={(event) => {
-                                      if (!event.target.value) return
-                                      patchRecord(
-                                        `/admin/hierarchy/entities/${item.id}/`,
-                                        { manager_user_id: Number(event.target.value) },
-                                        'Manager assigned successfully.'
-                                      )
-                                    }}
-                                  >
-                                    <option value="">— Select manager —</option>
-                                    {entityManagers.map((opt) => (
-                                      <option key={opt.id} value={opt.id}>{opt.username}</option>
-                                    ))}
-                                  </select>
-                                  {entityManagers.length === 0 && (
-                                    <span className="muted-text" style={{ fontSize: '12px' }}>
-                                      No manager-role users found for this entity.
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
+                    <tr key={item.id}>
+                      <td><strong>{item.name}</strong></td>
+                      <td>{item.company_name}</td>
+                      <td>
+                        <span className="status-tag info">{item.entity_type}</span>
+                      </td>
+                      <td>
+                        <span className={`status-tag ${item.manager_name ? 'active' : 'muted'}`}>
+                          {item.manager_name || 'None'}
+                        </span>
+                      </td>
+                      <td>{item.user_count}</td>
+                      <td>
+                        <span className={`status-tag ${item.is_active ? 'active' : 'danger'}`}>
+                          {item.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="actions-cell">
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={!canEditEntity}
+                          onClick={() => {
+                            if (!canEditEntity) return
+                            setEntityEditState({
+                              open: true,
+                              saving: false,
+                              entityId: item.id,
+                              currentManagerName: item.manager_name || '',
+                              managerOptions: entityManagers,
+                              form: {
+                                name: item.name || '',
+                                code: item.code || '',
+                                entity_type: item.entity_type || 'PROD',
+                                company: String(item.company || ''),
+                                manager_user_id: '',
+                                is_active: Boolean(item.is_active),
+                              },
+                            })
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          disabled={!canEditEntity}
+                          onClick={() => {
+                            if (!canEditEntity) return
+                            patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')
+                          }}
+                        >
+                          {item.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
                   )
                 })}
               </tbody>
@@ -659,31 +991,6 @@ function AdminControlCenterPage() {
             <RequestSummaryTable rows={data.unassigned_requests || []} />
           </section>
         </>
-      )
-    }
-
-    if (sectionKey === 'status-tracking') {
-      return (
-        <section className="detail-grid admin-detail-grid">
-          <div className="panel">
-            <p className="eyebrow">Delayed</p>
-            <h2>Stuck requests</h2>
-            <RequestSummaryTable rows={data.stuck_requests || []} />
-          </div>
-          <div className="panel">
-            <p className="eyebrow">History</p>
-            <h2>Status history</h2>
-            <div className="timeline-list">
-              {(data.history || []).map((item) => (
-                <article key={item.id} className="timeline-card">
-                  <strong>{item.request_number}</strong>
-                  <p>{item.old_status} {'->'} {item.new_status}</p>
-                  <p className="muted-text">{item.changed_by_name} | {new Date(item.changed_at).toLocaleString()}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
       )
     }
 
@@ -826,7 +1133,9 @@ function AdminControlCenterPage() {
     entityCompanyFilter,
     entityTypeFilter,
     entityStatusFilter,
-    expandedRowId,
+    isSuperAdmin,
+    isSenior,
+    actorCompanyId,
     navigate,
   ])
 
@@ -851,6 +1160,21 @@ function AdminControlCenterPage() {
       </section>
 
       {!state.loading && !state.error && sectionBody}
+
+      <CompanyEditModal
+        editState={companyEditState}
+        onClose={closeCompanyEditModal}
+        onFieldChange={updateCompanyEditField}
+        onSubmit={submitCompanyEdit}
+      />
+
+      <EntityEditModal
+        editState={entityEditState}
+        companies={state.data?.companies || []}
+        onClose={closeEntityEditModal}
+        onFieldChange={updateEntityEditField}
+        onSubmit={submitEntityEdit}
+      />
     </main>
   )
 }

@@ -93,14 +93,6 @@ function LoginPage() {
           </button>
           {error && <p className="error-text">{error}</p>}
 
-          <div className="login-divider">
-            <span>Alternative access</span>
-          </div>
-
-          <button type="button" className="ghost-button login-sso-button" disabled title="SSO is not configured yet">
-            Continue with SSO
-          </button>
-
           <div className="login-footer">
             <p>
               Need help? <span className="muted-text">Contact support</span>
@@ -145,6 +137,7 @@ function AppRoutes() {
         <Route element={<MainLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/status-tracking" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/requests" replace />} />
           <Route path="/admin/audit-logs/:category" element={<AdminControlCenterPage />} />
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />

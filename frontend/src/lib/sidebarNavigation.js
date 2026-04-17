@@ -75,9 +75,6 @@ const roleVariantMap = {
     createSection('team-members', 'Team Members', 'team', [
       createItem('Members', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
     ]),
-    createSection('tracking', 'Tracking', 'track', [
-      createItem('Queue History', '/admin/status-tracking'),
-    ]),
     auditLogsSection,
   ],
   production_user: [

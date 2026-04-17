@@ -571,10 +571,7 @@ def get_request_target_entity_id(service_request):
 
 def is_global_requests_manager(user):
     primary_role = get_primary_role_key(user)
-    # is_staff should not grant global request visibility; many non-global roles
-    # need Django admin access. Keep global scope only for primary super_admin
-    # role (and Django superuser).
-    return primary_role == "super_admin" or user.is_superuser
+    return primary_role == "super_admin"
 
 
 def is_company_scoped_manager(user):
