@@ -111,7 +111,7 @@ function PermissionDetailPage() {
       setState((current) => ({ ...current, user: response.data }))
       setSelectedRole(response.data.roles[0]?.key || '')
       setMessage('Roles updated.')
-      navigate('/admin/permissions', {
+      navigate('/admin/users', {
         state: { successMessage: 'Saved successfully: roles updated.' },
       })
     } catch (error) {
@@ -147,7 +147,7 @@ function PermissionDetailPage() {
       await api.patch(`/admin/users/manageable/${userId}/`, payload)
       setMessage('User profile updated.')
       setProfileForm((current) => ({ ...current, password: '' }))
-      navigate('/admin/permissions', {
+      navigate('/admin/users', {
         state: { successMessage: 'Saved successfully: user updated.' },
       })
     } catch (error) {
@@ -222,33 +222,33 @@ function PermissionDetailPage() {
       <PageHeader
         eyebrow="Permission detail"
         title={user.username}
-        description="Manage profile data, role assignment, and effective permissions from one page."
+        description="Review profile, role, and effective permissions."
         actions={
-          <Link className="ghost-button pill-link" to="/admin/permissions">
-            Back to users
+          <Link className="pill-link" to="/admin/users">
+            Back
           </Link>
         }
       />
 
       <section className="summary-grid">
-          <div className="summary-card">
-            <span>Email</span>
-            <strong className="stat-value-small">{user.email || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Company</span>
-            <strong className="stat-value-small">{user.company_name || '-'}</strong>
-          </div>
-          <div className="summary-card">
-            <span>Entity</span>
-            <strong className="stat-value-small">
-              {user.entity_name || '-'} ({user.entity_type || '-'})
-            </strong>
-          </div>
-          <div className="summary-card">
-            <span>Status</span>
-            <strong className="stat-value-small">{user.is_active ? 'Active' : 'Inactive'}</strong>
-          </div>
+        <div className="summary-card">
+          <span>Email</span>
+          <strong className="stat-value-small">{user.email || '-'}</strong>
+        </div>
+        <div className="summary-card">
+          <span>Company</span>
+          <strong className="stat-value-small">{user.company_name || '-'}</strong>
+        </div>
+        <div className="summary-card">
+          <span>Entity</span>
+          <strong className="stat-value-small">
+            {user.entity_name || '-'} ({user.entity_type || '-'})
+          </strong>
+        </div>
+        <div className="summary-card">
+          <span>Status</span>
+          <strong className="stat-value-small">{user.is_active ? 'Active' : 'Inactive'}</strong>
+        </div>
       </section>
 
       <section className="detail-grid">
@@ -263,109 +263,77 @@ function PermissionDetailPage() {
               saveProfile()
             }}
           >
-            <div className="filter-grid-wide">
-              <div>
-                <label htmlFor="username">Username</label>
-                <input
-                  id="username"
-                  value={profileForm.username}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, username: event.target.value }))
-                  }
-                  placeholder="Username"
-                  disabled={!canEdit}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="email">Email</label>
-                <input
-                  id="email"
-                  value={profileForm.email}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                  placeholder="Email"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div>
-                <label htmlFor="job_title">Job title</label>
-                <input
-                  id="job_title"
-                  value={profileForm.job_title}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, job_title: event.target.value }))
-                  }
-                  placeholder="Job title"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-
-            <div className="filter-grid-wide">
-              <div>
-                <label htmlFor="first_name">First name</label>
-                <input
-                  id="first_name"
-                  value={profileForm.first_name}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, first_name: event.target.value }))
-                  }
-                  placeholder="First name"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div>
-                <label htmlFor="last_name">Last name</label>
-                <input
-                  id="last_name"
-                  value={profileForm.last_name}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, last_name: event.target.value }))
-                  }
-                  placeholder="Last name"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div>
-                <label htmlFor="phone_number">Phone number</label>
-                <input
-                  id="phone_number"
-                  value={profileForm.phone_number}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, phone_number: event.target.value }))
-                  }
-                  placeholder="Phone number"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="password">New password</label>
+            <input
+              value={profileForm.username}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, username: event.target.value }))
+              }
+              placeholder="Username"
+              disabled={!canEdit}
+              required
+            />
+            <input
+              value={profileForm.email}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, email: event.target.value }))
+              }
+              placeholder="Email"
+              disabled={!canEdit}
+            />
+            <input
+              value={profileForm.first_name}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, first_name: event.target.value }))
+              }
+              placeholder="First name"
+              disabled={!canEdit}
+            />
+            <input
+              value={profileForm.last_name}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, last_name: event.target.value }))
+              }
+              placeholder="Last name"
+              disabled={!canEdit}
+            />
+            <input
+              value={profileForm.job_title}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, job_title: event.target.value }))
+              }
+              placeholder="Job title"
+              disabled={!canEdit}
+            />
+            <input
+              value={profileForm.phone_number}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, phone_number: event.target.value }))
+              }
+              placeholder="Phone number"
+              disabled={!canEdit}
+            />
+            <input
+              type="password"
+              value={profileForm.password}
+              onChange={(event) =>
+                setProfileForm((current) => ({ ...current, password: event.target.value }))
+              }
+              placeholder="New password (optional)"
+              disabled={!canEdit}
+            />
+            <label className="switch-control" htmlFor="active-user-switch">
+              <span>Active user</span>
               <input
-                id="password"
-                type="password"
-                value={profileForm.password}
-                onChange={(event) =>
-                  setProfileForm((current) => ({ ...current, password: event.target.value }))
-                }
-                placeholder="Optional"
-                disabled={!canEdit}
-              />
-            </div>
-
-            <label className="checkbox-row">
-              <input
+                id="active-user-switch"
                 type="checkbox"
+                className="switch-input"
                 checked={profileForm.is_active}
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, is_active: event.target.checked }))
                 }
                 disabled={!canEdit}
               />
-              <span>Active user</span>
+              <span className="switch-slider" aria-hidden="true" />
             </label>
 
             {canShowCompany && (
@@ -451,38 +419,31 @@ function PermissionDetailPage() {
           </form>
         </section>
 
-        <section className="editorial-stack">
-          <section className="panel">
-            <p className="eyebrow">Role</p>
-            <h2>Assigned role</h2>
-            {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
-            <div className="check-grid">
+        <section className="panel">
+          <p className="eyebrow">Roles</p>
+          <h2>Assigned role</h2>
+          {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
+            <div className="check-grid role-options-grid">
               {roleOptions.map((role) => (
-                <label key={role.key} className="checkbox-row">
-                  <input
-                    type="radio"
-                    name="role-selection"
-                    checked={selectedRole === role.key}
-                    onChange={() => setSelectedRole(role.key)}
-                    disabled={!canEdit}
-                  />
-                  <span>
-                    {role.name} <small>(level {role.level})</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <button type="button" onClick={saveRoles} disabled={!canEdit}>
-              Save role
-            </button>
-          </section>
-
-          {message && (
-            <section className="panel">
-              <p className="eyebrow">Update</p>
-              <p className="muted-text">{message}</p>
-            </section>
-          )}
+              <label key={role.key} className="role-radio-option" htmlFor={`role-${role.key}`}>
+                <input
+                  id={`role-${role.key}`}
+                  type="radio"
+                  className="role-radio-input"
+                  name="role-selection"
+                  checked={selectedRole === role.key}
+                  onChange={() => setSelectedRole(role.key)}
+                  disabled={!canEdit}
+                />
+                <span>
+                  {role.name} <small>(level {role.level})</small>
+                </span>
+              </label>
+            ))}
+          </div>
+          <button type="button" className="role-save-button" onClick={saveRoles} disabled={!canEdit}>
+            Save roles
+          </button>
         </section>
       </section>
 

@@ -16,27 +16,57 @@ function PermissionManagementPage() {
     scope: '',
     currentEntityName: '',
   })
+  const [directoryOptions, setDirectoryOptions] = useState({
+    companies: [],
+    entities: [],
+  })
   const [searchText, setSearchText] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [entityTypeFilter, setEntityTypeFilter] = useState('all')
+  const [companyFilter, setCompanyFilter] = useState('all')
+  const [entityFilter, setEntityFilter] = useState('all')
   const [actionMessage, setActionMessage] = useState('')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState('')
   const importInputRef = useRef(null)
   const isSuccessMessage = actionMessage && !actionMessage.toLowerCase().includes('could not')
+  const roleKeys = user?.role_keys || []
+  const isSenior = roleKeys.includes('senior')
+  const isSuperAdmin = roleKeys.includes('super_admin')
+  const isManager = roleKeys.includes('manager')
+  const isTeamLeader = roleKeys.includes('team_leader')
+  const pageTitle = isSenior
+    ? 'Company users'
+    : isManager
+      ? 'Entity users'
+      : isTeamLeader
+        ? 'My team users'
+        : 'Manageable users'
+  const pageSubtitle = isSenior
+    ? 'Add, edit, and remove users inside your company.'
+    : isManager
+      ? 'Manage users assigned to your entity.'
+      : isTeamLeader
+        ? 'Manage your own team members.'
+        : 'Manage users based on your access scope.'
   const showEntityTypeFilter = useMemo(() => {
-    const roleKeys = user?.role_keys || []
     return roleKeys.includes('super_admin') || roleKeys.includes('senior')
-  }, [user])
+  }, [roleKeys])
+  const showCompanyFilter = isSuperAdmin
+  const showEntityFilter = isSenior
 
   useEffect(() => {
     let active = true
     async function loadUsers() {
       try {
-        const usersResponse = await api.get('/admin/users/manageable/')
+        const [usersResponse, optionsResponse] = await Promise.all([
+          api.get('/admin/users/manageable/'),
+          api.get('/admin/users/manageable/options/'),
+        ])
         if (active) {
           const results = usersResponse.data.results || []
+          const optionsPayload = optionsResponse.data || {}
           setState({
             loading: false,
             error: '',
@@ -44,6 +74,10 @@ function PermissionManagementPage() {
             scope: usersResponse.data.scope || '',
             currentEntityName:
               usersResponse.data.current_entity_name || results[0]?.entity_name || '-',
+          })
+          setDirectoryOptions({
+            companies: optionsPayload.company_options || [],
+            entities: optionsPayload.entity_options || [],
           })
         }
       } catch (error) {
@@ -55,6 +89,7 @@ function PermissionManagementPage() {
             scope: '',
             currentEntityName: '',
           })
+          setDirectoryOptions({ companies: [], entities: [] })
         }
       }
     }
@@ -83,6 +118,35 @@ function PermissionManagementPage() {
     )
   }, [state.users])
 
+  const companyOptions = useMemo(() => {
+    const names = directoryOptions.companies
+      .map((item) => item.name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+    return ['all', ...names]
+  }, [directoryOptions.companies])
+
+  const entityOptions = useMemo(() => {
+    const filteredEntities = directoryOptions.entities.filter((item) => {
+      if (companyFilter === 'all') return true
+      return item.company_name === companyFilter
+    })
+    const names = filteredEntities
+      .map((item) => item.name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+    return ['all', ...names]
+  }, [companyFilter, directoryOptions.entities])
+
+  useEffect(() => {
+    if (companyFilter === 'all') return
+    if (entityFilter === 'all') return
+    const hasMatch = entityOptions.includes(entityFilter)
+    if (!hasMatch) {
+      setEntityFilter('all')
+    }
+  }, [companyFilter, entityFilter, entityOptions])
+
   const filteredUsers = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
     return state.users.filter((item) => {
@@ -100,10 +164,32 @@ function PermissionManagementPage() {
         (statusFilter === 'active' ? item.is_active : !item.is_active)
       const matchesEntityType =
         !showEntityTypeFilter || entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
+      const matchesCompany =
+        !showCompanyFilter || companyFilter === 'all' || item.company_name === companyFilter
+      const matchesEntity =
+        !showEntityFilter || entityFilter === 'all' || item.entity_name === entityFilter
 
-      return matchesSearch && matchesRole && matchesStatus && matchesEntityType
+      return (
+        matchesSearch &&
+        matchesRole &&
+        matchesStatus &&
+        matchesEntityType &&
+        matchesCompany &&
+        matchesEntity
+      )
     })
-  }, [searchText, roleFilter, statusFilter, entityTypeFilter, showEntityTypeFilter, state.users])
+  }, [
+    searchText,
+    roleFilter,
+    statusFilter,
+    entityTypeFilter,
+    companyFilter,
+    entityFilter,
+    showEntityTypeFilter,
+    showCompanyFilter,
+    showEntityFilter,
+    state.users,
+  ])
 
   async function deleteUser(event, userId, username) {
     event.stopPropagation()
@@ -125,7 +211,7 @@ function PermissionManagementPage() {
 
   function openDetailPage(event, userId) {
     event.stopPropagation()
-    navigate(`/admin/permissions/${userId}`)
+    navigate(`/admin/users/${userId}`)
   }
 
   async function exportUsers(format) {
@@ -193,29 +279,41 @@ function PermissionManagementPage() {
   return (
     <main className="page-content">
       <PageHeader
-        eyebrow="Permissions"
-        title="Manageable users"
-        description="Review users, filter by scope, and open permission details for edits and overrides."
+        eyebrow="Permission management"
+        title={pageTitle}
+        description={pageSubtitle}
         actions={
-          <div className="toolbar-group">
-            <Link className="pill-link-primary pill-link" to="/admin/users/create">
-              Add user
-            </Link>
-            <button type="button" className="ghost-button" onClick={() => exportUsers('csv')} disabled={Boolean(exporting)}>
-              {exporting === 'csv' ? 'Exporting CSV...' : 'Export CSV'}
-            </button>
-            <button type="button" className="ghost-button" onClick={() => exportUsers('xlsx')} disabled={Boolean(exporting)}>
-              {exporting === 'xlsx' ? 'Exporting Excel...' : 'Export Excel'}
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => importInputRef.current?.click()}
-              disabled={importing}
-            >
-              {importing ? 'Importing...' : 'Import file'}
-            </button>
-          </div>
+          !state.loading && !state.error ? (
+            <>
+              <Link className="pill-link" to="/admin/users/create">
+                Add user
+              </Link>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => exportUsers('csv')}
+                disabled={Boolean(exporting)}
+              >
+                {exporting === 'csv' ? 'Exporting CSV...' : 'Export CSV'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => exportUsers('xlsx')}
+                disabled={Boolean(exporting)}
+              >
+                {exporting === 'xlsx' ? 'Exporting Excel...' : 'Export Excel'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => importInputRef.current?.click()}
+                disabled={importing}
+              >
+                {importing ? 'Importing...' : 'Import file'}
+              </button>
+            </>
+          ) : null
         }
         meta={
           !state.loading && !state.error ? (
@@ -227,15 +325,15 @@ function PermissionManagementPage() {
         }
       />
 
-        <input
-          ref={importInputRef}
-          id="import-users-file"
-          type="file"
-          accept=".csv,.xlsx"
-          onChange={importUsers}
-          disabled={importing}
-          style={{ display: 'none' }}
-        />
+      <input
+        ref={importInputRef}
+        id="import-users-file"
+        type="file"
+        accept=".csv,.xlsx"
+        onChange={importUsers}
+        disabled={importing}
+        style={{ display: 'none' }}
+      />
       {!state.loading && !state.error && actionMessage && (
         <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
       )}
@@ -278,24 +376,59 @@ function PermissionManagementPage() {
               <option value="inactive">Inactive</option>
             </select>
             {showEntityTypeFilter ? (
-              <select
-                className="app-select"
-                value={entityTypeFilter}
-                onChange={(event) => setEntityTypeFilter(event.target.value)}
-              >
-                <option value="all">All entity types</option>
-                <option value="PROD">Prod</option>
-                <option value="SUPPORT">Support</option>
-                <option value="TDEV">T.Dev</option>
-              </select>
-            ) : (
-              <div />
-            )}
+              <>
+                <select
+                  className="app-select"
+                  value={entityTypeFilter}
+                  onChange={(event) => setEntityTypeFilter(event.target.value)}
+                >
+                  <option value="all">All entity types</option>
+                  <option value="PROD">Prod</option>
+                  <option value="SUPPORT">Support</option>
+                  <option value="TDEV">T.Dev</option>
+                </select>
+                {showCompanyFilter && (
+                  <select
+                    className="app-select"
+                    value={companyFilter}
+                    onChange={(event) => {
+                      setCompanyFilter(event.target.value)
+                      setEntityFilter('all')
+                    }}
+                  >
+                    <option value="all">All companies</option>
+                    {companyOptions
+                      .filter((item) => item !== 'all')
+                      .map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                  </select>
+                )}
+                {showEntityFilter && (
+                  <select
+                    className="app-select"
+                    value={entityFilter}
+                    onChange={(event) => setEntityFilter(event.target.value)}
+                  >
+                    <option value="all">All entities</option>
+                    {entityOptions
+                      .filter((item) => item !== 'all')
+                      .map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </>
+            ) : null}
           </div>
           <table className="data-table">
             <thead>
               <tr>
-                <th>User</th>
+                <th>Username</th>
                 <th>Roles</th>
                 <th>Status</th>
                 <th>Scope</th>
@@ -303,31 +436,15 @@ function PermissionManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan="5">No users match the filters.</td>
-                </tr>
-              )}
               {filteredUsers.map((item) => (
                 <tr
                   key={item.id}
                   className={item.can_edit ? 'clickable-row' : 'readonly-row'}
-                  onClick={() => navigate(`/admin/permissions/${item.id}`)}
+                  onClick={() => navigate(`/admin/users/${item.id}`)}
                 >
-                  <td>
-                    <div className="caption-grid">
-                      <strong>{item.username}</strong>
-                      <span className="muted-text">
-                        {[item.first_name, item.last_name].filter(Boolean).join(' ') || 'No full name'}
-                      </span>
-                    </div>
-                  </td>
+                  <td>{item.username}</td>
                   <td>{item.roles.map((role) => role.name).join(', ') || 'No roles'}</td>
-                  <td>
-                    <span className={`status-tag ${item.is_active ? 'active' : 'muted'}`}>
-                      {item.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
+                  <td>{item.is_active ? 'Active' : 'Inactive'}</td>
                   <td>
                     {item.company_name || '-'} / {item.entity_name || '-'} ({item.entity_type || '-'})
                   </td>
@@ -338,7 +455,7 @@ function PermissionManagementPage() {
                       onClick={(event) => openDetailPage(event, item.id)}
                       disabled={!item.can_edit}
                     >
-                      Open
+                      Edit
                     </button>
                     <button
                       type="button"
@@ -353,6 +470,7 @@ function PermissionManagementPage() {
               ))}
             </tbody>
           </table>
+          {!filteredUsers.length && <p className="muted-text">No users match the filters.</p>}
         </section>
       )}
     </main>

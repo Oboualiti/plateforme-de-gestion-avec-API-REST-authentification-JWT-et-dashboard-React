@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
@@ -137,10 +137,12 @@ function AssignmentModal({ request, entities, loading, saving, onClose, onConfir
 
 function RequestsPage() {
   const { user, refreshUser } = useAuth()
+  const [searchParams] = useSearchParams()
+  const querySearch = searchParams.get('search') || ''
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
   const [operationalData, setOperationalData] = useState(null)
   const [filters, setFilters] = useState({
-    search: '',
+    search: querySearch,
     company_id: '',
     source_entity_id: '',
     target_entity_id: '',
@@ -197,15 +199,22 @@ function RequestsPage() {
   // Load companies for the filter
   useEffect(() => {
     if (!isGlobalAdmin) return
+    let active = true
     async function fetchCompanies() {
       try {
         const response = await api.get('/admin/companies/')
-        setOptions((curr) => ({ ...curr, companies: response.data }))
+        if (!active) return
+        const payload = response.data
+        const companies = Array.isArray(payload) ? payload : payload?.companies || []
+        setOptions((curr) => ({ ...curr, companies }))
       } catch (err) {
         console.error('Failed to fetch companies', err)
       }
     }
     fetchCompanies()
+    return () => {
+      active = false
+    }
   }, [isGlobalAdmin])
 
   // Load operational metrics for super admin
@@ -235,7 +244,8 @@ function RequestsPage() {
         const response = await api.get('/admin/entities/', {
           params: { company_id: companyId },
         })
-        const allEntities = response.data
+        const payload = response.data
+        const allEntities = Array.isArray(payload) ? payload : payload?.entities || []
         setOptions((curr) => ({
           ...curr,
           sourceEntities: allEntities,
@@ -293,8 +303,10 @@ function RequestsPage() {
       const resp = await api.get('/admin/entities/', {
         params: { company_id: companyId },
       })
+      const payload = resp.data
+      const entities = Array.isArray(payload) ? payload : payload?.entities || []
       // Rule: Support/Dev only
-      const validEntities = resp.data.filter((e) => e.entity_type !== 'PROD')
+      const validEntities = entities.filter((e) => e.entity_type !== 'PROD')
       setAssignmentState((s) => ({ ...s, entities: validEntities, loadingEntities: false }))
     } catch (err) {
       console.error('Failed to load target entities', err)
@@ -513,22 +525,27 @@ function RequestsPage() {
                     <td>{new Date(item.created_at).toLocaleString()}</td>
                     <td>
                       {isGlobalAdmin ? (
-                        isUnassigned ? (
-                          <button 
-                            type="button" 
-                            className="ghost-button pill-link"
-                            onClick={() => handleStartAssignment(item)}
-                          >
-                            Assign
-                          </button>
-                        ) : (
-                          <div className="caption-grid" style={{ alignItems: 'center' }}>
-                            <span className="status-tag active">Assigned</span>
-                            <span className="muted-text" style={{ fontSize: '11px' }}>
-                              {item.target_entity_name}
-                            </span>
-                          </div>
-                        )
+                        <div className="table-actions">
+                          <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
+                            Open
+                          </Link>
+                          {isUnassigned ? (
+                            <button 
+                              type="button" 
+                              className="ghost-button pill-link"
+                              onClick={() => handleStartAssignment(item)}
+                            >
+                              Assign
+                            </button>
+                          ) : (
+                            <div className="caption-grid" style={{ alignItems: 'center' }}>
+                              <span className="status-tag active">Assigned</span>
+                              <span className="muted-text" style={{ fontSize: '11px' }}>
+                                {item.target_entity_name}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
                           Open

@@ -125,7 +125,12 @@ export function AccordionItem({ children, value }) {
 
 export function AccordionTrigger({ children, icon, isOpen, onClick }) {
   return (
-    <button type="button" className={`sidebar-trigger ${isOpen ? 'sidebar-trigger-open' : ''}`} onClick={onClick}>
+    <button
+      type="button"
+      className={`sidebar-trigger ${isOpen ? 'sidebar-trigger-open' : ''}`}
+      aria-expanded={isOpen}
+      onClick={onClick}
+    >
       <span className="sidebar-trigger-copy">
         <span className="sidebar-trigger-icon">{getSectionIcon(icon)}</span>
         <span>{children}</span>
