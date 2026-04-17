@@ -236,17 +236,17 @@ function RequestDetailsPage() {
     )
   }
 
-  const request = state.request
-  const comments = request.comments || []
-  const needsResolutionNote = terminalStatuses.has(statusValue)
-  const lifecycleSteps = [
-    { label: 'New', value: 'NEW', helper: 'Awaiting review' },
-    { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
-    { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
-    { label: 'Rejected', value: 'REJECTED', helper: 'Stopped or declined' },
-    { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
-    { label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
-  ]
+  // const request = state.request
+  // const comments = request.comments || []
+  // const needsResolutionNote = terminalStatuses.has(statusValue)
+  // const lifecycleSteps = [
+  //   { label: 'New', value: 'NEW', helper: 'Awaiting review' },
+  //   { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
+  //   { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
+  //   { label: 'Rejected', value: 'REJECTED', helper: 'Stopped or declined' },
+  //   { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
+  //   { label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
+  // ]
 
   const activeLifecycleIndex = lifecycleSteps.findIndex((step) => step.value === request.status)
   const comments = request.comments || []
@@ -362,7 +362,7 @@ function RequestDetailsPage() {
                 </div>
               </div>
             </section>
-
+</div>
       <section className="panel discussion-panel">
         <p className="eyebrow">Comments</p>
         <h2>Discussion</h2>
@@ -398,7 +398,7 @@ function RequestDetailsPage() {
           </button>
         </form>
       </section>
-
+<aside>
             <section className="panel request-rail-card">
               <div className="workspace-section-title">
                 <div>
