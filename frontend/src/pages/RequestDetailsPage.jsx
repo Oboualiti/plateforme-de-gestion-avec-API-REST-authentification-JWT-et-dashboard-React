@@ -209,36 +209,49 @@ function RequestDetailsPage() {
   const summaryItems = [
     { label: 'Created', value: formatDateTime(request.created_at) },
     { label: 'Company', value: request.company_name || '-' },
-    { label: 'Source entity', value: request.source_entity_name || '-' },
-    { label: 'Target entity', value: request.target_entity_name || '-' },
+    { label: 'Source Entity', value: request.source_entity_name || '-' },
+    { label: 'Target Entity', value: request.target_entity_name || '-' },
     { label: 'Creator', value: request.requester_name || '-' },
     { label: 'Type', value: request.type || '-' },
     { label: 'Assignee', value: request.assignee_name || 'Unassigned' },
-    { label: 'Current status', value: statusLabelMap[request.status] || request.status },
+    { label: 'Current Status', value: statusLabelMap[request.status] || request.status },
   ]
 
   return (
     <main className="page-content">
       <div className="request-detail-shell">
-        <section className="panel request-detail-hero">
+        <section className="panel request-detail-hero request-detail-hero-refined">
           <div className="request-detail-hero-copy">
             <div className="request-hero-status">
               <span className="request-reference-chip">{request.reference_code || request.request_number}</span>
               <span className={statusClassMap[request.status] || 'status-tag'}>
                 {statusLabelMap[request.status] || request.status}
               </span>
+              {request.is_stuck ? <span className="status-tag danger">Stuck</span> : null}
             </div>
             <div className="request-hero-heading">
-              <p className="eyebrow">Architectural review</p>
-              <h1>{request.title}</h1>
-              <p className="subtitle">
-                {request.description || 'This request is ready for review, routing, status oversight, and discussion.'}
-              </p>
+              <p className="eyebrow">Request details</p>
+              <h1>{request.title || 'Untitled request'}</h1>
+              <div className="request-hero-description">
+                <span>Description</span>
+                <p>
+                  {request.description || 'No description provided for this request.'}
+                </p>
+              </div>
             </div>
             <div className="request-hero-meta">
-              <span>{request.company_name || 'No company'}</span>
-              <span>{request.source_entity_name || 'Unknown source'}</span>
-              <span>{formatDateTime(request.created_at)}</span>
+              <span>
+                <small>Company</small>
+                <strong>{request.company_name || 'No company'}</strong>
+              </span>
+              <span>
+                <small>Source entity</small>
+                <strong>{request.source_entity_name || 'Unknown source'}</strong>
+              </span>
+              <span>
+                <small>Created</small>
+                <strong>{formatDateTime(request.created_at)}</strong>
+              </span>
             </div>
           </div>
 
@@ -249,7 +262,7 @@ function RequestDetailsPage() {
           </div>
         </section>
 
-        {actionState.error && <p className="error-text">{actionState.error}</p>}
+        {actionState.error ? <p className="error-text">{actionState.error}</p> : null}
 
         <section className="request-detail-meta-grid">
           {summaryItems.map((item) => (

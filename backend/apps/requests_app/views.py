@@ -318,6 +318,12 @@ class RequestAssignToMeView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if service_request.current_assignee_id is not None:
+            return Response(
+                {"detail": "This request is already assigned to someone."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         service_request.current_assignee = request.user
         service_request.save(update_fields=["current_assignee"])
         RequestAssignmentHistory.objects.create(
