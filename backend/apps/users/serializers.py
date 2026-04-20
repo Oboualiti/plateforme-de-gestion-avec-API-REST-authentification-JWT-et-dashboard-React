@@ -81,7 +81,11 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     def get_request_creation_allowed(self, obj):
         role_keys = set(get_user_role_keys(obj))
-        if {"super_admin", "senior"} & role_keys:
+        if "super_admin" in role_keys:
+            return True
+        if "senior" in role_keys:
+            return bool(obj.company_id)
+        if "manager" in role_keys or "team_leader" in role_keys:
             return bool(obj.company_id and obj.entity_id)
         return bool(
             obj.company_id

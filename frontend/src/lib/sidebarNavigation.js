@@ -43,6 +43,7 @@ const roleVariantMap = {
     ]),
     createSection('company-users', 'Users', 'team', [
       createItem('Company Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
+      createItem('Roles', '/admin/roles'),
     ]),
     createSection('organization', 'Organization', 'org', [
       createItem('Entities', '/admin/entities'),
@@ -54,6 +55,7 @@ const roleVariantMap = {
   manager: [
     createSection('team', 'Team / Users', 'team', [
       createItem('Team Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
+      createItem('Roles', '/admin/roles'),
     ]),
     createSection('requests', 'Requests', 'ops', [
       createItem('Team Requests', '/requests'),
@@ -71,6 +73,7 @@ const roleVariantMap = {
     ]),
     createSection('team-members', 'Team Members', 'team', [
       createItem('Members', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
+      createItem('Roles', '/admin/roles'),
     ]),
     auditLogsSection,
   ],

@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.entities.models import Entity
+from apps.companies.models import Company
 from apps.notifications.models import UserNotification
 from apps.notifications.services import (
     create_bulk_notifications,
@@ -101,24 +102,91 @@ class RequestListCreateView(APIView):
         return Response(RequestSummarySerializer(requests_list, many=True).data)
 
     def post(self, request):
-        if not request.user.company_id or not request.user.entity_id:
-            return Response(
-                {"detail": "You must belong to a company and source entity to create requests."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        role_keys = set(get_user_role_keys(request.user))
-        can_send_from_non_prod = bool({"super_admin", "senior"} & role_keys) or request.user.is_staff
-        if request.user.entity.entity_type != Entity.EntityType.PROD and not can_send_from_non_prod:
-            return Response(
-                {"detail": "Only users from production entities can create requests."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         serializer = RequestCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        role_keys = set(get_user_role_keys(request.user))
+
+        selected_company = request.user.company
+        selected_source_entity = request.user.entity
+
+        if "super_admin" in role_keys:
+            company_id = serializer.validated_data.get("company_id")
+            source_entity_id = serializer.validated_data.get("source_entity_id")
+            if not company_id or not source_entity_id:
+                return Response(
+                    {
+                        "detail": "Super admin must choose a company and a production source entity."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            selected_company = Company.objects.filter(id=company_id, is_active=True).first()
+            if selected_company is None:
+                return Response(
+                    {"detail": "Selected company not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            selected_source_entity = Entity.objects.filter(
+                id=source_entity_id,
+                company_id=selected_company.id,
+                entity_type=Entity.EntityType.PROD,
+                is_active=True,
+            ).first()
+            if selected_source_entity is None:
+                return Response(
+                    {
+                        "detail": "Selected source entity must be a production entity from the selected company."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif "senior" in role_keys:
+            if not request.user.company_id:
+                return Response(
+                    {"detail": "You must belong to a company to create requests."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            source_entity_id = serializer.validated_data.get("source_entity_id")
+            if not source_entity_id:
+                return Response(
+                    {"detail": "Senior must choose a production source entity."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            selected_company = request.user.company
+            selected_source_entity = Entity.objects.filter(
+                id=source_entity_id,
+                company_id=request.user.company_id,
+                entity_type=Entity.EntityType.PROD,
+                is_active=True,
+            ).first()
+            if selected_source_entity is None:
+                return Response(
+                    {
+                        "detail": "Selected source entity must be a production entity from your company."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            if not request.user.company_id or not request.user.entity_id:
+                return Response(
+                    {
+                        "detail": "You must belong to a company and source entity to create requests."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            can_send_from_non_prod = (
+                bool({"manager", "team_leader"} & role_keys) or request.user.is_staff
+            )
+            if (
+                request.user.entity.entity_type != Entity.EntityType.PROD
+                and not can_send_from_non_prod
+            ):
+                return Response(
+                    {"detail": "Only users from production entities can create requests."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         target_entity = Entity.objects.filter(
             id=serializer.validated_data["target_team"],
-            company_id=request.user.company_id,
+            company_id=selected_company.id if selected_company else None,
             is_active=True,
         ).first()
         if target_entity is None:
@@ -133,8 +201,20 @@ class RequestListCreateView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if (
+            {"manager", "team_leader"} & role_keys
+            and "super_admin" not in role_keys
+            and "senior" not in role_keys
+        ):
+            if not selected_source_entity or target_entity.id != selected_source_entity.id:
+                return Response(
+                    {
+                        "detail": "Managers and team leaders can create requests only for their own entity."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
-        requester_unit = get_or_create_unit_for_entity(request.user.entity)
+        requester_unit = get_or_create_unit_for_entity(selected_source_entity)
         target_unit = get_or_create_unit_for_entity(target_entity)
 
         service_request = ServiceRequest.objects.create(
@@ -143,8 +223,8 @@ class RequestListCreateView(APIView):
             description=serializer.validated_data["description"],
             category=serializer.validated_data["type"],
             requester_user=request.user,
-            company=request.user.company,
-            source_entity=request.user.entity,
+            company=selected_company,
+            source_entity=selected_source_entity,
             target_entity=target_entity,
             requester_unit=requester_unit,
             target_unit=target_unit,
@@ -196,6 +276,22 @@ class RequestDetailView(APIView):
                 context=build_request_detail_context(request, service_request),
             ).data
         )
+
+    def delete(self, request, request_id):
+        service_request = self.get_object(request_id)
+        if service_request is None or not self.has_access(request.user, service_request):
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        role_keys = set(get_user_role_keys(request.user))
+        can_delete = bool(
+            {"super_admin", "senior", "manager", "team_leader"} & role_keys
+        ) or request.user.is_staff
+        if not can_delete:
+            return Response(
+                {"detail": "You do not have permission to delete this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        service_request.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class RequestCommentCreateView(APIView):
@@ -293,6 +389,35 @@ class RequestStatusUpdateView(APIView):
             changed_by=request.user,
             note=note,
         )
+        status_labels = dict(ServiceRequest.Status.choices)
+        progress_message = (
+            f"Progress updated: {status_labels.get(old_status, old_status)}"
+            f" -> {status_labels.get(new_status, new_status)}"
+        )
+        if note.strip():
+            progress_message = f"{progress_message}\nNote: {note.strip()}"
+        request_message = RequestMessage.objects.create(
+            request=service_request,
+            sender=request.user,
+            message=progress_message,
+        )
+        recipients = resolve_request_notification_recipients(
+            service_request, exclude_user_id=request.user.id
+        )
+        recipients = filter_recipients_by_request_visibility(service_request, recipients)
+        create_bulk_notifications(
+            users=recipients,
+            event_type=UserNotification.EventType.REQUEST_MESSAGE,
+            title=f"Progress updated on {service_request.request_number}",
+            message=f"{request.user.username}: {progress_message}",
+            link=f"/requests/{service_request.id}",
+            metadata={
+                "request_id": service_request.id,
+                "request_number": service_request.request_number,
+                "message_id": request_message.id,
+            },
+        )
+        mirror_request_message_to_telegram(service_request, request_message)
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
         return Response(

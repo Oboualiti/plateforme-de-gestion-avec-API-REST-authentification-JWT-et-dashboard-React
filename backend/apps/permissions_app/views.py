@@ -135,7 +135,7 @@ class ManageableUserFormOptionsView(BaseManageUsersView):
         role_options = [
             {"key": key, "name": key.replace("_", " ").title(), "level": level}
             for key, level in ROLE_HIERARCHY.items()
-            if level < actor_level
+            if level < actor_level or (actor_level == ROLE_HIERARCHY["senior"] and key == "senior")
         ]
 
         actor_roles = set(actor.assigned_roles.values_list("role__key", flat=True))
@@ -474,7 +474,7 @@ class ManageUserDetailView(BaseManageUsersView):
                 "level": level,
             }
             for role_key, level in ROLE_HIERARCHY.items()
-            if level < actor_level
+            if level < actor_level or (actor_level == ROLE_HIERARCHY["senior"] and role_key == "senior")
         ]
         payload = UserPermissionAdminDetailSerializer(
             target, context={"editor_user": request.user}
@@ -528,7 +528,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
                 "level": level,
             }
             for role_key, level in ROLE_HIERARCHY.items()
-            if level < actor_level
+            if level < actor_level or (actor_level == ROLE_HIERARCHY["senior"] and role_key == "senior")
         ]
         payload = UserPermissionAdminDetailSerializer(
             target, context={"editor_user": request.user}

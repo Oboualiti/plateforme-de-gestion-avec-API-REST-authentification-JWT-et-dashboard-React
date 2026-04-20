@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -15,25 +15,127 @@ function CreateRequestPage() {
     description: '',
     type: 'INFO',
     target_team: '',
+    company_id: '',
+    source_entity_id: '',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [companies, setCompanies] = useState([])
+  const [scopeEntities, setScopeEntities] = useState([])
+  const [scopeLoading, setScopeLoading] = useState(false)
+
+  const roleKeys = user?.role_keys || []
+  const isSuperAdmin = roleKeys.includes('super_admin')
+  const isSenior = roleKeys.includes('senior')
 
   useEffect(() => {
     refreshUser().catch(() => {})
   }, [refreshUser])
+
+  useEffect(() => {
+    if (!user) return
+    if (!isSuperAdmin && !isSenior) return
+    if (isSenior && !user.company) return
+
+    let active = true
+    async function bootstrapScope() {
+      setScopeLoading(true)
+      try {
+        if (isSuperAdmin) {
+          const companiesResponse = await api.get('/admin/companies/')
+          const companiesPayload = companiesResponse.data
+          const nextCompanies = Array.isArray(companiesPayload)
+            ? companiesPayload
+            : companiesPayload?.companies || []
+          if (!active) return
+          setCompanies(nextCompanies)
+        }
+      } catch {
+        if (!active) return
+        setCompanies([])
+      } finally {
+        if (active) {
+          setScopeLoading(false)
+        }
+      }
+    }
+
+    bootstrapScope()
+    return () => {
+      active = false
+    }
+  }, [isSenior, isSuperAdmin, user])
+
+  useEffect(() => {
+    if (!user) return
+    if (!isSuperAdmin && !isSenior) return
+
+    const selectedCompanyId = isSuperAdmin ? Number(form.company_id || 0) : user.company
+    if (!selectedCompanyId) {
+      setScopeEntities([])
+      return
+    }
+
+    let active = true
+    async function loadEntities() {
+      setScopeLoading(true)
+      try {
+        const response = await api.get('/admin/entities/', {
+          params: { company_id: selectedCompanyId },
+        })
+        const payload = response.data
+        const entities = Array.isArray(payload) ? payload : payload?.entities || []
+        if (!active) return
+        setScopeEntities(entities)
+      } catch {
+        if (!active) return
+        setScopeEntities([])
+      } finally {
+        if (active) {
+          setScopeLoading(false)
+        }
+      }
+    }
+
+    loadEntities()
+    return () => {
+      active = false
+    }
+  }, [form.company_id, isSenior, isSuperAdmin, user])
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    setForm((current) => ({ ...current, source_entity_id: '', target_team: '' }))
+  }, [form.company_id, isSuperAdmin])
+
+  const sourceEntityOptions = useMemo(
+    () => scopeEntities.filter((item) => item.entity_type === 'PROD'),
+    [scopeEntities],
+  )
+  const scopedTargetOptions = useMemo(
+    () => scopeEntities.filter((item) => item.entity_type !== 'PROD'),
+    [scopeEntities],
+  )
+  const targetOptions = isSuperAdmin || isSenior ? scopedTargetOptions : user?.available_target_teams || []
 
   async function handleSubmit(event) {
     event.preventDefault()
     setLoading(true)
     setError('')
     try {
-      await api.post('/requests/', {
+      const payload = {
         title: form.title,
         description: form.description,
         type: form.type,
         target_team: Number(form.target_team),
-      })
+      }
+      if (isSuperAdmin) {
+        payload.company_id = Number(form.company_id)
+        payload.source_entity_id = Number(form.source_entity_id)
+      } else if (isSenior) {
+        payload.source_entity_id = Number(form.source_entity_id)
+      }
+      await api.post('/requests/', payload)
       navigate('/requests', { replace: true })
     } catch (nextError) {
       setError(nextError.response?.data?.detail || 'Could not create request.')
@@ -48,7 +150,7 @@ function CreateRequestPage() {
         <section className="panel state-card">
           <p className="eyebrow">Access</p>
           <h1 className="empty-state-title">Request creation is unavailable</h1>
-          <p className="subtitle">Only users from production entities can create requests.</p>
+          <p className="subtitle">You do not have permission to create requests in your current scope.</p>
         </section>
       </main>
     )
@@ -105,14 +207,65 @@ function CreateRequestPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="source_entity">Source entity</label>
-                  <input
-                    id="source_entity"
-                    value={user.source_entity?.label || ''}
-                    disabled
-                    readOnly
-                  />
+                  {isSuperAdmin ? (
+                    <>
+                      <label htmlFor="company_id">Company</label>
+                      <select
+                        id="company_id"
+                        className="app-select"
+                        value={form.company_id}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, company_id: event.target.value }))
+                        }
+                        disabled={scopeLoading}
+                      >
+                        <option value="">Select company</option>
+                        {companies.map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : isSenior ? (
+                    <>
+                      <label htmlFor="company_name">Company</label>
+                      <input id="company_name" value={user.company_name || ''} disabled readOnly />
+                    </>
+                  ) : (
+                    <>
+                      <label htmlFor="source_entity">Source entity</label>
+                      <input
+                        id="source_entity"
+                        value={user.source_entity?.label || ''}
+                        disabled
+                        readOnly
+                      />
+                    </>
+                  )}
                 </div>
+
+                {isSuperAdmin || isSenior ? (
+                  <div>
+                    <label htmlFor="source_entity_id">Source prod entity</label>
+                    <select
+                      id="source_entity_id"
+                      className="app-select"
+                      value={form.source_entity_id}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, source_entity_id: event.target.value }))
+                      }
+                      disabled={scopeLoading || (isSuperAdmin && !form.company_id)}
+                    >
+                      <option value="">Select production entity</option>
+                      {sourceEntityOptions.map((entity) => (
+                        <option key={entity.id} value={entity.id}>
+                          {entity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
 
                 <div>
                   <label htmlFor="target_team">Target team</label>
@@ -123,11 +276,16 @@ function CreateRequestPage() {
                     onChange={(event) =>
                       setForm((current) => ({ ...current, target_team: event.target.value }))
                     }
+                    disabled={
+                      (isSuperAdmin && (!form.company_id || !form.source_entity_id))
+                      || (isSenior && !form.source_entity_id)
+                      || scopeLoading
+                    }
                   >
                     <option value="">Select a support or development team</option>
-                    {user.available_target_teams?.map((team) => (
+                    {targetOptions.map((team) => (
                       <option key={team.id} value={team.id}>
-                        {team.label}
+                        {team.label || team.name}
                       </option>
                     ))}
                   </select>

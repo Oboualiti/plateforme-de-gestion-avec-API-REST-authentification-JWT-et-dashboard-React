@@ -149,11 +149,17 @@ class UserRoleUpdateSerializer(serializers.Serializer):
 
         actor = self.context["request"].user
         actor_level = self.context["actor_level"]
-        invalid_roles = [
-            role.key
-            for role in roles
-            if ROLE_HIERARCHY.get(role.key, 0) >= actor_level
-        ]
+        actor_role_key = get_primary_role_key(actor)
+        invalid_roles = []
+        for role in roles:
+            role_level = ROLE_HIERARCHY.get(role.key, 0)
+            is_same_level_senior_allowed = (
+                actor_role_key == "senior"
+                and role.key == "senior"
+                and role_level == actor_level
+            )
+            if role_level > actor_level or (role_level == actor_level and not is_same_level_senior_allowed):
+                invalid_roles.append(role.key)
         if invalid_roles:
             raise serializers.ValidationError(
                 f"You cannot assign roles at your level or higher: {', '.join(invalid_roles)}."
@@ -316,7 +322,13 @@ class ManagedUserCreateSerializer(serializers.Serializer):
         role = Role.objects.filter(key=role_key, is_active=True).first()
         if role is None or role_key not in ROLE_HIERARCHY:
             raise serializers.ValidationError({"role_key": "Invalid role."})
-        if ROLE_HIERARCHY[role_key] >= actor_level:
+        role_level = ROLE_HIERARCHY[role_key]
+        is_same_level_senior_allowed = (
+            actor_role == "senior"
+            and role_key == "senior"
+            and role_level == actor_level
+        )
+        if role_level > actor_level or (role_level == actor_level and not is_same_level_senior_allowed):
             raise serializers.ValidationError(
                 {"role_key": "You can only create users below your role level."}
             )

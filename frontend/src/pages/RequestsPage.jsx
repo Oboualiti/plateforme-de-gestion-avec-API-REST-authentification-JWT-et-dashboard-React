@@ -172,12 +172,14 @@ function RequestsPage() {
     entities: [],
     saving: false,
   })
+  const [deletingRequestId, setDeletingRequestId] = useState(null)
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const isGlobalAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
   const isManager = roleKeys.includes('manager')
-  const isCompanyScopedView = isSenior || isManager
+  const isTeamLeader = roleKeys.includes('team_leader')
+  const canDeleteRequests = isGlobalAdmin || isSenior || isManager || isTeamLeader
   const title = isGlobalAdmin
     ? 'All requests'
     : isSenior
@@ -331,6 +333,22 @@ function RequestsPage() {
     }
   }
 
+  async function handleDeleteRequest(requestItem) {
+    const confirmed = window.confirm(
+      `Delete request "${requestItem.reference_code || requestItem.request_number}"?`,
+    )
+    if (!confirmed) return
+    setDeletingRequestId(requestItem.id)
+    try {
+      await api.delete(`/requests/${requestItem.id}/`)
+      await loadRequests()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Could not delete request.')
+    } finally {
+      setDeletingRequestId(null)
+    }
+  }
+
   function resetFilters() {
     setFilters({
       search: '',
@@ -389,7 +407,7 @@ function RequestsPage() {
           <strong>{metrics.inProgress}</strong>
         </article>
         <article className="summary-card">
-          <span>Stalled / Stuck</span>
+          <span>Stalled</span>
           <strong>{metrics.stuck}</strong>
         </article>
       </section>
@@ -505,7 +523,6 @@ function RequestsPage() {
                         <span className={statusClassMap[item.status] || 'status-tag'}>
                           {statusLabelMap[item.status] || item.status}
                         </span>
-                        {item.is_stuck ? <span className="status-tag danger">Stuck</span> : null}
                       </div>
                     </td>
                     <td>
@@ -524,12 +541,22 @@ function RequestsPage() {
                     </td>
                     <td>{new Date(item.created_at).toLocaleString()}</td>
                     <td>
-                      {isGlobalAdmin ? (
-                        <div className="table-actions">
-                          <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
-                            Open
-                          </Link>
-                          {isUnassigned ? (
+                      <div className="table-actions">
+                        <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
+                          Open
+                        </Link>
+                        {canDeleteRequests ? (
+                          <button
+                            type="button"
+                            className="ghost-button pill-link"
+                            disabled={deletingRequestId === item.id}
+                            onClick={() => handleDeleteRequest(item)}
+                          >
+                            {deletingRequestId === item.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        ) : null}
+                        {isGlobalAdmin ? (
+                          isUnassigned ? (
                             <button 
                               type="button" 
                               className="ghost-button pill-link"
@@ -544,13 +571,9 @@ function RequestsPage() {
                                 {item.target_entity_name}
                               </span>
                             </div>
-                          )}
-                        </div>
-                      ) : (
-                        <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
-                          Open
-                        </Link>
-                      )}
+                          )
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 )

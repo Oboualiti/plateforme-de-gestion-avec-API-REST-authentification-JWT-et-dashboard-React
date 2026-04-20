@@ -294,9 +294,12 @@ function AdminControlCenterPage() {
   const [entityCompanyFilter, setEntityCompanyFilter] = useState('all')
   const [entityTypeFilter, setEntityTypeFilter] = useState('all')
   const [entityStatusFilter, setEntityStatusFilter] = useState('all')
+  const [roleScopeFilter, setRoleScopeFilter] = useState({ company_id: '', entity_id: '', entity_type: '' })
   const roleKeys = user?.role_keys || []
   const isSuperAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
+  const isManager = roleKeys.includes('manager')
+  const isTeamLeader = roleKeys.includes('team_leader')
   const actorCompanyId = Number(user?.company_id ?? user?.company ?? 0) || null
   const [companyEditState, setCompanyEditState] = useState({
     open: false,
@@ -330,8 +333,21 @@ function AdminControlCenterPage() {
   async function loadSection() {
     setState({ loading: true, error: '', data: null, sectionKey })
     try {
-      const params = undefined
-      const response = await api.get(config.endpoint, params)
+      let requestConfig
+      if (sectionKey === 'roles') {
+        const params = {}
+        if (isSuperAdmin && roleScopeFilter.company_id) {
+          params.company_id = Number(roleScopeFilter.company_id)
+        }
+        if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_id) {
+          params.entity_id = Number(roleScopeFilter.entity_id)
+        }
+        if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_type) {
+          params.entity_type = roleScopeFilter.entity_type
+        }
+        requestConfig = Object.keys(params).length ? { params } : undefined
+      }
+      const response = await api.get(config.endpoint, requestConfig)
       let normalizedData = response.data
 
       if (sectionKey === 'companies' && Array.isArray(normalizedData)) {
@@ -375,7 +391,7 @@ function AdminControlCenterPage() {
   useEffect(() => {
     setAuditGroupPages({})
     loadSection()
-  }, [sectionKey, auditCategoryKey])
+  }, [sectionKey, auditCategoryKey, roleScopeFilter.company_id, roleScopeFilter.entity_id])
 
   function setAuditGroupPage(groupKey, nextPage) {
     setAuditGroupPages((current) => ({ ...current, [groupKey]: nextPage }))
@@ -451,7 +467,37 @@ function AdminControlCenterPage() {
   }
 
   async function saveRolePermissions(roleId, permissionKeys) {
-    await patchRecord(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys }, 'Role permissions updated.')
+    const scopePayload = {}
+    if (isSuperAdmin && roleScopeFilter.company_id) {
+      scopePayload.company_id = Number(roleScopeFilter.company_id)
+    }
+    if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_id) {
+      scopePayload.entity_id = Number(roleScopeFilter.entity_id)
+    }
+    if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_type) {
+      scopePayload.entity_type = roleScopeFilter.entity_type
+    }
+    await patchRecord(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys, ...scopePayload }, 'Role permissions updated.')
+  }
+
+  async function restoreRolePermissions(roleId) {
+    try {
+      const scopePayload = {}
+      if (isSuperAdmin && roleScopeFilter.company_id) {
+        scopePayload.company_id = Number(roleScopeFilter.company_id)
+      }
+      if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_id) {
+        scopePayload.entity_id = Number(roleScopeFilter.entity_id)
+      }
+      if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_type) {
+        scopePayload.entity_type = roleScopeFilter.entity_type
+      }
+      const response = await api.post(`/admin/roles/${roleId}/`, scopePayload)
+      setMessage(response.data?.detail || 'Role defaults restored.')
+      loadSection()
+    } catch (error) {
+      setMessage(error.response?.data?.detail || 'Could not restore role defaults.')
+    }
   }
 
   function updateCompanyEditField(field, value) {
@@ -914,19 +960,110 @@ function AdminControlCenterPage() {
     }
 
     if (sectionKey === 'roles') {
+      const roleDisplayOrder = {
+        super_admin: 0,
+        senior: 1,
+        manager: 2,
+        team_leader: 3,
+        user: 4,
+      }
+      const seniorEditableRoleKeys = new Set(['manager', 'team_leader', 'user'])
+      const managerEditableRoleKeys = new Set(['team_leader', 'user'])
+      const teamLeaderEditableRoleKeys = new Set(['user'])
+      const companyOptions = data.company_options || []
+      const entityOptions = data.entity_options || []
+      const filteredEntityOptions = entityOptions.filter(
+        (item) => !roleScopeFilter.entity_type || item.entity_type === roleScopeFilter.entity_type,
+      )
+      const sortedRoles = [...(data.roles || [])].sort((a, b) => {
+        const aOrder = roleDisplayOrder[a.key] ?? 99
+        const bOrder = roleDisplayOrder[b.key] ?? 99
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder
+        }
+        return (a.name || '').localeCompare(b.name || '')
+      })
       return (
-        <div className="timeline-list">
-          {(data.roles || []).map((item) => (
-            <EditableChecklistCard
-              key={item.id}
-              title={item.name}
-              subtitle={`Level ${item.level} | ${item.user_count} users`}
-              selectedKeys={item.default_permissions}
-              allItems={data.all_permission_keys || []}
-              onSave={(permissionKeys) => saveRolePermissions(item.id, permissionKeys)}
-            />
-          ))}
-        </div>
+        <>
+          {(isSuperAdmin || isSenior) && (
+            <section className="panel">
+              <div className="filter-bar">
+                {isSuperAdmin && (
+                  <select
+                    className="app-select"
+                    value={roleScopeFilter.company_id}
+                    onChange={(event) =>
+                      setRoleScopeFilter({
+                        company_id: event.target.value,
+                        entity_id: '',
+                        entity_type: roleScopeFilter.entity_type,
+                      })
+                    }
+                  >
+                    <option value="">General (all companies)</option>
+                    {companyOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <select
+                  className="app-select"
+                  value={roleScopeFilter.entity_type}
+                  onChange={(event) =>
+                    setRoleScopeFilter((current) => ({
+                      ...current,
+                      entity_type: event.target.value,
+                      entity_id: '',
+                    }))
+                  }
+                >
+                  <option value="">All entity types</option>
+                  <option value="PROD">Prod</option>
+                  <option value="SUPPORT">Support</option>
+                  <option value="TDEV">Dev</option>
+                </select>
+                <select
+                  className="app-select"
+                  value={roleScopeFilter.entity_id}
+                  onChange={(event) =>
+                    setRoleScopeFilter((current) => ({
+                      ...current,
+                      entity_id: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">General (all entities)</option>
+                  {filteredEntityOptions.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label || item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </section>
+          )}
+          <div className="timeline-list">
+            {sortedRoles.map((item) => (
+              <EditableChecklistCard
+                key={item.id}
+                title={item.name}
+                subtitle={`Level ${item.level} | ${item.user_count} users`}
+                selectedKeys={item.default_permissions}
+                allItems={data.all_permission_keys || []}
+                onSave={(permissionKeys) => saveRolePermissions(item.id, permissionKeys)}
+                onRestore={() => restoreRolePermissions(item.id)}
+                canSave={
+                  isSuperAdmin ||
+                  (isSenior && seniorEditableRoleKeys.has(item.key)) ||
+                  (isManager && managerEditableRoleKeys.has(item.key)) ||
+                  (isTeamLeader && teamLeaderEditableRoleKeys.has(item.key))
+                }
+              />
+            ))}
+          </div>
+        </>
       )
     }
 
@@ -1191,8 +1328,13 @@ function AdminControlCenterPage() {
     entityCompanyFilter,
     entityTypeFilter,
     entityStatusFilter,
+    roleScopeFilter.company_id,
+    roleScopeFilter.entity_id,
+    roleScopeFilter.entity_type,
     isSuperAdmin,
     isSenior,
+    isManager,
+    isTeamLeader,
     actorCompanyId,
     navigate,
   ])
@@ -1277,7 +1419,7 @@ function RequestSummaryTable({ rows = [] }) {
   )
 }
 
-function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave }) {
+function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave, onRestore, canSave = true }) {
   const [localKeys, setLocalKeys] = useState(selectedKeys)
 
   useEffect(() => {
@@ -1298,12 +1440,24 @@ function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave
       <div className="check-grid admin-check-grid">
         {allItems.map((item) => (
           <label key={item} className="checkbox-row">
-            <input type="checkbox" checked={localKeys.includes(item)} onChange={() => toggleKey(item)} />
+            <input
+              type="checkbox"
+              checked={localKeys.includes(item)}
+              onChange={() => toggleKey(item)}
+              disabled={!canSave}
+            />
             <span>{item}</span>
           </label>
         ))}
       </div>
-      <button type="button" onClick={() => onSave(localKeys)}>Save</button>
+      <div className="page-actions">
+        <button type="button" onClick={() => onSave(localKeys)} disabled={!canSave}>
+          Save
+        </button>
+        <button type="button" className="ghost-button" onClick={onRestore} disabled={!canSave}>
+          Restore default
+        </button>
+      </div>
     </article>
   )
 }

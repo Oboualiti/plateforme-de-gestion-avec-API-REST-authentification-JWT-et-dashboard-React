@@ -406,6 +406,8 @@ class RequestCreateSerializer(serializers.Serializer):
     description = serializers.CharField()
     type = serializers.ChoiceField(choices=REQUEST_TYPE_CHOICES)
     target_team = serializers.IntegerField()
+    company_id = serializers.IntegerField(required=False)
+    source_entity_id = serializers.IntegerField(required=False)
 
 
 class RequestCommentCreateSerializer(serializers.Serializer):

@@ -55,9 +55,13 @@ function CreateManagedUserPage() {
           team_leader_options: [],
         }
         setOptions(loaded)
+        const defaultRoleKey =
+          loaded.role_options?.find((item) => item.key === 'user')?.key ||
+          loaded.role_options?.[0]?.key ||
+          ''
         setForm((current) => ({
           ...current,
-          role_key: loaded.role_options?.[0]?.key || '',
+          role_key: defaultRoleKey,
           company_id: loaded.company_options?.[0]?.id || '',
           entity_id: '',
         }))

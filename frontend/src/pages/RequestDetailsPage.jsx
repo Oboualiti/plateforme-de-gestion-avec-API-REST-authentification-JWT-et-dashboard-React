@@ -59,8 +59,7 @@ function RequestDetailsPage() {
   const roleKeys = user?.role_keys || []
   const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
-  const isAdminReviewRole = roleKeys.some((role) => ['super_admin', 'senior', 'manager'].includes(role))
-  const canChangeStatus = request?.can_update_status && !isAdminReviewRole
+  const canChangeStatus = Boolean(request?.can_update_status)
   const canAssignToMe = Boolean(request?.can_assign_to_me)
   const potentialAssignees = request?.potential_assignees || []
   const canManagerAssignTl =
@@ -264,7 +263,6 @@ function RequestDetailsPage() {
               <span className={statusClassMap[request.status] || 'status-tag'}>
                 {statusLabelMap[request.status] || request.status}
               </span>
-              {request.is_stuck ? <span className="status-tag danger">Stuck</span> : null}
             </div>
             <div className="request-hero-heading">
               <p className="eyebrow">Request details</p>

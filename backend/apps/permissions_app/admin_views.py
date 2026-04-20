@@ -13,12 +13,13 @@ from apps.audit_logs.services import log_admin_action
 from apps.companies.models import Company
 from apps.entities.models import Entity
 from apps.notifications.models import NotificationPreference
-from apps.permissions_app.models import AppPermission, PermissionDelegation, RolePermission, UserRole
+from apps.permissions_app.models import AppPermission, PermissionDelegation, RolePermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import (
     ROLE_HIERARCHY,
     can_manage_any_users,
     can_view_target_user,
     get_delegatable_permission_keys,
+    get_effective_permission_keys,
     get_primary_role_key,
     get_visible_users_queryset,
 )
@@ -26,6 +27,7 @@ from apps.requests_app.models import OperationalUnit, RequestAssignmentHistory, 
 from apps.requests_app.views import get_visible_requests_queryset, load_request
 from apps.roles.models import Role
 from apps.users.models import User
+from apps.permissions_app.management.commands.seed_roles_permissions import PERMISSION_MATRIX
 
 from .admin_serializers import (
     AssignmentHistorySerializer,
@@ -43,6 +45,7 @@ from .admin_serializers import (
     RequestAdminUpdateSerializer,
     RoleAdminSerializer,
     RolePermissionMappingSerializer,
+    RoleScopeSerializer,
     StatusTrackingSerializer,
 )
 from .serializers import ManageableUserListSerializer
@@ -54,7 +57,7 @@ ADMIN_MODULE_PERMISSIONS = {
     "entities": {"super_admin", "senior"},
     "hierarchy": {"super_admin", "senior", "manager", "team_leader"},
     "users": {"super_admin", "senior", "manager", "team_leader"},
-    "roles": {"super_admin"},
+    "roles": {"super_admin", "senior", "manager", "team_leader"},
     "permissions": {"super_admin", "senior", "manager", "team_leader"},
     "delegation_rules": {"super_admin"},
     "requests": {"super_admin", "senior", "manager", "team_leader"},
@@ -63,6 +66,11 @@ ADMIN_MODULE_PERMISSIONS = {
     "audit_logs": {"super_admin", "senior", "manager", "team_leader"},
     "notifications": {"super_admin", "senior"},
     "reports": {"super_admin", "senior", "manager"},
+}
+
+ROLE_DEFAULT_PERMISSION_KEYS = {
+    role_key: {permission_key for permission_key, allowed_roles in PERMISSION_MATRIX.items() if role_key in allowed_roles}
+    for role_key in ROLE_HIERARCHY.keys()
 }
 
 
@@ -172,7 +180,19 @@ class AdminCompaniesView(AdminBaseView):
             ).first()
             company.senior_name = senior.get_full_name() or senior.username if senior else ""
             rows.append(company)
-        return Response(CompanyAdminSerializer(rows, many=True).data)
+        senior_options = list(
+            self.scoped_users(request.user)
+            .filter(assigned_roles__role__key="senior", is_active=True)
+            .values("id", "username", "company_id")
+            .distinct()
+            .order_by("username")
+        )
+        return Response(
+            {
+                "companies": CompanyAdminSerializer(rows, many=True).data,
+                "senior_options": senior_options,
+            }
+        )
 
     def post(self, request):
         serializer = CompanyWriteSerializer(data=request.data)
@@ -370,11 +390,238 @@ class AdminRolesView(AdminBaseView):
     module_key = "roles"
 
     def get(self, request):
-        queryset = Role.objects.annotate(user_count=Count("user_assignments")).order_by("name")
+        actor_role = self.role_key(request.user)
+        company_id_param = request.query_params.get("company_id")
+        entity_id_param = request.query_params.get("entity_id")
+        entity_type_param = request.query_params.get("entity_type")
+        company_id = None
+        entity_id = None
+        entity_type = None
+
+        if entity_type_param:
+            allowed_entity_types = {Entity.EntityType.PROD, Entity.EntityType.SUPPORT, Entity.EntityType.TDEV}
+            if entity_type_param not in allowed_entity_types:
+                return Response({"detail": "Invalid entity type filter."}, status=status.HTTP_400_BAD_REQUEST)
+            entity_type = entity_type_param
+
+        if actor_role == "super_admin":
+            if company_id_param:
+                selected_company = Company.objects.filter(id=company_id_param, is_active=True).first()
+                if selected_company is None:
+                    return Response({"detail": "Selected company not found."}, status=status.HTTP_400_BAD_REQUEST)
+                company_id = selected_company.id
+            if entity_id_param:
+                selected_entity = Entity.objects.filter(id=entity_id_param, is_active=True).first()
+                if selected_entity is None:
+                    return Response({"detail": "Selected entity not found."}, status=status.HTTP_400_BAD_REQUEST)
+                entity_id = selected_entity.id
+                if company_id and selected_entity.company_id != company_id:
+                    return Response({"detail": "Selected entity does not belong to selected company."}, status=status.HTTP_400_BAD_REQUEST)
+                if not company_id:
+                    company_id = selected_entity.company_id
+                if entity_type and selected_entity.entity_type != entity_type:
+                    return Response({"detail": "Selected entity type does not match selected entity."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if actor_role == "senior" and request.user.company_id:
+            company_id = request.user.company_id
+            if company_id_param:
+                try:
+                    requested_company_id = int(company_id_param)
+                except (TypeError, ValueError):
+                    return Response({"detail": "Invalid company filter."}, status=status.HTTP_400_BAD_REQUEST)
+                if requested_company_id != company_id:
+                    return Response({"detail": "Senior can only filter within their company."}, status=status.HTTP_400_BAD_REQUEST)
+            if entity_id_param:
+                selected_entity = Entity.objects.filter(id=entity_id_param, company_id=company_id, is_active=True).first()
+                if selected_entity is None:
+                    return Response({"detail": "Selected entity not found in your company."}, status=status.HTTP_400_BAD_REQUEST)
+                entity_id = selected_entity.id
+                if entity_type and selected_entity.entity_type != entity_type:
+                    return Response({"detail": "Selected entity type does not match selected entity."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if actor_role == "super_admin" and (company_id or entity_id or entity_type):
+            user_filter = Q()
+            if company_id:
+                user_filter &= Q(user_assignments__user__company_id=company_id)
+            if entity_id:
+                user_filter &= Q(user_assignments__user__entity_id=entity_id)
+            if entity_type:
+                user_filter &= Q(user_assignments__user__entity__entity_type=entity_type)
+            queryset = Role.objects.annotate(
+                user_count=Count("user_assignments", filter=user_filter, distinct=True)
+            ).order_by("name")
+        elif actor_role == "senior" and request.user.company_id:
+            senior_filter = Q(user_assignments__user__company_id=company_id)
+            if entity_id:
+                senior_filter &= Q(user_assignments__user__entity_id=entity_id)
+            if entity_type:
+                senior_filter &= Q(user_assignments__user__entity__entity_type=entity_type)
+            queryset = Role.objects.exclude(key="super_admin").annotate(
+                user_count=Count("user_assignments", filter=senior_filter, distinct=True)
+            ).order_by("name")
+        elif actor_role == "manager" and request.user.entity_id:
+            queryset = Role.objects.filter(key__in={"team_leader", "user"}).annotate(
+                user_count=Count(
+                    "user_assignments",
+                    filter=Q(user_assignments__user__entity_id=request.user.entity_id),
+                    distinct=True,
+                )
+            ).order_by("name")
+        elif actor_role == "team_leader":
+            queryset = Role.objects.filter(key="user").annotate(
+                user_count=Count(
+                    "user_assignments",
+                    filter=Q(user_assignments__user__team_leader_id=request.user.id),
+                    distinct=True,
+                )
+            ).order_by("name")
+        else:
+            queryset = Role.objects.annotate(user_count=Count("user_assignments")).order_by("name")
+
+        roles_payload = RoleAdminSerializer(queryset, many=True).data
+        if actor_role == "super_admin" and (company_id or entity_id or entity_type):
+            policy_by_role = {}
+            for role_key in ROLE_HIERARCHY.keys():
+                sample_user_qs = User.objects.filter(
+                    assigned_roles__role__key=role_key,
+                    is_active=True,
+                )
+                if company_id:
+                    sample_user_qs = sample_user_qs.filter(company_id=company_id)
+                if entity_id:
+                    sample_user_qs = sample_user_qs.filter(entity_id=entity_id)
+                if entity_type:
+                    sample_user_qs = sample_user_qs.filter(entity__entity_type=entity_type)
+                sample_user = sample_user_qs.order_by("id").first()
+                if sample_user is not None:
+                    policy_by_role[role_key] = get_effective_permission_keys(sample_user)
+
+            for role_row in roles_payload:
+                role_key = role_row.get("key")
+                if role_key in policy_by_role:
+                    role_row["default_permissions"] = policy_by_role[role_key]
+        elif actor_role == "senior" and request.user.company_id:
+            scoped_policy_role_keys = {"manager", "team_leader", "user"}
+            policy_by_role = {}
+            for role_key in scoped_policy_role_keys:
+                sample_user_qs = User.objects.filter(
+                    company_id=company_id,
+                    assigned_roles__role__key=role_key,
+                    is_active=True,
+                )
+                if entity_id:
+                    sample_user_qs = sample_user_qs.filter(entity_id=entity_id)
+                if entity_type:
+                    sample_user_qs = sample_user_qs.filter(entity__entity_type=entity_type)
+                sample_user = sample_user_qs.order_by("id").first()
+                if sample_user is not None:
+                    policy_by_role[role_key] = get_effective_permission_keys(sample_user)
+
+            for role_row in roles_payload:
+                role_key = role_row.get("key")
+                if role_key in policy_by_role:
+                    role_row["default_permissions"] = policy_by_role[role_key]
+        elif actor_role == "manager" and request.user.entity_id:
+            scoped_policy_role_keys = {"team_leader", "user"}
+            policy_by_role = {}
+            for role_key in scoped_policy_role_keys:
+                sample_user = (
+                    User.objects.filter(
+                        entity_id=request.user.entity_id,
+                        assigned_roles__role__key=role_key,
+                        is_active=True,
+                    )
+                    .order_by("id")
+                    .first()
+                )
+                if sample_user is not None:
+                    policy_by_role[role_key] = get_effective_permission_keys(sample_user)
+
+            for role_row in roles_payload:
+                role_key = role_row.get("key")
+                if role_key in policy_by_role:
+                    role_row["default_permissions"] = policy_by_role[role_key]
+        elif actor_role == "team_leader":
+            sample_user = (
+                User.objects.filter(
+                    team_leader_id=request.user.id,
+                    assigned_roles__role__key="user",
+                    is_active=True,
+                )
+                .order_by("id")
+                .first()
+            )
+            if sample_user is not None:
+                effective_keys = get_effective_permission_keys(sample_user)
+                for role_row in roles_payload:
+                    if role_row.get("key") == "user":
+                        role_row["default_permissions"] = effective_keys
+
+        company_options = []
+        entity_options = []
+        if actor_role == "super_admin":
+            company_options = list(
+                Company.objects.filter(is_active=True).order_by("name").values("id", "name", "code")
+            )
+            entity_qs = Entity.objects.filter(is_active=True).select_related("company")
+            if company_id:
+                entity_qs = entity_qs.filter(company_id=company_id)
+            if entity_type:
+                entity_qs = entity_qs.filter(entity_type=entity_type)
+            entity_options = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "entity_type": item.entity_type,
+                    "company_id": item.company_id,
+                    "company_name": item.company.name,
+                    "label": f"{item.name} ({item.company.name})",
+                }
+                for item in entity_qs.order_by("name")
+            ]
+        elif actor_role == "senior" and request.user.company_id:
+            company_options = [
+                {
+                    "id": request.user.company_id,
+                    "name": request.user.company.name if request.user.company else "Company",
+                    "code": request.user.company.code if request.user.company else "",
+                }
+            ]
+            senior_entity_qs = Entity.objects.filter(company_id=request.user.company_id, is_active=True).select_related("company")
+            if entity_type:
+                senior_entity_qs = senior_entity_qs.filter(entity_type=entity_type)
+            entity_options = [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "entity_type": item.entity_type,
+                    "company_id": item.company_id,
+                    "company_name": item.company.name,
+                    "label": f"{item.name} ({item.get_entity_type_display()})",
+                }
+                for item in senior_entity_qs.order_by("name")
+            ]
+
         return Response(
             {
-                "roles": RoleAdminSerializer(queryset, many=True).data,
-                "all_permission_keys": list(AppPermission.objects.values_list("key", flat=True).order_by("key")),
+                "roles": roles_payload,
+                "all_permission_keys": (
+                    list(AppPermission.objects.values_list("key", flat=True).order_by("key"))
+                    if actor_role == "super_admin"
+                    else sorted(
+                        set(get_delegatable_permission_keys(request.user)).intersection(
+                            set(get_effective_permission_keys(request.user))
+                        )
+                    )
+                ),
+                "company_options": company_options,
+                "entity_options": entity_options,
+                "applied_scope": {"company_id": company_id, "entity_id": entity_id, "entity_type": entity_type},
+                "entity_type_options": [
+                    {"key": Entity.EntityType.PROD, "label": "Prod"},
+                    {"key": Entity.EntityType.SUPPORT, "label": "Support"},
+                    {"key": Entity.EntityType.TDEV, "label": "Dev"},
+                ],
             }
         )
 
@@ -386,17 +633,554 @@ class AdminRoleDetailView(AdminBaseView):
         role = Role.objects.filter(id=role_id).first()
         if role is None:
             return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
+        actor_role = self.role_key(request.user)
+        if actor_role == "senior" and role.key not in {"manager", "team_leader", "user"}:
+            return Response(
+                {"detail": "Senior can only edit Manager, Team Leader, and User role permissions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if actor_role == "manager" and role.key not in {"team_leader", "user"}:
+            return Response(
+                {"detail": "Manager can only edit Team Leader and User role permissions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if actor_role == "team_leader" and role.key != "user":
+            return Response(
+                {"detail": "Team Leader can only edit User role permissions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = RolePermissionMappingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        permissions = list(AppPermission.objects.filter(key__in=serializer.validated_data["permission_keys"]))
-        RolePermission.objects.filter(role=role).exclude(permission__in=permissions).delete()
-        existing_ids = set(RolePermission.objects.filter(role=role).values_list("permission_id", flat=True))
-        for permission in permissions:
-            if permission.id not in existing_ids:
-                RolePermission.objects.create(role=role, permission=permission)
-        log_admin_action(actor=request.user, module="roles", action="update_permissions", target_model="Role", target_id=role.id, target_label=role.name, metadata={"permission_keys": serializer.validated_data["permission_keys"]})
-        role.refresh_from_db()
-        return Response(RoleAdminSerializer(role).data)
+        permission_keys = serializer.validated_data["permission_keys"]
+        company_id = serializer.validated_data.get("company_id")
+        entity_id = serializer.validated_data.get("entity_id")
+        entity_type = serializer.validated_data.get("entity_type")
+        known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
+        delegatable_permission_keys = set(get_delegatable_permission_keys(request.user))
+        effective_permission_keys = set(get_effective_permission_keys(request.user))
+        allowed_permission_keys = (
+            known_permission_keys
+            if actor_role == "super_admin"
+            else delegatable_permission_keys.intersection(effective_permission_keys)
+        )
+        unknown_permission_keys = sorted(set(permission_keys) - known_permission_keys)
+        if unknown_permission_keys:
+            return Response(
+                {"detail": f"Unknown permission keys: {', '.join(unknown_permission_keys)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        disallowed_permission_keys = sorted(set(permission_keys) - allowed_permission_keys)
+        if disallowed_permission_keys:
+            return Response(
+                {"detail": f"You cannot assign these permissions: {', '.join(disallowed_permission_keys)}"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if entity_id:
+            selected_entity = Entity.objects.filter(id=entity_id, is_active=True).first()
+            if selected_entity is None:
+                return Response({"detail": "Selected entity not found."}, status=status.HTTP_400_BAD_REQUEST)
+            if company_id and selected_entity.company_id != company_id:
+                return Response({"detail": "Selected entity does not belong to selected company."}, status=status.HTTP_400_BAD_REQUEST)
+            if not company_id:
+                company_id = selected_entity.company_id
+            if entity_type and selected_entity.entity_type != entity_type:
+                return Response({"detail": "Selected entity type does not match selected entity."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if company_id:
+            selected_company = Company.objects.filter(id=company_id, is_active=True).first()
+            if selected_company is None:
+                return Response({"detail": "Selected company not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Super Admin updates global role defaults unless a scope filter is selected.
+        if actor_role == "super_admin":
+            if company_id or entity_id or entity_type:
+                scoped_users = User.objects.filter(assigned_roles__role=role, is_active=True)
+                if company_id:
+                    scoped_users = scoped_users.filter(company_id=company_id)
+                if entity_id:
+                    scoped_users = scoped_users.filter(entity_id=entity_id)
+                if entity_type:
+                    scoped_users = scoped_users.filter(entity__entity_type=entity_type)
+                scoped_users = scoped_users.distinct().order_by("id")
+                if not scoped_users.exists():
+                    return Response(
+                        {"detail": "No active users with this role in selected scope."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                desired_keys = set(permission_keys)
+                all_permissions = list(AppPermission.objects.order_by("key"))
+                reason = f"Scoped role policy update by {request.user.username}"
+                for scoped_user in scoped_users:
+                    for permission in all_permissions:
+                        UserPermissionOverride.objects.update_or_create(
+                            user=scoped_user,
+                            permission=permission,
+                            defaults={
+                                "is_allowed": permission.key in desired_keys,
+                                "reason": reason,
+                            },
+                        )
+
+                log_admin_action(
+                    actor=request.user,
+                    module="roles",
+                    action="update_permissions",
+                    target_model="Role",
+                    target_id=role.id,
+                    target_label=role.name,
+                    metadata={
+                        "permission_keys": permission_keys,
+                        "scope": "scoped",
+                        "company_id": company_id,
+                        "entity_id": entity_id,
+                        "entity_type": entity_type,
+                    },
+                )
+                return Response({"detail": "Role policy updated for selected scope users."})
+
+            permissions = list(AppPermission.objects.filter(key__in=permission_keys))
+            RolePermission.objects.filter(role=role).exclude(permission__in=permissions).delete()
+            existing_ids = set(RolePermission.objects.filter(role=role).values_list("permission_id", flat=True))
+            for permission in permissions:
+                if permission.id not in existing_ids:
+                    RolePermission.objects.create(role=role, permission=permission)
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="update_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={"permission_keys": permission_keys, "scope": "global"},
+            )
+            role.refresh_from_db()
+            return Response(RoleAdminSerializer(role).data)
+
+        # Senior updates company-scoped role policy by applying user-level overrides
+        # to users in the senior's own company only.
+        if actor_role == "senior":
+            if company_id and company_id != request.user.company_id:
+                return Response({"detail": "Senior can only manage roles in their own company."}, status=status.HTTP_400_BAD_REQUEST)
+            if entity_id:
+                entity = Entity.objects.filter(id=entity_id, company_id=request.user.company_id, is_active=True).first()
+                if entity is None:
+                    return Response({"detail": "Selected entity not found in your company."}, status=status.HTTP_400_BAD_REQUEST)
+                if entity_type and entity.entity_type != entity_type:
+                    return Response({"detail": "Selected entity type does not match selected entity."}, status=status.HTTP_400_BAD_REQUEST)
+            scoped_users = User.objects.filter(
+                company_id=request.user.company_id,
+                assigned_roles__role=role,
+                is_active=True,
+            )
+            if entity_id:
+                scoped_users = scoped_users.filter(entity_id=entity_id)
+            if entity_type:
+                scoped_users = scoped_users.filter(entity__entity_type=entity_type)
+            scoped_users = scoped_users.distinct().order_by("id")
+            if not scoped_users.exists():
+                return Response(
+                    {"detail": "No active users with this role in your company."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            desired_keys = set(permission_keys)
+            all_permissions = list(AppPermission.objects.filter(key__in=allowed_permission_keys).order_by("key"))
+            reason = f"Company role policy update by {request.user.username}"
+            for scoped_user in scoped_users:
+                for permission in all_permissions:
+                    UserPermissionOverride.objects.update_or_create(
+                        user=scoped_user,
+                        permission=permission,
+                        defaults={
+                            "is_allowed": permission.key in desired_keys,
+                            "reason": reason,
+                        },
+                    )
+
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="update_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={
+                    "permission_keys": permission_keys,
+                    "scope": "entity" if entity_id else "company",
+                    "company_id": request.user.company_id,
+                    "entity_id": entity_id,
+                    "entity_type": entity_type,
+                },
+            )
+            return Response({"detail": "Role policy updated for your scoped users."})
+
+        # Manager updates entity-scoped role policy by applying user-level overrides
+        # to users in the manager's own entity only.
+        if actor_role == "manager":
+            scoped_users = (
+                User.objects.filter(
+                    entity_id=request.user.entity_id,
+                    assigned_roles__role=role,
+                    is_active=True,
+                )
+                .distinct()
+                .order_by("id")
+            )
+            if not scoped_users.exists():
+                return Response(
+                    {"detail": "No active users with this role in your entity."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            desired_keys = set(permission_keys)
+            all_permissions = list(AppPermission.objects.filter(key__in=allowed_permission_keys).order_by("key"))
+            reason = f"Entity role policy update by {request.user.username}"
+            for scoped_user in scoped_users:
+                for permission in all_permissions:
+                    UserPermissionOverride.objects.update_or_create(
+                        user=scoped_user,
+                        permission=permission,
+                        defaults={
+                            "is_allowed": permission.key in desired_keys,
+                            "reason": reason,
+                        },
+                    )
+
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="update_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={
+                    "permission_keys": permission_keys,
+                    "scope": "entity",
+                    "company_id": request.user.company_id,
+                    "entity_id": request.user.entity_id,
+                },
+            )
+            return Response({"detail": "Role policy updated for your entity users."})
+
+        # Team Leader updates team-scoped user policy by applying user-level overrides
+        # to users assigned to this team leader only.
+        if actor_role == "team_leader":
+            scoped_users = (
+                User.objects.filter(
+                    team_leader_id=request.user.id,
+                    assigned_roles__role=role,
+                    is_active=True,
+                )
+                .distinct()
+                .order_by("id")
+            )
+            if not scoped_users.exists():
+                return Response(
+                    {"detail": "No active users assigned to your team."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            desired_keys = set(permission_keys)
+            all_permissions = list(AppPermission.objects.filter(key__in=allowed_permission_keys).order_by("key"))
+            reason = f"Team role policy update by {request.user.username}"
+            for scoped_user in scoped_users:
+                for permission in all_permissions:
+                    UserPermissionOverride.objects.update_or_create(
+                        user=scoped_user,
+                        permission=permission,
+                        defaults={
+                            "is_allowed": permission.key in desired_keys,
+                            "reason": reason,
+                        },
+                    )
+
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="update_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={
+                    "permission_keys": permission_keys,
+                    "scope": "team",
+                    "company_id": request.user.company_id,
+                    "entity_id": request.user.entity_id,
+                    "team_leader_id": request.user.id,
+                },
+            )
+            return Response({"detail": "Role policy updated for your team users."})
+
+        return Response({"detail": "You do not have permission to update roles."}, status=status.HTTP_403_FORBIDDEN)
+
+    def post(self, request, role_id):
+        role = Role.objects.filter(id=role_id).first()
+        if role is None:
+            return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        scope_serializer = RoleScopeSerializer(data=request.data)
+        scope_serializer.is_valid(raise_exception=True)
+        company_id = scope_serializer.validated_data.get("company_id")
+        entity_id = scope_serializer.validated_data.get("entity_id")
+        entity_type = scope_serializer.validated_data.get("entity_type")
+        actor_role = self.role_key(request.user)
+        known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
+        delegatable_permission_keys = set(get_delegatable_permission_keys(request.user))
+        effective_permission_keys = set(get_effective_permission_keys(request.user))
+        allowed_permission_keys = (
+            known_permission_keys
+            if actor_role == "super_admin"
+            else delegatable_permission_keys.intersection(effective_permission_keys)
+        )
+        if actor_role == "senior" and role.key not in {"manager", "team_leader", "user"}:
+            return Response(
+                {"detail": "Senior can only restore Manager, Team Leader, and User role permissions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if actor_role == "manager" and role.key not in {"team_leader", "user"}:
+            return Response(
+                {"detail": "Manager can only restore Team Leader and User role permissions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if actor_role == "team_leader" and role.key != "user":
+            return Response(
+                {"detail": "Team Leader can only restore User role permissions."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        default_permission_keys = ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())
+
+        # Super Admin restores global role defaults.
+        if actor_role == "super_admin":
+            if entity_id:
+                selected_entity = Entity.objects.filter(id=entity_id, is_active=True).first()
+                if selected_entity is None:
+                    return Response({"detail": "Selected entity not found."}, status=status.HTTP_400_BAD_REQUEST)
+                if company_id and selected_entity.company_id != company_id:
+                    return Response({"detail": "Selected entity does not belong to selected company."}, status=status.HTTP_400_BAD_REQUEST)
+                if not company_id:
+                    company_id = selected_entity.company_id
+                if entity_type and selected_entity.entity_type != entity_type:
+                    return Response({"detail": "Selected entity type does not match selected entity."}, status=status.HTTP_400_BAD_REQUEST)
+            if company_id:
+                selected_company = Company.objects.filter(id=company_id, is_active=True).first()
+                if selected_company is None:
+                    return Response({"detail": "Selected company not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if company_id or entity_id or entity_type:
+                scoped_users = User.objects.filter(assigned_roles__role=role, is_active=True)
+                if company_id:
+                    scoped_users = scoped_users.filter(company_id=company_id)
+                if entity_id:
+                    scoped_users = scoped_users.filter(entity_id=entity_id)
+                if entity_type:
+                    scoped_users = scoped_users.filter(entity__entity_type=entity_type)
+                scoped_users = scoped_users.distinct().order_by("id")
+                if not scoped_users.exists():
+                    return Response(
+                        {"detail": "No active users with this role in selected scope."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                all_permissions = list(AppPermission.objects.order_by("key"))
+                reason = f"Scoped role defaults restored by {request.user.username}"
+                for scoped_user in scoped_users:
+                    for permission in all_permissions:
+                        UserPermissionOverride.objects.update_or_create(
+                            user=scoped_user,
+                            permission=permission,
+                            defaults={
+                                "is_allowed": permission.key in default_permission_keys,
+                                "reason": reason,
+                            },
+                        )
+                log_admin_action(
+                    actor=request.user,
+                    module="roles",
+                    action="restore_default_permissions",
+                    target_model="Role",
+                    target_id=role.id,
+                    target_label=role.name,
+                    metadata={
+                        "scope": "scoped",
+                        "company_id": company_id,
+                        "entity_id": entity_id,
+                        "entity_type": entity_type,
+                        "permission_keys": sorted(default_permission_keys),
+                    },
+                )
+                return Response({"detail": "Default role policy restored for selected scope users."})
+
+            permissions = list(AppPermission.objects.filter(key__in=default_permission_keys))
+            RolePermission.objects.filter(role=role).exclude(permission__in=permissions).delete()
+            existing_ids = set(RolePermission.objects.filter(role=role).values_list("permission_id", flat=True))
+            for permission in permissions:
+                if permission.id not in existing_ids:
+                    RolePermission.objects.create(role=role, permission=permission)
+            # Restore defaults must remove user-level overrides for this role
+            # so users effectively inherit the role baseline again.
+            UserPermissionOverride.objects.filter(
+                user__assigned_roles__role=role,
+                permission__key__in=known_permission_keys,
+            ).delete()
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="restore_default_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={"scope": "global", "permission_keys": sorted(default_permission_keys)},
+            )
+            return Response({"detail": "Global role defaults restored."})
+
+        # Senior restores company-scoped defaults via overrides.
+        if actor_role == "senior":
+            if company_id and company_id != request.user.company_id:
+                return Response({"detail": "Senior can only restore roles in their own company."}, status=status.HTTP_400_BAD_REQUEST)
+            if entity_id:
+                entity = Entity.objects.filter(id=entity_id, company_id=request.user.company_id, is_active=True).first()
+                if entity is None:
+                    return Response({"detail": "Selected entity not found in your company."}, status=status.HTTP_400_BAD_REQUEST)
+                if entity_type and entity.entity_type != entity_type:
+                    return Response({"detail": "Selected entity type does not match selected entity."}, status=status.HTTP_400_BAD_REQUEST)
+            scoped_users = User.objects.filter(
+                company_id=request.user.company_id,
+                assigned_roles__role=role,
+                is_active=True,
+            )
+            if entity_id:
+                scoped_users = scoped_users.filter(entity_id=entity_id)
+            if entity_type:
+                scoped_users = scoped_users.filter(entity__entity_type=entity_type)
+            scoped_users = scoped_users.distinct().order_by("id")
+            if not scoped_users.exists():
+                return Response(
+                    {"detail": "No active users with this role in your company."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            allowed_default_keys = default_permission_keys.intersection(allowed_permission_keys)
+            all_permissions = list(AppPermission.objects.filter(key__in=allowed_permission_keys).order_by("key"))
+            reason = f"Company role defaults restored by {request.user.username}"
+            for scoped_user in scoped_users:
+                for permission in all_permissions:
+                    UserPermissionOverride.objects.update_or_create(
+                        user=scoped_user,
+                        permission=permission,
+                        defaults={
+                            "is_allowed": permission.key in allowed_default_keys,
+                            "reason": reason,
+                        },
+                    )
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="restore_default_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={
+                    "scope": "entity" if entity_id else "company",
+                    "company_id": request.user.company_id,
+                    "entity_id": entity_id,
+                    "entity_type": entity_type,
+                    "permission_keys": sorted(allowed_default_keys),
+                },
+            )
+            return Response({"detail": "Default role policy restored for your scoped users."})
+
+        # Manager restores entity-scoped defaults via overrides.
+        if actor_role == "manager":
+            scoped_users = (
+                User.objects.filter(
+                    entity_id=request.user.entity_id,
+                    assigned_roles__role=role,
+                    is_active=True,
+                )
+                .distinct()
+                .order_by("id")
+            )
+            if not scoped_users.exists():
+                return Response(
+                    {"detail": "No active users with this role in your entity."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            allowed_default_keys = default_permission_keys.intersection(allowed_permission_keys)
+            all_permissions = list(AppPermission.objects.filter(key__in=allowed_permission_keys).order_by("key"))
+            reason = f"Entity role defaults restored by {request.user.username}"
+            for scoped_user in scoped_users:
+                for permission in all_permissions:
+                    UserPermissionOverride.objects.update_or_create(
+                        user=scoped_user,
+                        permission=permission,
+                        defaults={
+                            "is_allowed": permission.key in allowed_default_keys,
+                            "reason": reason,
+                        },
+                    )
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="restore_default_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={
+                    "scope": "entity",
+                    "company_id": request.user.company_id,
+                    "entity_id": request.user.entity_id,
+                    "permission_keys": sorted(allowed_default_keys),
+                },
+            )
+            return Response({"detail": "Default role policy restored for your entity users."})
+
+        # Team Leader restores team-scoped defaults via overrides.
+        if actor_role == "team_leader":
+            scoped_users = (
+                User.objects.filter(
+                    team_leader_id=request.user.id,
+                    assigned_roles__role=role,
+                    is_active=True,
+                )
+                .distinct()
+                .order_by("id")
+            )
+            if not scoped_users.exists():
+                return Response(
+                    {"detail": "No active users assigned to your team."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            allowed_default_keys = default_permission_keys.intersection(allowed_permission_keys)
+            all_permissions = list(AppPermission.objects.filter(key__in=allowed_permission_keys).order_by("key"))
+            reason = f"Team role defaults restored by {request.user.username}"
+            for scoped_user in scoped_users:
+                for permission in all_permissions:
+                    UserPermissionOverride.objects.update_or_create(
+                        user=scoped_user,
+                        permission=permission,
+                        defaults={
+                            "is_allowed": permission.key in allowed_default_keys,
+                            "reason": reason,
+                        },
+                    )
+            log_admin_action(
+                actor=request.user,
+                module="roles",
+                action="restore_default_permissions",
+                target_model="Role",
+                target_id=role.id,
+                target_label=role.name,
+                metadata={
+                    "scope": "team",
+                    "team_leader_id": request.user.id,
+                    "entity_id": request.user.entity_id,
+                    "company_id": request.user.company_id,
+                    "permission_keys": sorted(allowed_default_keys),
+                },
+            )
+            return Response({"detail": "Default role policy restored for your team users."})
+
+        return Response({"detail": "You do not have permission to restore role defaults."}, status=status.HTTP_403_FORBIDDEN)
 
 
 class AdminPermissionsView(AdminBaseView):

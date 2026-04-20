@@ -77,6 +77,23 @@ class RoleAdminSerializer(serializers.ModelSerializer):
 
 class RolePermissionMappingSerializer(serializers.Serializer):
     permission_keys = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    company_id = serializers.IntegerField(required=False, allow_null=True)
+    entity_id = serializers.IntegerField(required=False, allow_null=True)
+    entity_type = serializers.ChoiceField(
+        required=False,
+        allow_null=True,
+        choices=[Entity.EntityType.PROD, Entity.EntityType.SUPPORT, Entity.EntityType.TDEV],
+    )
+
+
+class RoleScopeSerializer(serializers.Serializer):
+    company_id = serializers.IntegerField(required=False, allow_null=True)
+    entity_id = serializers.IntegerField(required=False, allow_null=True)
+    entity_type = serializers.ChoiceField(
+        required=False,
+        allow_null=True,
+        choices=[Entity.EntityType.PROD, Entity.EntityType.SUPPORT, Entity.EntityType.TDEV],
+    )
 
 
 class DelegationRuleWriteSerializer(serializers.Serializer):
