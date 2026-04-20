@@ -125,9 +125,9 @@ class HierarchyAssignmentSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"senior_user_id": "Selected user must be a Senior in this company."})
 
         if entity and manager_user_id is not serializers.empty and manager_user_id is not None:
-            manager = User.objects.filter(id=manager_user_id, company_id=entity.company_id, entity_id=entity.id).first()
+            manager = User.objects.filter(id=manager_user_id, company_id=entity.company_id).first()
             if manager is None or get_primary_role_key(manager) != "manager":
-                raise serializers.ValidationError({"manager_user_id": "Selected user must be a Manager in this entity."})
+                raise serializers.ValidationError({"manager_user_id": "Selected user must be a Manager in this company."})
         return attrs
 
 

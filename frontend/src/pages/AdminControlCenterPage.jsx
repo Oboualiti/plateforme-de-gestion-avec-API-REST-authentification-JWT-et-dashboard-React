@@ -348,11 +348,14 @@ function AdminControlCenterPage() {
 
       if (sectionKey === 'entities' && Array.isArray(normalizedData)) {
         let companyOptions = []
+        let managerOptions = []
         try {
           const hierarchyResponse = await api.get('/admin/hierarchy/')
           companyOptions = hierarchyResponse.data?.companies || []
+          managerOptions = hierarchyResponse.data?.manager_options || []
         } catch {
           companyOptions = []
+          managerOptions = []
         }
         if (!companyOptions.length) {
           companyOptions = buildCompanyOptionsFromEntities(normalizedData)
@@ -360,7 +363,20 @@ function AdminControlCenterPage() {
         normalizedData = {
           entities: normalizedData,
           companies: companyOptions,
-          manager_options: [],
+          manager_options: managerOptions,
+        }
+      }
+
+      if (sectionKey === 'entities' && !Array.isArray(normalizedData)) {
+        if (!Array.isArray(normalizedData?.manager_options) || !normalizedData.manager_options.length) {
+          try {
+            const hierarchyResponse = await api.get('/admin/hierarchy/')
+            normalizedData = {
+              ...normalizedData,
+              manager_options: hierarchyResponse.data?.manager_options || [],
+            }
+          } catch {
+          }
         }
       }
 
@@ -858,7 +874,7 @@ function AdminControlCenterPage() {
                 <tbody>
                   {filteredEntities.map((item) => {
                     const canEditEntity = isSuperAdmin || (isSenior && actorCompanyId && Number(item.company) === actorCompanyId)
-                    const entityManagers = managerOptions.filter((opt) => opt.entity_id === item.id)
+                    const entityManagers = managerOptions.filter((opt) => Number(opt.company_id) === Number(item.company))
                     return (
                       <tr key={item.id}>
                         <td><div className="font-bold">{item.name}</div></td>
