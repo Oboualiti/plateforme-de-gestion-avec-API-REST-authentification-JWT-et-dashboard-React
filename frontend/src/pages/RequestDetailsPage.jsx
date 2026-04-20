@@ -51,13 +51,20 @@ function RequestDetailsPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
   const [comment, setComment] = useState('')
+  const [assignmentForm, setAssignmentForm] = useState({ userId: '', note: '' })
   const [actionState, setActionState] = useState({ busy: false, error: '' })
   const discussionScrollRef = useRef(null)
 
   const request = state.request
   const roleKeys = user?.role_keys || []
+  const isManager = roleKeys.includes('manager')
+  const isTeamLeader = roleKeys.includes('team_leader')
   const isAdminReviewRole = roleKeys.some((role) => ['super_admin', 'senior', 'manager'].includes(role))
   const canChangeStatus = request?.can_update_status && !isAdminReviewRole
+  const canAssignToMe = Boolean(request?.can_assign_to_me)
+  const potentialAssignees = request?.potential_assignees || []
+  const canManagerAssignTl =
+    isManager && Boolean(request?.can_update_status) && !request?.current_assignee && potentialAssignees.length > 0
 
   const lastCommentId = useMemo(() => {
     const comments = request?.comments || []
@@ -107,8 +114,9 @@ function RequestDetailsPage() {
             currentComments.length !== nextComments.length ||
             currentComments[currentComments.length - 1]?.id !== nextComments[nextComments.length - 1]?.id
           const hasStatusChange = currentRequest.status !== response.data.status
+          const hasAssigneeChange = currentRequest.current_assignee !== response.data.current_assignee
 
-          if (!hasCommentChange && !hasStatusChange) {
+          if (!hasCommentChange && !hasStatusChange && !hasAssigneeChange) {
             return current
           }
 
@@ -175,6 +183,22 @@ function RequestDetailsPage() {
     await updateStatus(nextStatus, nextNote || '')
   }
 
+  async function handleAssignToMe() {
+    if (!canAssignToMe || actionState.busy) return
+    await refreshFromResponse(api.post(`/requests/${requestId}/assign/`, {}))
+  }
+
+  async function handleAssignToUser() {
+    if (!canManagerAssignTl || actionState.busy || !assignmentForm.userId) return
+    await refreshFromResponse(
+      api.post(`/requests/${requestId}/assign_user/`, {
+        user_id: Number(assignmentForm.userId),
+        note: assignmentForm.note || 'Assigned by manager',
+      }),
+    )
+    setAssignmentForm({ userId: '', note: '' })
+  }
+
   if (state.loading) {
     return (
       <main className="page-content">
@@ -196,15 +220,28 @@ function RequestDetailsPage() {
   }
 
   const lifecycleSteps = [
-    { label: 'New', value: 'NEW', helper: 'Awaiting review' },
-    { label: 'Accepted', value: 'ACCEPTED', helper: 'Ownership confirmed' },
-    { label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
-    { label: 'Rejected', value: 'REJECTED', helper: 'Stopped or declined' },
-    { label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
-    { label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
+    { key: 'new', label: 'New', value: 'NEW', helper: 'Awaiting review' },
+    { key: 'decision', label: 'Ownership confirmed', helper: 'Accepted or rejected' },
+    { key: 'in_progress', label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
+    { key: 'completed', label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
+    { key: 'closed', label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
   ]
 
-  const activeLifecycleIndex = lifecycleSteps.findIndex((step) => step.value === request.status)
+  const lifecycleStageMap = {
+    NEW: 0,
+    ACCEPTED: 1,
+    REJECTED: 1,
+    IN_PROGRESS: 2,
+    COMPLETED: 3,
+    CLOSED: 4,
+  }
+  const activeLifecycleIndex = lifecycleStageMap[request.status] ?? 0
+  const decisionSelection =
+    request.status === 'REJECTED'
+      ? 'REJECTED'
+      : ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(request.status)
+      ? 'ACCEPTED'
+      : ''
   const comments = request.comments || []
   const summaryItems = [
     { label: 'Created', value: formatDateTime(request.created_at) },
@@ -290,6 +327,74 @@ function RequestDetailsPage() {
             </div>
           </section>
 
+          <section className="panel request-detail-summary-card">
+            <div className="workspace-section-title">
+              <div>
+                <p className="eyebrow">Assignment</p>
+                <h2>Ownership control</h2>
+              </div>
+            </div>
+            <div className="request-summary-copy">
+              <div className="request-summary-highlight">
+                <span>Current assignee</span>
+                <strong>{request.assignee_name || 'Unassigned'}</strong>
+              </div>
+
+              {isTeamLeader && (
+                <div className="table-actions">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={!canAssignToMe || actionState.busy}
+                    onClick={handleAssignToMe}
+                  >
+                    {request.current_assignee ? 'Already assigned' : actionState.busy ? 'Saving...' : 'Take for myself'}
+                  </button>
+                </div>
+              )}
+
+              {canManagerAssignTl && (
+                <div className="status-form">
+                  <label htmlFor="assign-team-leader">Assign to team leader</label>
+                  <select
+                    id="assign-team-leader"
+                    className="app-select"
+                    value={assignmentForm.userId}
+                    onChange={(event) =>
+                      setAssignmentForm((current) => ({ ...current, userId: event.target.value }))
+                    }
+                  >
+                    <option value="">Select team leader</option>
+                    {potentialAssignees.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.username}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="assign-note">Assignment note (optional)</label>
+                  <textarea
+                    id="assign-note"
+                    className="app-textarea"
+                    value={assignmentForm.note}
+                    onChange={(event) =>
+                      setAssignmentForm((current) => ({ ...current, note: event.target.value }))
+                    }
+                    placeholder="Context for the assigned team leader..."
+                  />
+                  <div className="table-actions">
+                    <button
+                      type="button"
+                      disabled={!assignmentForm.userId || actionState.busy}
+                      onClick={handleAssignToUser}
+                    >
+                      {actionState.busy ? 'Saving...' : 'Assign to team leader'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
           <section className="panel request-process-card">
             <div className="workspace-section-title">
               <div>
@@ -301,24 +406,63 @@ function RequestDetailsPage() {
             <div className="request-lifecycle-shell">
               <div className="request-lifecycle request-lifecycle-expanded">
                 {lifecycleSteps.map((step, index) => {
-                  const isActive = request.status === step.value
+                  const isActive = activeLifecycleIndex === index
                   const isComplete = activeLifecycleIndex > index
+                  const isDecisionStep = step.key === 'decision'
                   return (
-                    <button
-                      type="button"
-                      key={step.value}
-                      disabled={!canChangeStatus || actionState.busy}
-                      onClick={() => handleLifecycleStatusChange(step.value)}
+                    <article
+                      key={step.key}
                       className={[
                         'request-lifecycle-step',
-                        canChangeStatus ? 'request-lifecycle-step-clickable' : '',
+                        isDecisionStep ? 'request-lifecycle-step-decision' : '',
                         isActive ? 'request-lifecycle-step-active' : '',
                         isComplete ? 'request-lifecycle-step-complete' : '',
+                        step.key === 'decision' && decisionSelection === 'REJECTED'
+                          ? 'request-lifecycle-step-branch-rejected'
+                          : '',
                       ].join(' ').trim()}
                     >
                       <span>{step.helper}</span>
-                      <strong>{step.label}</strong>
-                    </button>
+                      {!isDecisionStep && (
+                        <button
+                          type="button"
+                          disabled={!canChangeStatus || actionState.busy}
+                          onClick={() => handleLifecycleStatusChange(step.value)}
+                          className={[
+                            'request-lifecycle-step-action',
+                            canChangeStatus ? 'request-lifecycle-step-clickable' : '',
+                          ].join(' ').trim()}
+                        >
+                          <strong>{step.label}</strong>
+                        </button>
+                      )}
+                      {isDecisionStep && (
+                        <div className="request-lifecycle-decision-row">
+                          <button
+                            type="button"
+                            disabled={!canChangeStatus || actionState.busy}
+                            onClick={() => handleLifecycleStatusChange('ACCEPTED')}
+                            className={[
+                              'request-lifecycle-choice',
+                              decisionSelection === 'ACCEPTED' ? 'request-lifecycle-choice-active' : '',
+                            ].join(' ').trim()}
+                          >
+                            Accepted
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canChangeStatus || actionState.busy}
+                            onClick={() => handleLifecycleStatusChange('REJECTED')}
+                            className={[
+                              'request-lifecycle-choice',
+                              decisionSelection === 'REJECTED' ? 'request-lifecycle-choice-danger' : '',
+                            ].join(' ').trim()}
+                          >
+                            Rejected
+                          </button>
+                        </div>
+                      )}
+                    </article>
                   )
                 })}
               </div>

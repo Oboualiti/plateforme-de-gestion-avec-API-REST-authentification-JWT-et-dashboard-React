@@ -39,6 +39,7 @@ function PermissionDetailPage() {
   const [state, setState] = useState({ loading: true, error: '', user: null })
   const [selectedRole, setSelectedRole] = useState('')
   const [message, setMessage] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
   const [options, setOptions] = useState({
     company_options: [],
     entity_options: [],
@@ -101,26 +102,33 @@ function PermissionDetailPage() {
     }
   }, [userId])
 
-  async function saveRoles() {
+  async function saveProfile() {
+    const actorRoleKeys = actor?.role_keys || []
+    const actorIsTeamLeader = actorRoleKeys.includes('team_leader')
+
     if (!selectedRole) {
       setMessage('Select one role before saving.')
       return
     }
-    try {
-      const response = await api.patch(`/admin/users/${userId}/`, { role_keys: [selectedRole] })
-      setState((current) => ({ ...current, user: response.data }))
-      setSelectedRole(response.data.roles[0]?.key || '')
-      setMessage('Roles updated.')
-      navigate('/admin/users', {
-        state: { successMessage: 'Saved successfully: roles updated.' },
-      })
-    } catch (error) {
-      setMessage(getApiErrorMessage(error, 'Could not save roles.'))
+    if (selectedRole === 'user' && !actorIsTeamLeader && !profileForm.team_leader_id) {
+      setMessage('Select a team leader before saving a user role.')
+      return
     }
-  }
 
-  async function saveProfile() {
+    setIsSaving(true)
     try {
+      const currentRole = user?.roles?.[0]?.key || ''
+      if (selectedRole !== currentRole) {
+        const rolePayload = { role_keys: [selectedRole] }
+        if (selectedRole === 'user') {
+          rolePayload.team_leader_id = profileForm.team_leader_id
+            ? Number(profileForm.team_leader_id)
+            : null
+        }
+        const roleResponse = await api.patch(`/admin/users/${userId}/`, rolePayload)
+        setState((current) => ({ ...current, user: roleResponse.data }))
+      }
+
       const payload = {
         username: profileForm.username,
         email: profileForm.email,
@@ -145,13 +153,15 @@ function PermissionDetailPage() {
           : null
       }
       await api.patch(`/admin/users/manageable/${userId}/`, payload)
-      setMessage('User profile updated.')
+      setMessage('User updated.')
       setProfileForm((current) => ({ ...current, password: '' }))
       navigate('/admin/users', {
-        state: { successMessage: 'Saved successfully: user updated.' },
+        state: { successMessage: 'Saved successfully: user and role updated.' },
       })
     } catch (error) {
-      setMessage(getApiErrorMessage(error, 'Could not update user profile.'))
+      setMessage(getApiErrorMessage(error, 'Could not update user.'))
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -252,10 +262,15 @@ function PermissionDetailPage() {
       </section>
 
       <section className="detail-grid">
-        <section className="panel">
+        <section className="panel" style={{ gridColumn: '1 / -1' }}>
           <p className="eyebrow">Profile</p>
           <h2>User information</h2>
           {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
+          {message && (
+            <p className={message.toLowerCase().includes('could not') ? 'error-text' : 'muted-text'}>
+              {message}
+            </p>
+          )}
           <form
             className="stack-form"
             onSubmit={(event) => {
@@ -413,37 +428,38 @@ function PermissionDetailPage() {
               </div>
             )}
 
-            <button type="submit" disabled={!canEdit}>
-              Save user
-            </button>
-          </form>
-        </section>
+            <div>
+              <p className="eyebrow">Roles</p>
+              <h2 style={{ marginBottom: '0.75rem' }}>Assigned role</h2>
+              <div className="check-grid role-options-grid">
+                {roleOptions.map((role) => (
+                  <label key={role.key} className="role-radio-option" htmlFor={`role-${role.key}`}>
+                    <input
+                      id={`role-${role.key}`}
+                      type="radio"
+                      className="role-radio-input"
+                      name="role-selection"
+                      checked={selectedRole === role.key}
+                      onChange={() => setSelectedRole(role.key)}
+                      disabled={!canEdit}
+                    />
+                    <span>
+                      {role.name} <small>(level {role.level})</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-        <section className="panel">
-          <p className="eyebrow">Roles</p>
-          <h2>Assigned role</h2>
-          {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
-            <div className="check-grid role-options-grid">
-              {roleOptions.map((role) => (
-              <label key={role.key} className="role-radio-option" htmlFor={`role-${role.key}`}>
-                <input
-                  id={`role-${role.key}`}
-                  type="radio"
-                  className="role-radio-input"
-                  name="role-selection"
-                  checked={selectedRole === role.key}
-                  onChange={() => setSelectedRole(role.key)}
-                  disabled={!canEdit}
-                />
-                <span>
-                  {role.name} <small>(level {role.level})</small>
-                </span>
-              </label>
-            ))}
-          </div>
-          <button type="button" className="role-save-button" onClick={saveRoles} disabled={!canEdit}>
-            Save roles
-          </button>
+            <button type="submit" disabled={!canEdit || isSaving}>
+              {isSaving ? 'Saving...' : 'Save user'}
+            </button>
+            {message && (
+              <p className={message.toLowerCase().includes('could not') ? 'error-text' : 'muted-text'}>
+                {message}
+              </p>
+            )}
+          </form>
         </section>
       </section>
 

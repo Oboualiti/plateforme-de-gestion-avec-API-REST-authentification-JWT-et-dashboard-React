@@ -54,7 +54,6 @@ const roleVariantMap = {
   manager: [
     createSection('team', 'Team / Users', 'team', [
       createItem('Team Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
-      createItem('Hierarchy', '/admin/hierarchy'),
     ]),
     createSection('requests', 'Requests', 'ops', [
       createItem('Team Requests', '/requests'),

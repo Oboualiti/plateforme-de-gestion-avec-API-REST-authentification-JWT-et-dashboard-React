@@ -134,6 +134,7 @@ class UserRoleUpdateSerializer(serializers.Serializer):
     role_keys = serializers.ListField(
         child=serializers.CharField(), allow_empty=True, required=True
     )
+    team_leader_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_role_keys(self, value):
         unique_keys = list(dict.fromkeys(value))
@@ -188,22 +189,44 @@ class UserRoleUpdateSerializer(serializers.Serializer):
                     "User company and entity must match."
                 )
 
-        if role_key == "user" and target_user.team_leader_id:
-            if target_user.team_leader.company_id != target_user.company_id:
+        resolved_team_leader = target_user.team_leader
+        if role_key == "user":
+            team_leader_id = self.initial_data.get("team_leader_id", None)
+            if actor_role_key == "team_leader":
+                resolved_team_leader = actor
+            elif team_leader_id is not None:
+                if not team_leader_id:
+                    resolved_team_leader = None
+                else:
+                    resolved_team_leader = User.objects.filter(
+                        id=team_leader_id, is_active=True
+                    ).first()
+                    if resolved_team_leader is None:
+                        raise serializers.ValidationError(
+                            "Assigned Team Leader is invalid."
+                        )
+
+        if role_key == "user" and resolved_team_leader:
+            if resolved_team_leader.company_id != target_user.company_id:
                 raise serializers.ValidationError(
                     "User and Team Leader must belong to the same company."
                 )
-            if target_user.team_leader.entity_id != target_user.entity_id:
+            if resolved_team_leader.entity_id != target_user.entity_id:
                 raise serializers.ValidationError(
                     "User and Team Leader must belong to the same entity."
                 )
             if not UserRole.objects.filter(
-                user_id=target_user.team_leader_id, role__key="team_leader"
+                user_id=resolved_team_leader.id, role__key="team_leader"
             ).exists():
                 raise serializers.ValidationError(
                     "Assigned Team Leader must have Team Leader role."
                 )
-        if role_key == "user" and not target_user.team_leader_id and actor_role_key != "team_leader":
+
+        if (
+            role_key == "user"
+            and not resolved_team_leader
+            and actor_role_key != "team_leader"
+        ):
             raise serializers.ValidationError(
                 "User must be assigned to a Team Leader from the same company and entity."
             )
@@ -219,6 +242,7 @@ class UserRoleUpdateSerializer(serializers.Serializer):
                     raise serializers.ValidationError(
                         "Each company can have exactly one Senior."
                     )
+        self._resolved_team_leader = resolved_team_leader if role_key == "user" else None
         return unique_keys
 
     def save(self, **kwargs):
@@ -228,11 +252,12 @@ class UserRoleUpdateSerializer(serializers.Serializer):
         role_keys = self.validated_data["role_keys"]
         role = Role.objects.get(key=role_keys[0])
 
-        if role.key == "user" and actor_role_key == "team_leader" and user.team_leader_id is None:
-            user.team_leader = actor
-            user.save(update_fields=["team_leader"])
+        resolved_team_leader = getattr(self, "_resolved_team_leader", None)
 
-        if role.key != "user" and user.team_leader_id is not None:
+        if role.key == "user":
+            user.team_leader = resolved_team_leader
+            user.save(update_fields=["team_leader"])
+        elif user.team_leader_id is not None:
             user.team_leader = None
             user.save(update_fields=["team_leader"])
 

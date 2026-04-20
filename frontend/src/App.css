@@ -880,6 +880,131 @@
   background: #f0fdfa;
 }
 
+.reports-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.reports-kpi-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.reports-rate-card {
+  background: linear-gradient(180deg, rgba(0, 82, 88, 0.08), rgba(255, 255, 255, 0.98));
+  border-color: rgba(13, 148, 136, 0.24);
+}
+
+.reports-progress {
+  height: 0.5rem;
+  background: rgba(22, 32, 42, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.reports-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+
+.reports-panels-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reports-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.reports-panel-wide {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.reports-bar-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.reports-bar-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reports-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reports-bar-head strong {
+  font-size: 0.85rem;
+}
+
+.reports-bar-head span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.reports-bar-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: rgba(22, 32, 42, 0.08);
+  overflow: hidden;
+}
+
+.reports-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(15, 118, 110, 0.8), rgba(20, 184, 166, 0.9));
+}
+
+.reports-sparkline {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.reports-sparkline-item {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+}
+
+.reports-sparkline-column {
+  width: 100%;
+  max-width: 2.1rem;
+  height: 6.6rem;
+  border-radius: 0.85rem;
+  background: rgba(22, 32, 42, 0.06);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.reports-sparkline-column span {
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.92), rgba(15, 118, 110, 0.88));
+}
+
+.reports-sparkline-item strong {
+  font-size: 0.8rem;
+}
+
+.reports-sparkline-item small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-align: center;
+  line-height: 1.25;
+}
+
 .insight-panel,
 .dark-panel {
   background: var(--surface);
@@ -1591,6 +1716,14 @@ button,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .reports-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .reports-sparkline {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .request-detail-layout {
     grid-template-columns: 1fr;
   }
@@ -1640,6 +1773,12 @@ button,
 
   .request-summary-item-wide {
     grid-column: span 1;
+  }
+
+  .reports-kpi-grid,
+  .reports-panels-grid,
+  .reports-sparkline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2241,6 +2380,16 @@ button,
   font-size: 1rem;
 }
 
+.request-lifecycle-step-action {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  min-height: auto;
+}
+
 .request-lifecycle-step-active {
   background: linear-gradient(180deg, rgba(0, 82, 88, 0.16), rgba(255, 255, 255, 0.98));
   box-shadow: inset 0 0 0 2px rgba(0, 82, 88, 0.3), 0 0 0 1px rgba(0, 82, 88, 0.08);
@@ -2265,6 +2414,45 @@ button,
 
 .request-lifecycle-step-active::after {
   background: rgba(13, 148, 136, 0.35);
+}
+
+.request-lifecycle-step-decision {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.request-lifecycle-decision-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.request-lifecycle-choice {
+  min-height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 32, 42, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0 0.6rem;
+}
+
+.request-lifecycle-choice-active {
+  border-color: rgba(0, 82, 88, 0.35);
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f3f45;
+}
+
+.request-lifecycle-choice-danger {
+  border-color: rgba(220, 38, 38, 0.25);
+  background: rgba(239, 68, 68, 0.12);
+  color: #8b1f1f;
+}
+
+.request-lifecycle-step-branch-rejected::after {
+  background: rgba(22, 32, 42, 0.12) !important;
 }
 
 .request-lifecycle-current {

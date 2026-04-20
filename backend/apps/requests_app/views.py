@@ -14,6 +14,7 @@ from apps.notifications.services import (
     create_bulk_notifications,
     resolve_request_notification_recipients,
 )
+from apps.permissions_app.models import UserRole
 from apps.permissions_app.services import get_primary_role_key, get_user_role_keys
 from apps.users.models import User
 
@@ -151,6 +152,7 @@ class RequestListCreateView(APIView):
         recipients = resolve_request_notification_recipients(
             service_request, exclude_user_id=request.user.id
         )
+        recipients = filter_recipients_by_request_visibility(service_request, recipients)
         create_bulk_notifications(
             users=recipients,
             event_type=UserNotification.EventType.REQUEST_CREATED,
@@ -216,6 +218,7 @@ class RequestCommentCreateView(APIView):
         recipients = resolve_request_notification_recipients(
             service_request, exclude_user_id=request.user.id
         )
+        recipients = filter_recipients_by_request_visibility(service_request, recipients)
         create_bulk_notifications(
             users=recipients,
             event_type=UserNotification.EventType.REQUEST_MESSAGE,
@@ -370,6 +373,38 @@ class RequestAssignUserView(APIView):
         assignee = User.objects.filter(id=user_id, is_active=True).first()
         if not assignee:
             return Response({"detail": "User not found."}, status=status.HTTP_400_BAD_REQUEST)
+        if service_request.current_assignee_id is not None:
+            return Response(
+                {"detail": "This request is already assigned to someone."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        actor_role = get_primary_role_key(request.user)
+        target_entity_id = get_request_target_entity_id(service_request)
+        if actor_role == "manager":
+            is_team_leader = UserRole.objects.filter(
+                user_id=assignee.id, role__key="team_leader"
+            ).exists()
+            if not is_team_leader:
+                return Response(
+                    {"detail": "Manager can assign requests only to Team Leaders."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if (
+                assignee.company_id != request.user.company_id
+                or assignee.entity_id != target_entity_id
+            ):
+                return Response(
+                    {
+                        "detail": "Selected Team Leader must be in the same company and target entity."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif actor_role == "team_leader" and assignee.id != request.user.id:
+            return Response(
+                {"detail": "Team Leader can only take request for self."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         service_request.current_assignee = assignee
         service_request.save(update_fields=["current_assignee"])
@@ -533,6 +568,16 @@ def get_visible_requests_queryset(user):
         return ServiceRequest.objects.none()
 
     role_keys = set(get_user_role_keys(user))
+    manager_user_ids = UserRole.objects.filter(role__key="manager").values_list(
+        "user_id", flat=True
+    )
+    manager_origin_same_entity_filter = (
+        Q(requester_user_id__in=manager_user_ids)
+        & (
+            Q(source_entity_id=user.entity_id)
+            | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
+        )
+    )
     if "manager" in role_keys:
         return base_queryset.filter(
             Q(company_id=user.company_id)
@@ -543,13 +588,46 @@ def get_visible_requests_queryset(user):
             | Q(target_entity__isnull=True, target_unit__code=user.entity.code),
         )
 
+    if "team_leader" in role_keys:
+        team_user_ids = list(
+            user.__class__.objects.filter(team_leader_id=user.id).values_list("id", flat=True)
+        )
+        # Team leaders must see incoming requests for their entity (including unassigned),
+        # plus requests created/handled by themselves or their direct team members,
+        # and requests created from their source entity.
+        return base_queryset.filter(
+            Q(company_id=user.company_id)
+            | Q(company__isnull=True, requester_user__company_id=user.company_id),
+            Q(target_entity_id=user.entity_id)
+            | Q(target_entity__isnull=True, target_unit__code=user.entity.code)
+            | Q(source_entity_id=user.entity_id)
+            | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
+            | manager_origin_same_entity_filter
+            | Q(requester_user_id=user.id)
+            | Q(current_assignee_id=user.id)
+            | Q(requester_user_id__in=team_user_ids)
+            | Q(current_assignee_id__in=team_user_ids),
+        )
+
     if user.entity.entity_type == Entity.EntityType.PROD:
-        return base_queryset.filter(requester_user_id=user.id)
+        # Production users can always see their own requests.
+        # They also need visibility on manager-created requests from the same source entity,
+        # and all requests created from their source entity.
+        return base_queryset.filter(
+            Q(requester_user_id=user.id)
+            | manager_origin_same_entity_filter
+            | Q(source_entity_id=user.entity_id)
+            | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
+        )
 
     return base_queryset.filter(
-        Q(company_id=user.company_id) | Q(company__isnull=True, requester_user__company_id=user.company_id),
+        Q(company_id=user.company_id)
+        | Q(company__isnull=True, requester_user__company_id=user.company_id),
         Q(target_entity_id=user.entity_id)
-        | Q(target_entity__isnull=True, target_unit__code=user.entity.code),
+        | Q(target_entity__isnull=True, target_unit__code=user.entity.code)
+        | Q(source_entity_id=user.entity_id)
+        | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
+        | manager_origin_same_entity_filter,
     )
 
 
@@ -618,11 +696,27 @@ def get_potential_assignees(user, service_request):
     if not target_entity_id:
         return []
 
-    # Get users in target entity
     queryset = User.objects.filter(entity_id=target_entity_id, is_active=True).order_by(
         "username"
     )
-    return [{"id": u.id, "username": u.username} for u in queryset]
+    actor_role = get_primary_role_key(user)
+    if actor_role == "manager":
+        queryset = queryset.filter(
+            id__in=UserRole.objects.filter(role__key="team_leader").values_list(
+                "user_id", flat=True
+            )
+        )
+    elif actor_role == "team_leader":
+        queryset = queryset.filter(id=user.id)
+
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "role_keys": get_user_role_keys(u),
+        }
+        for u in queryset
+    ]
 
 
 def get_available_reassignment_targets(user, service_request):
@@ -714,6 +808,16 @@ def apply_request_filters(queryset, params):
         )
 
     return queryset
+
+
+def filter_recipients_by_request_visibility(service_request, recipients_queryset):
+    visible_ids = []
+    for candidate in recipients_queryset:
+        if get_visible_requests_queryset(candidate).filter(id=service_request.id).exists():
+            visible_ids.append(candidate.id)
+    if not visible_ids:
+        return User.objects.none()
+    return User.objects.filter(id__in=visible_ids, is_active=True)
 
 
 def is_request_stuck(service_request):

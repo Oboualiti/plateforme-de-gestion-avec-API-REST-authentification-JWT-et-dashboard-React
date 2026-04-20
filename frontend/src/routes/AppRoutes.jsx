@@ -92,16 +92,6 @@ function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
           {error && <p className="error-text">{error}</p>}
-
-          <div className="login-footer">
-            <p>
-              Need help? <span className="muted-text">Contact support</span>
-            </p>
-            <div className="login-footer-links">
-              <span>Privacy</span>
-              <span>Terms</span>
-            </div>
-          </div>
         </form>
       </section>
     </main>
@@ -137,6 +127,7 @@ function AppRoutes() {
         <Route element={<MainLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/hierarchy" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/status-tracking" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/requests" replace />} />
           <Route path="/admin/audit-logs/:category" element={<AdminControlCenterPage />} />

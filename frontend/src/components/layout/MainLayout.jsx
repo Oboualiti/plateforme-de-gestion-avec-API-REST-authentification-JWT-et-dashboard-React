@@ -26,9 +26,6 @@ function MainLayout() {
   const sidebarVariant = getSidebarVariant(user)
   const userName = user?.first_name || user?.username
   const userRole = user?.role_keys?.[0]?.replaceAll('_', ' ') || 'user'
-  const canAccessAdmin = (user?.role_keys || []).some((role) =>
-    ['super_admin', 'senior', 'manager', 'team_leader'].includes(role),
-  )
 
   function submitTopbarSearch(event) {
     event.preventDefault()
@@ -158,10 +155,6 @@ function MainLayout() {
           </div>
 
           <div className="app-topbar-actions">
-            <div className="app-topbar-links">
-              <Link to="/requests">Requests</Link>
-              {canAccessAdmin ? <Link to="/admin/dashboard">Admin</Link> : null}
-            </div>
             <div
               className={`app-notification-menu ${notificationMenuOpen ? 'app-notification-menu-open' : ''}`}
               ref={notificationMenuRef}

@@ -255,6 +255,20 @@ function formatAuditAction(action) {
   return labelMap[action] || action.replaceAll('_', ' ')
 }
 
+function buildCompanyOptionsFromEntities(entities) {
+  const byId = new Map()
+  ;(entities || []).forEach((item) => {
+    if (!item) return
+    const id = Number(item.company)
+    if (!id || byId.has(id)) return
+    byId.set(id, {
+      id,
+      name: item.company_name || `Company ${id}`,
+    })
+  })
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
+}
+
 function AdminControlCenterPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -325,12 +339,19 @@ function AdminControlCenterPage() {
       }
 
       if (sectionKey === 'entities' && Array.isArray(normalizedData)) {
+        let companyOptions = []
+        try {
+          const hierarchyResponse = await api.get('/admin/hierarchy/')
+          companyOptions = hierarchyResponse.data?.companies || []
+        } catch {
+          companyOptions = []
+        }
+        if (!companyOptions.length) {
+          companyOptions = buildCompanyOptionsFromEntities(normalizedData)
+        }
         normalizedData = {
           entities: normalizedData,
-          companies:
-            user?.company && user?.company_name
-              ? [{ id: user.company, name: user.company_name }]
-              : [],
+          companies: companyOptions,
           manager_options: [],
         }
       }
@@ -575,21 +596,6 @@ function AdminControlCenterPage() {
                   <article key={item.status} className="thread-card">
                     <strong>{item.status}</strong>
                     <p className="muted-text">{item.total} requests</p>
-                  </article>
-                ))}
-              </div>
-            </div>
-            <div className="panel">
-              <p className="eyebrow">Activity</p>
-              <h2>Recent activity</h2>
-              <div className="timeline-list">
-                {(data.recent_activity || []).map((item) => (
-                  <article key={`${item.id}-${item.created_at}`} className="timeline-card">
-                    <strong>{item.action}</strong>
-                    <p>{item.target_label || item.target_model || 'Platform event'}</p>
-                    <p className="muted-text">
-                      {item.actor_name || '-'} | {new Date(item.created_at).toLocaleString()}
-                    </p>
                   </article>
                 ))}
               </div>
@@ -871,53 +877,6 @@ function AdminControlCenterPage() {
       )
     }
 
-    if (sectionKey === 'hierarchy') {
-      return (
-        <section className="detail-grid admin-detail-grid">
-          <div className="panel">
-            <p className="eyebrow">Company chain</p>
-            <h2>Seniors by company</h2>
-            <div className="timeline-list">
-              {(data.companies || []).map((item) => (
-                <article key={item.id} className="timeline-card">
-                  <strong>{item.name}</strong>
-                  <p className="muted-text">Senior: {item.senior || '-'}</p>
-                  <select className="app-select" defaultValue="" onChange={(event) => event.target.value && patchRecord(`/admin/hierarchy/companies/${item.id}/`, { senior_user_id: Number(event.target.value) }, 'Senior assignment updated.')}>
-                    <option value="">Assign senior</option>
-                    {(data.senior_options || []).filter((option) => option.company_id === item.id).map((option) => <option key={option.id} value={option.id}>{option.username}</option>)}
-                  </select>
-                </article>
-              ))}
-            </div>
-          </div>
-          <div className="panel">
-            <p className="eyebrow">Entity chain</p>
-            <h2>Managers, TLs, users</h2>
-            <div className="timeline-list">
-              {(data.entities || []).map((item) => (
-                <article key={item.id} className="timeline-card">
-                  <strong>{item.name}</strong>
-                  <p className="muted-text">{item.company_name} | {item.entity_type}</p>
-                  <p>Manager: {item.manager || '-'}</p>
-                  <select className="app-select" defaultValue="" onChange={(event) => event.target.value && patchRecord(`/admin/hierarchy/entities/${item.id}/`, { manager_user_id: Number(event.target.value) }, 'Manager assignment updated.')}>
-                    <option value="">Assign manager</option>
-                    {(data.manager_options || []).filter((option) => option.entity_id === item.id).map((option) => <option key={option.id} value={option.id}>{option.username}</option>)}
-                  </select>
-                  <div className="tag-row wrap-row">
-                    {(item.team_leaders || []).map((teamLeader) => (
-                      <span key={teamLeader.id} className="status-tag">
-                        {teamLeader.username} ({teamLeader.users.length})
-                      </span>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      )
-    }
-
     if (sectionKey === 'users') {
       return (
         <div className="table-wrap">
@@ -1107,15 +1066,116 @@ function AdminControlCenterPage() {
     }
 
     if (sectionKey === 'reports') {
+      const openCount = data.open_vs_resolved?.open || 0
+      const resolvedCount = data.open_vs_resolved?.resolved || 0
+      const totalTracked = openCount + resolvedCount
+      const resolutionRate = totalTracked ? Math.round((resolvedCount / totalTracked) * 100) : 0
+
+      const companyStats = (data.request_volume_by_company || []).map((item) => ({
+        label: item.company_name || item['company__name'] || item.company || item.label || 'Unknown company',
+        value: Number(item.total ?? item.count ?? item.value ?? 0),
+      }))
+      const typeStats = (data.requests_by_type || []).map((item) => ({
+        label: item.type || item.request_type || item.category || item.label || 'Unknown type',
+        value: Number(item.total ?? item.count ?? item.value ?? 0),
+      }))
+      const trendStats = (data.trend_summaries || []).map((item) => ({
+        label: item.period || item.label || item.date || item.day || 'Point',
+        value: Number(item.total ?? item.count ?? item.value ?? 0),
+      }))
+
+      const topCompanies = companyStats.slice(0, 5)
+      const topTypes = typeStats.slice(0, 5)
+      const topTrend = trendStats.slice(-8)
+      const maxCompanyValue = Math.max(1, ...topCompanies.map((item) => item.value))
+      const maxTypeValue = Math.max(1, ...topTypes.map((item) => item.value))
+      const maxTrendValue = Math.max(1, ...topTrend.map((item) => item.value))
+
       return (
-        <div className="summary-grid">
-          <MetricCard title="Open" value={data.open_vs_resolved?.open || 0} />
-          <MetricCard title="Resolved" value={data.open_vs_resolved?.resolved || 0} />
-          <MetricCard title="Companies" value={(data.request_volume_by_company || []).length} />
-          <MetricCard title="Entities" value={(data.request_volume_by_entity || []).length} />
-          <MetricCard title="Types" value={(data.requests_by_type || []).length} />
-          <MetricCard title="Trend points" value={(data.trend_summaries || []).length} />
-        </div>
+        <section className="reports-layout">
+          <div className="summary-grid reports-kpi-grid">
+            <MetricCard title="Open" value={openCount} />
+            <MetricCard title="Resolved" value={resolvedCount} />
+            <MetricCard title="Companies" value={companyStats.length} />
+            <MetricCard title="Entities" value={(data.request_volume_by_entity || []).length} />
+            <MetricCard title="Types" value={typeStats.length} />
+            <MetricCard title="Trend points" value={trendStats.length} />
+            <article className="summary-card reports-rate-card">
+              <span>Resolution rate</span>
+              <strong>{resolutionRate}%</strong>
+              <div className="reports-progress">
+                <span style={{ width: `${resolutionRate}%` }} />
+              </div>
+              <p className="muted-text">{resolvedCount} resolved out of {totalTracked}</p>
+            </article>
+          </div>
+
+          <div className="detail-grid admin-detail-grid reports-panels-grid">
+            <article className="panel reports-panel">
+              <p className="eyebrow">Workload split</p>
+              <h2>Top companies</h2>
+              <div className="reports-bar-list">
+                {topCompanies.length === 0 ? (
+                  <p className="muted-text">No company data.</p>
+                ) : (
+                  topCompanies.map((item) => (
+                    <div key={item.label} className="reports-bar-row">
+                      <div className="reports-bar-head">
+                        <strong>{item.label}</strong>
+                        <span>{item.value}</span>
+                      </div>
+                      <div className="reports-bar-track">
+                        <span style={{ width: `${Math.max(8, Math.round((item.value / maxCompanyValue) * 100))}%` }} />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+
+            <article className="panel reports-panel">
+              <p className="eyebrow">Demand mix</p>
+              <h2>Request types</h2>
+              <div className="reports-bar-list">
+                {topTypes.length === 0 ? (
+                  <p className="muted-text">No type data.</p>
+                ) : (
+                  topTypes.map((item) => (
+                    <div key={item.label} className="reports-bar-row">
+                      <div className="reports-bar-head">
+                        <strong>{item.label}</strong>
+                        <span>{item.value}</span>
+                      </div>
+                      <div className="reports-bar-track">
+                        <span style={{ width: `${Math.max(8, Math.round((item.value / maxTypeValue) * 100))}%` }} />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+          </div>
+
+          <article className="panel reports-panel reports-panel-wide">
+            <p className="eyebrow">Activity pulse</p>
+            <h2>Trend snapshot</h2>
+            <div className="reports-sparkline">
+              {topTrend.length === 0 ? (
+                <p className="muted-text">No trend data.</p>
+              ) : (
+                topTrend.map((item) => (
+                  <div key={`${item.label}-${item.value}`} className="reports-sparkline-item">
+                    <div className="reports-sparkline-column">
+                      <span style={{ height: `${Math.max(12, Math.round((item.value / maxTrendValue) * 100))}%` }} />
+                    </div>
+                    <strong>{item.value}</strong>
+                    <small>{item.label}</small>
+                  </div>
+                ))
+              )}
+            </div>
+          </article>
+        </section>
       )
     }
 
