@@ -5,15 +5,6 @@ import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
-const statusClassMap = {
-  NEW: 'status-tag info',
-  ACCEPTED: 'status-tag active',
-  IN_PROGRESS: 'status-tag warning',
-  REJECTED: 'status-tag danger',
-  COMPLETED: 'status-tag active',
-  CLOSED: 'status-tag muted',
-}
-
 const statusLabelMap = {
   NEW: 'New',
   ACCEPTED: 'Accepted',
@@ -23,42 +14,24 @@ const statusLabelMap = {
   CLOSED: 'Closed',
 }
 
-const requestTypeOptions = ['INFO', 'SCRIPT', 'TOOL', 'APP_PROJECT']
-
-function OperationalDashboardSection({ data }) {
-  if (!data) return null
-  const aging = data.aging_summary || {}
-  const groups = data.status_groups || {}
-  return (
-    <section className="detail-grid admin-detail-grid" style={{ marginBottom: '32px' }}>
-      <div className="panel stats-panel">
-        <p className="eyebrow">Operational health</p>
-        <h2>Workload distribution</h2>
-        <div className="summary-grid mini-summary-grid">
-          <MetricCard title="Under 24h" value={aging.under_24h || 0} />
-          <MetricCard title="24h - 48h" value={aging['24h_48h'] || 0} />
-          <MetricCard title="Over 48h" value={aging.over_48h || 0} />
-        </div>
-        
-        <h2 style={{ marginTop: '24px' }}>Status Lifecycle</h2>
-        <div className="summary-grid mini-summary-grid">
-          <MetricCard title="New" value={groups.new || 0} />
-          <MetricCard title="Active" value={groups.active || 0} />
-          <MetricCard title="Resolved" value={groups.resolved || 0} />
-          <MetricCard title="Rejected" value={groups.rejected || 0} />
-        </div>
-      </div>
-    </section>
-  )
+const statusToneMap = {
+  NEW: 'bg-slate-100 text-slate-700 border-slate-200',
+  ACCEPTED: 'bg-blue-100 text-blue-700 border-blue-200',
+  IN_PROGRESS: 'bg-amber-100 text-amber-800 border-amber-200',
+  REJECTED: 'bg-red-100 text-red-700 border-red-200',
+  COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  CLOSED: 'bg-slate-200 text-slate-700 border-slate-300',
 }
 
-function MetricCard({ title, value }) {
-  return (
-    <div className="metric-box">
-      <span className="muted-text eyebrow">{title}</span>
-      <strong>{value}</strong>
-    </div>
-  )
+function statusPillClass(status) {
+  return `inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${statusToneMap[status] || 'bg-slate-100 text-slate-700 border-slate-200'}`
+}
+
+function typePillClass(type) {
+  if (type === 'SCRIPT') return 'bg-indigo-100 text-indigo-700 border-indigo-200'
+  if (type === 'TOOL') return 'bg-cyan-100 text-cyan-700 border-cyan-200'
+  if (type === 'APP_PROJECT') return 'bg-purple-100 text-purple-700 border-purple-200'
+  return 'bg-slate-100 text-slate-700 border-slate-200'
 }
 
 function AssignmentModal({ request, entities, loading, saving, onClose, onConfirm }) {
@@ -66,40 +39,48 @@ function AssignmentModal({ request, entities, loading, saving, onClose, onConfir
   const [note, setNote] = useState('')
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-panel">
-        <div className="page-intro">
-          <p className="eyebrow">Request Assignment</p>
-          <h2>Assign Target Team</h2>
-          <p>Route this request to the appropriate support or development entity.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-[1px]">
+      <div className="w-full max-w-xl rounded-xl border border-border bg-card shadow-xl">
+        <div className="border-b border-border px-6 py-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Request Assignment</p>
+          <h2 className="mt-1 text-xl font-semibold text-foreground">Assign Target Team</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Route this request to the appropriate support or development entity.
+          </p>
         </div>
 
-        <div className="modal-body">
-          <div className="info-stack" style={{ gap: '0.5rem' }}>
-            <label>Request Reference</label>
-            <div className="data-row-static">{request?.reference_code || request?.request_number || '-'}</div>
+        <div className="space-y-4 px-6 py-5">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Request Reference</label>
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-foreground">
+              {request?.reference_code || request?.request_number || '-'}
+            </div>
           </div>
 
-          <div className="info-stack" style={{ gap: '0.5rem' }}>
-            <label>Title</label>
-            <div className="data-row-static">{request?.title || '-'}</div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Title</label>
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-foreground">
+              {request?.title || '-'}
+            </div>
           </div>
 
-          <div className="info-stack" style={{ gap: '0.5rem' }}>
-            <label>Company</label>
-            <div className="data-row-static">{request?.company_name || '-'}</div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Company</label>
+            <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-foreground">
+              {request?.company_name || '-'}
+            </div>
           </div>
 
-          <div className="info-stack" style={{ gap: '0.5rem' }}>
-            <label htmlFor="target-team">Target team</label>
+          <div className="space-y-1.5">
+            <label htmlFor="target-team" className="text-sm font-medium text-foreground">Target team</label>
             <select
               id="target-team"
-              className="app-select full-width"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
               value={targetEntityId}
               onChange={(e) => setTargetEntityId(e.target.value)}
               disabled={loading}
             >
-              <option value="">— Select support/dev team —</option>
+              <option value="">Select support/dev team</option>
               {entities.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name} ({e.entity_type})
@@ -108,12 +89,11 @@ function AssignmentModal({ request, entities, loading, saving, onClose, onConfir
             </select>
           </div>
 
-          <div className="info-stack" style={{ gap: '0.5rem' }}>
-            <label htmlFor="assignment-note">Assignment note (Optional)</label>
+          <div className="space-y-1.5">
+            <label htmlFor="assignment-note" className="text-sm font-medium text-foreground">Assignment note (optional)</label>
             <textarea
               id="assignment-note"
-              className="app-textarea full-width"
-              style={{ minHeight: '80px' }}
+              className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="Instructions or context for the team..."
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -121,9 +101,16 @@ function AssignmentModal({ request, entities, loading, saving, onClose, onConfir
           </div>
         </div>
 
-        <div className="modal-footer">
-          <button className="ghost-button" onClick={onClose} disabled={saving}>Cancel</button>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
           <button
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:opacity-60"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
             onClick={() => onConfirm(targetEntityId, note)}
             disabled={!targetEntityId || saving}
           >
@@ -140,7 +127,6 @@ function RequestsPage() {
   const [searchParams] = useSearchParams()
   const querySearch = searchParams.get('search') || ''
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
-  const [operationalData, setOperationalData] = useState(null)
   const [filters, setFilters] = useState({
     search: querySearch,
     company_id: '',
@@ -188,16 +174,6 @@ function RequestsPage() {
         ? 'Your requests'
         : 'Incoming Requests'
 
-  const metrics = useMemo(() => {
-    const requests = state.requests || []
-    return {
-      total: requests.length,
-      pending: requests.filter((item) => item.status === 'NEW').length,
-      inProgress: requests.filter((item) => item.status === 'IN_PROGRESS').length,
-      stuck: requests.filter((item) => item.is_stuck).length,
-    }
-  }, [state.requests])
-
   // Load companies for the filter
   useEffect(() => {
     if (!isGlobalAdmin) return
@@ -217,20 +193,6 @@ function RequestsPage() {
     return () => {
       active = false
     }
-  }, [isGlobalAdmin])
-
-  // Load operational metrics for super admin
-  useEffect(() => {
-    if (!isGlobalAdmin) return
-    async function fetchOperationalMetrics() {
-      try {
-        const response = await api.get('/admin/status-tracking/')
-        setOperationalData(response.data)
-      } catch (err) {
-        console.error('Failed to fetch operational metrics', err)
-      }
-    }
-    fetchOperationalMetrics()
   }, [isGlobalAdmin])
 
   // Load entities for the current scope
@@ -375,253 +337,221 @@ function RequestsPage() {
   }
 
   return (
-    <main className="page-content">
+    <main className="space-y-6">
       <PageHeader
-        eyebrow="Operations"
+        eyebrow={null}
         title={title}
-        description="Consolidated request workspace for monitoring, assignment, and status management."
+        description="Browse, filter, and manage requests across your scope."
         actions={
           user?.request_creation_allowed ? (
-            <Link className="pill-link-primary pill-link" to="/requests/create">
+            <Link
+              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+              to="/requests/create"
+            >
               New request
             </Link>
           ) : null
         }
       />
 
-      {isGlobalAdmin && operationalData && (
-        <OperationalDashboardSection data={operationalData} />
-      )}
+      <section className="space-y-4">
+        <div className="surface-card p-4">
+          <div className="grid gap-3 lg:grid-cols-12">
+            <div className="lg:col-span-4">
+              <input
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="Search title, reference, description..."
+                value={filters.search}
+                onChange={(event) => handleFilterChange('search', event.target.value)}
+              />
+            </div>
 
-      <section className="kpi-grid">
-        <article className="summary-card summary-card-emphasis">
-          <span>Global workload</span>
-          <strong>{metrics.total}</strong>
-        </article>
-        <article className="summary-card">
-          <span>Pending assignment</span>
-          <strong>{metrics.pending}</strong>
-        </article>
-        <article className="summary-card">
-          <span>In active lifecycle</span>
-          <strong>{metrics.inProgress}</strong>
-        </article>
-        <article className="summary-card">
-          <span>Stalled</span>
-          <strong>{metrics.stuck}</strong>
-        </article>
-      </section>
+            {isGlobalAdmin && (
+              <select
+                className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring lg:col-span-2"
+                value={filters.company_id}
+                onChange={(event) => handleFilterChange('company_id', event.target.value)}
+              >
+                <option value="">All companies</option>
+                {options.companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
 
-      <section className="table-wrap">
-        <div className="card-toolbar">
-          <div>
-            <p className="eyebrow">Inventory</p>
-            <h2>Workspace filters</h2>
-          </div>
-          <span className="muted-text">{state.loading ? 'Updating...' : `${metrics.total} result(s)`}</span>
-        </div>
-
-        <div className="filter-bar table-caption">
-          <input
-            placeholder="Search ref, title, creator..."
-            value={filters.search}
-            onChange={(event) => handleFilterChange('search', event.target.value)}
-          />
-
-          {isGlobalAdmin && (
             <select
-              className="app-select"
-              value={filters.company_id}
-              onChange={(event) => handleFilterChange('company_id', event.target.value)}
+              className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring lg:col-span-2"
+              value={filters.source_entity_id}
+              onChange={(event) => handleFilterChange('source_entity_id', event.target.value)}
+              disabled={isGlobalAdmin ? !filters.company_id : !options.sourceEntities.length}
             >
-              <option value="">All companies</option>
-              {options.companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              <option value="">All sources</option>
+              {options.sourceEntities.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
                 </option>
               ))}
             </select>
-          )}
 
-          <select
-            className="app-select"
-            value={filters.source_entity_id}
-            onChange={(event) => handleFilterChange('source_entity_id', event.target.value)}
-            disabled={isGlobalAdmin ? !filters.company_id : !options.sourceEntities.length}
-          >
-            <option value="">All source entities</option>
-            {options.sourceEntities.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
+            <select
+              className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring lg:col-span-2"
+              value={filters.target_entity_id}
+              onChange={(event) => handleFilterChange('target_entity_id', event.target.value)}
+              disabled={isGlobalAdmin ? !filters.company_id : !options.targetEntities.length}
+            >
+              <option value="">All targets</option>
+              {options.targetEntities.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
 
-          <select
-            className="app-select"
-            value={filters.target_entity_id}
-            onChange={(event) => handleFilterChange('target_entity_id', event.target.value)}
-            disabled={isGlobalAdmin ? !filters.company_id : !options.targetEntities.length}
-          >
-            <option value="">All target teams</option>
-            {options.targetEntities.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="app-select"
-            value={filters.status}
-            onChange={(event) => handleFilterChange('status', event.target.value)}
-          >
-            <option value="">All statuses</option>
-            {Object.entries(statusLabelMap).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-          
-          <button className="ghost-button" type="button" onClick={resetFilters}>
-            Clear
-          </button>
+            <select
+              className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring lg:col-span-2"
+              value={filters.status}
+              onChange={(event) => handleFilterChange('status', event.target.value)}
+            >
+              <option value="">All statuses</option>
+              {Object.entries(statusLabelMap).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {state.loading ? 'Updating...' : `${pagination.count || 0} result(s)`}
+            </p>
+            <button
+              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition hover:bg-muted/60"
+              type="button"
+              onClick={resetFilters}
+            >
+              Clear filters
+            </button>
+          </div>
         </div>
 
-        {state.loading && state.requests.length === 0 && <p className="muted-text" style={{ padding: '20px' }}>Loading requests...</p>}
-        {state.error && <p className="error-text" style={{ padding: '20px' }}>{state.error}</p>}
-        
-        {!state.loading && !state.error && (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Request</th>
-                <th>Status</th>
-                <th>Scope</th>
-                <th>Ownership</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.requests.map((item) => {
-                const isUnassigned = !item.target_entity_name || item.target_entity_name === 'Unassigned'
-                
-                return (
-                  <tr key={item.id}>
-                    <td>
-                      <div className="caption-grid">
-                        <strong>{item.title}</strong>
-                        <span className="muted-text">
-                          {item.reference_code || item.request_number} · {item.type}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="caption-grid">
-                        <span className={statusClassMap[item.status] || 'status-tag'}>
-                          {statusLabelMap[item.status] || item.status}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="caption-grid">
-                        <span>{item.company_name || '-'}</span>
-                        <span className="muted-text">
-                          {item.source_entity_name || '-'} {'->'} {item.target_entity_name || '-'}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="caption-grid">
-                        <span>{item.creator_name || '-'}</span>
-                        <span className="muted-text">{item.assignee_name || 'Unassigned'}</span>
-                      </div>
-                    </td>
-                    <td>{new Date(item.created_at).toLocaleString()}</td>
-                    <td>
-                      <div className="table-actions">
-                        <Link className="ghost-button pill-link" to={`/requests/${item.id}`}>
-                          Open
-                        </Link>
-                        {canDeleteRequests ? (
-                          <button
-                            type="button"
-                            className="ghost-button pill-link"
-                            disabled={deletingRequestId === item.id}
-                            onClick={() => handleDeleteRequest(item)}
-                          >
-                            {deletingRequestId === item.id ? 'Deleting...' : 'Delete'}
-                          </button>
-                        ) : null}
-                        {isGlobalAdmin ? (
-                          isUnassigned ? (
-                            <button 
-                              type="button" 
-                              className="ghost-button pill-link"
-                              onClick={() => handleStartAssignment(item)}
-                            >
-                              Assign
-                            </button>
-                          ) : (
-                            <div className="caption-grid" style={{ alignItems: 'center' }}>
-                              <span className="status-tag active">Assigned</span>
-                              <span className="muted-text" style={{ fontSize: '11px' }}>
-                                {item.target_entity_name}
-                              </span>
-                            </div>
-                          )
-                        ) : null}
-                      </div>
-                    </td>
+        <div className="surface-card overflow-hidden">
+          {state.loading && state.requests.length === 0 && (
+            <p className="px-4 py-6 text-sm text-muted-foreground">Loading requests...</p>
+          )}
+          {state.error && <p className="px-4 py-6 text-sm font-medium text-destructive">{state.error}</p>}
+
+          {!state.loading && !state.error && (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Title</th>
+                    <th>Source → Target</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Assignee</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
+                </thead>
+                <tbody>
+                  {state.requests.map((item) => {
+                    const isUnassigned = !item.target_entity_name || item.target_entity_name === 'Unassigned'
+                    return (
+                      <tr key={item.id}>
+                        <td className="font-mono text-xs text-muted-foreground">
+                          {item.reference_code || item.request_number}
+                        </td>
+                        <td>
+                          <Link className="font-medium text-foreground hover:text-primary" to={`/requests/${item.id}`}>
+                            {item.title}
+                          </Link>
+                        </td>
+                        <td className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">{item.source_entity_name || '-'}</span>
+                          <span className="mx-1">→</span>
+                          <span className="font-medium text-foreground">{item.target_entity_name || '-'}</span>
+                        </td>
+                        <td>
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${typePillClass(item.type)}`}>
+                            {item.type || 'INFO'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={statusPillClass(item.status)}>
+                            {statusLabelMap[item.status] || item.status}
+                          </span>
+                        </td>
+                        <td className="text-sm text-muted-foreground">
+                          {item.assignee_name || 'Unassigned'}
+                        </td>
+                        <td className="text-sm text-muted-foreground">
+                          {new Date(item.updated_at || item.created_at).toLocaleString()}
+                        </td>
+                        <td>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                              to={`/requests/${item.id}`}
+                            >
+                              Open
+                            </Link>
+                            {canDeleteRequests ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:opacity-60"
+                                disabled={deletingRequestId === item.id}
+                                onClick={() => handleDeleteRequest(item)}
+                              >
+                                {deletingRequestId === item.id ? 'Deleting...' : 'Delete'}
+                              </button>
+                            ) : null}
+                            {isGlobalAdmin && isUnassigned ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                                onClick={() => handleStartAssignment(item)}
+                              >
+                                Assign
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {!state.loading && !state.error && pagination.count > 0 && (
-          <div className="pagination-bar">
-            <div className="pagination-info">
+          <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs text-muted-foreground">
               Showing <strong>{(pagination.page - 1) * pagination.pageSize + 1}</strong>
               - <strong>{Math.min(pagination.page * pagination.pageSize, pagination.count)}</strong>
-              of <strong>{pagination.count}</strong> results
+              of <strong>{pagination.count}</strong>
             </div>
 
-            <div className="pagination-actions">
+            <div className="flex items-center gap-1">
               <button
-                className="pagination-button"
+                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:opacity-50"
                 disabled={!pagination.previous || state.loading}
                 onClick={() => setPagination(curr => ({ ...curr, page: curr.page - 1 }))}
               >
                 Previous
               </button>
 
-              <div style={{ display: 'flex', gap: '0.25rem' }}>
-                {Array.from({ length: Math.ceil(pagination.count / pagination.pageSize) }, (_, i) => i + 1)
-                  .filter(p => {
-                    const total = Math.ceil(pagination.count / pagination.pageSize)
-                    if (total <= 7) return true
-                    return p === 1 || p === total || Math.abs(p - pagination.page) <= 1
-                  })
-                  .map((p, i, arr) => (
-                    <span key={p} style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
-                      {i > 0 && p - arr[i - 1] > 1 && <span className="muted-text">...</span>}
-                      <button
-                        className={`pagination-button ${pagination.page === p ? 'pagination-button-active' : ''}`}
-                        onClick={() => setPagination(curr => ({ ...curr, page: p }))}
-                        disabled={state.loading}
-                      >
-                        {p}
-                      </button>
-                    </span>
-                  ))}
-              </div>
+              <span className="px-2 text-xs text-muted-foreground">
+                Page {pagination.page} / {Math.max(1, Math.ceil(pagination.count / pagination.pageSize))}
+              </span>
 
               <button
-                className="pagination-button"
+                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:opacity-50"
                 disabled={!pagination.next || state.loading}
                 onClick={() => setPagination(curr => ({ ...curr, page: curr.page + 1 }))}
               >

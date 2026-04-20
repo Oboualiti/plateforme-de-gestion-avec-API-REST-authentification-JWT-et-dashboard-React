@@ -200,9 +200,9 @@ function RequestDetailsPage() {
 
   if (state.loading) {
     return (
-      <main className="page-content">
-        <section className="panel state-card">
-          <p className="muted-text">Loading request...</p>
+      <main className="space-y-6">
+        <section className="surface-card p-6">
+          <p className="text-sm text-muted-foreground">Loading request...</p>
         </section>
       </main>
     )
@@ -210,9 +210,9 @@ function RequestDetailsPage() {
 
   if (state.error || !request) {
     return (
-      <main className="page-content">
-        <section className="panel state-card">
-          <p className="error-text">{state.error || 'Could not load request.'}</p>
+      <main className="space-y-6">
+        <section className="surface-card p-6">
+          <p className="text-sm font-medium text-destructive">{state.error || 'Could not load request.'}</p>
         </section>
       </main>
     )
@@ -254,269 +254,244 @@ function RequestDetailsPage() {
   ]
 
   return (
-    <main className="page-content">
-      <div className="request-detail-shell">
-        <section className="panel request-detail-hero request-detail-hero-refined">
-          <div className="request-detail-hero-copy">
-            <div className="request-hero-status">
-              <span className="request-reference-chip">{request.reference_code || request.request_number}</span>
-              <span className={statusClassMap[request.status] || 'status-tag'}>
+    <main className="space-y-6">
+      <section className="surface-card p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 font-mono text-xs text-muted-foreground">
+                {request.reference_code || request.request_number}
+              </span>
+              <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
                 {statusLabelMap[request.status] || request.status}
               </span>
             </div>
-            <div className="request-hero-heading">
-              <p className="eyebrow">Request details</p>
-              <h1>{request.title || 'Untitled request'}</h1>
-              <div className="request-hero-description">
-                <span>Description</span>
-                <p>
-                  {request.description || 'No description provided for this request.'}
-                </p>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Request Details</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">
+                {request.title || 'Untitled request'}
+              </h1>
+            </div>
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              {request.description || 'No description provided for this request.'}
+            </p>
+            <div className="grid gap-3 text-sm sm:grid-cols-3">
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Company</p>
+                <p className="font-medium text-foreground">{request.company_name || 'No company'}</p>
+              </div>
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Source Entity</p>
+                <p className="font-medium text-foreground">{request.source_entity_name || 'Unknown source'}</p>
+              </div>
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Created</p>
+                <p className="font-medium text-foreground">{formatDateTime(request.created_at)}</p>
               </div>
             </div>
-            <div className="request-hero-meta">
-              <span>
-                <small>Company</small>
-                <strong>{request.company_name || 'No company'}</strong>
-              </span>
-              <span>
-                <small>Source entity</small>
-                <strong>{request.source_entity_name || 'Unknown source'}</strong>
-              </span>
-              <span>
-                <small>Created</small>
-                <strong>{formatDateTime(request.created_at)}</strong>
-              </span>
-            </div>
           </div>
-
-          <div className="request-detail-hero-actions">
-            <Link className="ghost-button pill-link" to="/requests">
-              Back to list
+          <div className="flex items-center gap-2">
+            <Link
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60"
+              to="/requests"
+            >
+              Back To List
             </Link>
           </div>
+        </div>
+      </section>
+
+      {actionState.error ? (
+        <section className="surface-card p-4">
+          <p className="text-sm font-medium text-destructive">{actionState.error}</p>
         </section>
+      ) : null}
 
-        {actionState.error ? <p className="error-text">{actionState.error}</p> : null}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {summaryItems.map((item) => (
+          <article className="surface-card p-4" key={item.label}>
+            <p className="text-xs text-muted-foreground">{item.label}</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">{item.value}</p>
+          </article>
+        ))}
+      </section>
 
-        <section className="request-detail-meta-grid">
-          {summaryItems.map((item) => (
-            <article className="panel request-detail-meta-card" key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </article>
-          ))}
-        </section>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <article className="surface-card p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Executive Summary</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">Report Narrative</h2>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {request.description || 'No detailed description was provided for this request.'}
+          </p>
+          <div className="mt-4 rounded-md border border-border bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">Resolution Note</p>
+            <p className="mt-1 text-sm font-medium text-foreground">{request.resolution_note || 'No resolution note yet.'}</p>
+          </div>
+        </article>
 
-        <div className="request-detail-main">
-          <section className="panel request-detail-summary-card">
-            <div className="workspace-section-title">
-              <div>
-                <p className="eyebrow">Executive summary</p>
-                <h2>Report narrative</h2>
-              </div>
+        <article className="surface-card p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Assignment</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">Ownership Control</h2>
+          <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">Current Assignee</p>
+            <p className="mt-1 text-sm font-medium text-foreground">{request.assignee_name || 'Unassigned'}</p>
+          </div>
+
+          {isTeamLeader && (
+            <div className="mt-3">
+              <button
+                type="button"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:opacity-60"
+                disabled={!canAssignToMe || actionState.busy}
+                onClick={handleAssignToMe}
+              >
+                {request.current_assignee ? 'Already Assigned' : actionState.busy ? 'Saving...' : 'Take For Myself'}
+              </button>
             </div>
-            <div className="request-summary-copy">
-              <p>{request.description || 'No detailed description was provided for this request.'}</p>
-              <div className="request-summary-highlight">
-                <span>Resolution note</span>
-                <strong>{request.resolution_note || 'No resolution note yet.'}</strong>
-              </div>
-            </div>
-          </section>
+          )}
 
-          <section className="panel request-detail-summary-card">
-            <div className="workspace-section-title">
-              <div>
-                <p className="eyebrow">Assignment</p>
-                <h2>Ownership control</h2>
-              </div>
-            </div>
-            <div className="request-summary-copy">
-              <div className="request-summary-highlight">
-                <span>Current assignee</span>
-                <strong>{request.assignee_name || 'Unassigned'}</strong>
-              </div>
+          {canManagerAssignTl && (
+            <div className="mt-4 space-y-2">
+              <label htmlFor="assign-team-leader" className="text-sm font-medium text-foreground">Assign To Team Leader</label>
+              <select
+                id="assign-team-leader"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={assignmentForm.userId}
+                onChange={(event) =>
+                  setAssignmentForm((current) => ({ ...current, userId: event.target.value }))
+                }
+              >
+                <option value="">Select team leader</option>
+                {potentialAssignees.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.username}
+                  </option>
+                ))}
+              </select>
 
-              {isTeamLeader && (
-                <div className="table-actions">
+              <label htmlFor="assign-note" className="text-sm font-medium text-foreground">Assignment Note (Optional)</label>
+              <textarea
+                id="assign-note"
+                className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={assignmentForm.note}
+                onChange={(event) =>
+                  setAssignmentForm((current) => ({ ...current, note: event.target.value }))
+                }
+                placeholder="Context for the assigned team leader..."
+              />
+
+              <button
+                type="button"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+                disabled={!assignmentForm.userId || actionState.busy}
+                onClick={handleAssignToUser}
+              >
+                {actionState.busy ? 'Saving...' : 'Assign To Team Leader'}
+              </button>
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="surface-card p-5">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Process Tracking</p>
+        <h2 className="mt-1 text-lg font-semibold text-foreground">Journey Map</h2>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {lifecycleSteps.map((step, index) => {
+            const isActive = activeLifecycleIndex === index
+            const isComplete = activeLifecycleIndex > index
+            const isDecisionStep = step.key === 'decision'
+            const stepClass = isActive
+              ? 'border-primary bg-primary-soft'
+              : isComplete
+                ? 'border-emerald-200 bg-emerald-50'
+                : 'border-border bg-muted/20'
+
+            return (
+              <article key={step.key} className={`rounded-md border p-3 ${stepClass}`}>
+                <p className="text-xs text-muted-foreground">{step.helper}</p>
+                {!isDecisionStep ? (
                   <button
                     type="button"
-                    className="ghost-button"
-                    disabled={!canAssignToMe || actionState.busy}
-                    onClick={handleAssignToMe}
+                    className="mt-1 text-sm font-semibold text-foreground hover:text-primary disabled:opacity-60"
+                    disabled={!canChangeStatus || actionState.busy}
+                    onClick={() => handleLifecycleStatusChange(step.value)}
                   >
-                    {request.current_assignee ? 'Already assigned' : actionState.busy ? 'Saving...' : 'Take for myself'}
+                    {step.label}
                   </button>
-                </div>
-              )}
-
-              {canManagerAssignTl && (
-                <div className="status-form">
-                  <label htmlFor="assign-team-leader">Assign to team leader</label>
-                  <select
-                    id="assign-team-leader"
-                    className="app-select"
-                    value={assignmentForm.userId}
-                    onChange={(event) =>
-                      setAssignmentForm((current) => ({ ...current, userId: event.target.value }))
-                    }
-                  >
-                    <option value="">Select team leader</option>
-                    {potentialAssignees.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.username}
-                      </option>
-                    ))}
-                  </select>
-                  <label htmlFor="assign-note">Assignment note (optional)</label>
-                  <textarea
-                    id="assign-note"
-                    className="app-textarea"
-                    value={assignmentForm.note}
-                    onChange={(event) =>
-                      setAssignmentForm((current) => ({ ...current, note: event.target.value }))
-                    }
-                    placeholder="Context for the assigned team leader..."
-                  />
-                  <div className="table-actions">
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      disabled={!assignmentForm.userId || actionState.busy}
-                      onClick={handleAssignToUser}
+                      className={`inline-flex h-8 items-center justify-center rounded-md border px-2.5 text-xs font-medium transition ${decisionSelection === 'ACCEPTED' ? 'border-blue-300 bg-blue-100 text-blue-800' : 'border-border bg-background text-foreground hover:bg-muted/60'}`}
+                      disabled={!canChangeStatus || actionState.busy}
+                      onClick={() => handleLifecycleStatusChange('ACCEPTED')}
                     >
-                      {actionState.busy ? 'Saving...' : 'Assign to team leader'}
+                      Accepted
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-flex h-8 items-center justify-center rounded-md border px-2.5 text-xs font-medium transition ${decisionSelection === 'REJECTED' ? 'border-red-300 bg-red-100 text-red-800' : 'border-border bg-background text-foreground hover:bg-muted/60'}`}
+                      disabled={!canChangeStatus || actionState.busy}
+                      onClick={() => handleLifecycleStatusChange('REJECTED')}
+                    >
+                      Rejected
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="panel request-process-card">
-            <div className="workspace-section-title">
-              <div>
-                <p className="eyebrow">Process tracking</p>
-                <h2>Journey map</h2>
-              </div>
-            </div>
-
-            <div className="request-lifecycle-shell">
-              <div className="request-lifecycle request-lifecycle-expanded">
-                {lifecycleSteps.map((step, index) => {
-                  const isActive = activeLifecycleIndex === index
-                  const isComplete = activeLifecycleIndex > index
-                  const isDecisionStep = step.key === 'decision'
-                  return (
-                    <article
-                      key={step.key}
-                      className={[
-                        'request-lifecycle-step',
-                        isDecisionStep ? 'request-lifecycle-step-decision' : '',
-                        isActive ? 'request-lifecycle-step-active' : '',
-                        isComplete ? 'request-lifecycle-step-complete' : '',
-                        step.key === 'decision' && decisionSelection === 'REJECTED'
-                          ? 'request-lifecycle-step-branch-rejected'
-                          : '',
-                      ].join(' ').trim()}
-                    >
-                      <span>{step.helper}</span>
-                      {!isDecisionStep && (
-                        <button
-                          type="button"
-                          disabled={!canChangeStatus || actionState.busy}
-                          onClick={() => handleLifecycleStatusChange(step.value)}
-                          className={[
-                            'request-lifecycle-step-action',
-                            canChangeStatus ? 'request-lifecycle-step-clickable' : '',
-                          ].join(' ').trim()}
-                        >
-                          <strong>{step.label}</strong>
-                        </button>
-                      )}
-                      {isDecisionStep && (
-                        <div className="request-lifecycle-decision-row">
-                          <button
-                            type="button"
-                            disabled={!canChangeStatus || actionState.busy}
-                            onClick={() => handleLifecycleStatusChange('ACCEPTED')}
-                            className={[
-                              'request-lifecycle-choice',
-                              decisionSelection === 'ACCEPTED' ? 'request-lifecycle-choice-active' : '',
-                            ].join(' ').trim()}
-                          >
-                            Accepted
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!canChangeStatus || actionState.busy}
-                            onClick={() => handleLifecycleStatusChange('REJECTED')}
-                            className={[
-                              'request-lifecycle-choice',
-                              decisionSelection === 'REJECTED' ? 'request-lifecycle-choice-danger' : '',
-                            ].join(' ').trim()}
-                          >
-                            Rejected
-                          </button>
-                        </div>
-                      )}
-                    </article>
-                  )
-                })}
-              </div>
-            </div>
-          </section>
-
-          <section className="panel request-discussion-card">
-            <div className="workspace-section-title">
-              <div>
-                <p className="eyebrow">Discussion</p>
-                <h2>Conversation</h2>
-              </div>
-            </div>
-
-            <div className="request-discussion-stack">
-              <div className="thread-list request-thread-list" ref={discussionScrollRef}>
-                {comments.length === 0 ? <p className="muted-text">No comments yet.</p> : null}
-                {comments.map((item) => (
-                  <article
-                    key={item.id}
-                    className={`thread-card ${item.sender === user?.id ? 'outgoing' : 'incoming'}`}
-                  >
-                    <div className="request-comment-card">
-                      <div className="request-comment-avatar">{getInitials(item.sender_name)}</div>
-                      <div className="request-comment-body">
-                        <div className="thread-head">
-                          <div>
-                            <strong>{item.sender_name}</strong>
-                            <div className="subline request-thread-meta">
-                              {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
-                            </div>
-                          </div>
-                          <small>{formatDateTime(item.created_at)}</small>
-                        </div>
-                        <p>{item.message}</p>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <form className="stack-form request-comment-composer" onSubmit={submitComment}>
-                <textarea
-                  className="app-textarea"
-                  value={comment}
-                  onChange={(event) => setComment(event.target.value)}
-                  placeholder="Add a comment"
-                />
-                <button disabled={actionState.busy || !comment.trim()} type="submit">
-                  Send comment
-                </button>
-              </form>
-            </div>
-          </section>
+                )}
+              </article>
+            )
+          })}
         </div>
-      </div>
+      </section>
+
+      <section className="surface-card p-5">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Discussion</p>
+        <h2 className="mt-1 text-lg font-semibold text-foreground">Conversation</h2>
+
+        <div
+          className="mt-4 max-h-96 space-y-3 overflow-y-auto rounded-md border border-border bg-muted/20 p-3"
+          ref={discussionScrollRef}
+        >
+          {comments.length === 0 ? <p className="text-sm text-muted-foreground">No comments yet.</p> : null}
+          {comments.map((item) => (
+            <article key={item.id} className="rounded-md border border-border bg-card p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-bold text-primary">
+                    {getInitials(item.sender_name)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{item.sender_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
+              </div>
+              <p className="mt-2 text-sm text-foreground">{item.message}</p>
+            </article>
+          ))}
+        </div>
+
+        <form className="mt-3 space-y-2" onSubmit={submitComment}>
+          <textarea
+            className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="Add a comment"
+          />
+          <button
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+            disabled={actionState.busy || !comment.trim()}
+            type="submit"
+          >
+            Send Comment
+          </button>
+        </form>
+      </section>
     </main>
   )
 }

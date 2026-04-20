@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 
 function ProfilePage() {
@@ -10,85 +11,77 @@ function ProfilePage() {
   )
 
   return (
-    <main className="page-content">
-      <section className="workspace-header">
-        <div className="panel-header">
-          <div className="page-intro">
-            <p className="eyebrow">Profile</p>
-            <h1>{user?.first_name || user?.username || 'User profile'}</h1>
-            <p className="subtitle">Your account and workspace identity details.</p>
-          </div>
-        </div>
-      </section>
+    <main className="space-y-6">
+      <PageHeader
+        eyebrow="Profile"
+        title={user?.first_name || user?.username || 'User Profile'}
+        description="Your account and workspace identity details."
+      />
 
-      <section className="kpi-grid">
-        <article className="summary-card summary-card-emphasis">
-          <span>Username</span>
-          <strong className="stat-value-small">{user?.username || '-'}</strong>
-          <p className="muted-text">login identity</p>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Username</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{user?.username || '-'}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Login identity</p>
         </article>
-        <article className="summary-card">
-          <span>Primary role</span>
-          <strong className="stat-value-small">{primaryRole}</strong>
-          <p className="muted-text">current permission lane</p>
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Primary Role</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{primaryRole}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Current permission lane</p>
         </article>
-        <article className="summary-card">
-          <span>Company</span>
-          <strong className="stat-value-small">{user?.company_name || '-'}</strong>
-          <p className="muted-text">business scope</p>
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Company</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{user?.company_name || '-'}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Business scope</p>
         </article>
-        <article className="summary-card">
-          <span>Entity</span>
-          <strong className="stat-value-small">{user?.entity_name || '-'}</strong>
-          <p className="muted-text">operational unit</p>
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Entity</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{user?.entity_name || '-'}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Operational unit</p>
         </article>
       </section>
 
-      <section className="editorial-grid">
-        <article className="panel">
-          <p className="eyebrow">Account details</p>
-          <div className="workspace-list">
-            <div className="workspace-list-item">
-              <div>
-                <strong>Full name</strong>
-                <p className="muted-text">
-                  {`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || '-'}
-                </p>
-              </div>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <article className="surface-card p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Account Details</p>
+          <div className="mt-4 space-y-2">
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Full Name</p>
+              <p className="mt-1 text-sm font-medium text-foreground">
+                {`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || '-'}
+              </p>
             </div>
-            <div className="workspace-list-item">
-              <div>
-                <strong>Email</strong>
-                <p className="muted-text">{user?.email || 'No email set'}</p>
-              </div>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Email</p>
+              <p className="mt-1 text-sm font-medium text-foreground">{user?.email || 'No email set'}</p>
             </div>
-            <div className="workspace-list-item">
-              <div>
-                <strong>Entity type</strong>
-                <p className="muted-text">{user?.entity_type || '-'}</p>
-              </div>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Entity Type</p>
+              <p className="mt-1 text-sm font-medium text-foreground">{user?.entity_type || '-'}</p>
             </div>
           </div>
         </article>
 
-        <article className="panel">
-          <p className="eyebrow">Permissions</p>
-          <div className="workspace-list">
-            <div className="workspace-list-item">
-              <div>
-                <strong>Roles</strong>
-                <p className="muted-text">
-                  {(user?.role_keys || []).join(', ').replaceAll('_', ' ') || '-'}
-                </p>
-              </div>
+        <article className="surface-card p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Permissions</p>
+          <div className="mt-4 space-y-2">
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Roles</p>
+              <p className="mt-1 text-sm font-medium text-foreground">
+                {(user?.role_keys || []).join(', ').replaceAll('_', ' ') || '-'}
+              </p>
             </div>
-            <div className="workspace-list-item">
-              <div>
-                <strong>Request creation</strong>
-                <p className="muted-text">
-                  {user?.request_creation_allowed ? 'Allowed' : 'Not allowed'}
-                </p>
-              </div>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">Request Creation</p>
+              <span
+                className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                  user?.request_creation_allowed
+                    ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
+                    : 'border-red-200 bg-red-100 text-red-700'
+                }`}
+              >
+                {user?.request_creation_allowed ? 'Allowed' : 'Not allowed'}
+              </span>
             </div>
           </div>
         </article>

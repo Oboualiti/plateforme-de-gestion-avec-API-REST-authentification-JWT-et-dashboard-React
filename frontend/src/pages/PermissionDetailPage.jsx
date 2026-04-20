@@ -209,9 +209,9 @@ function PermissionDetailPage() {
 
   if (state.loading) {
     return (
-      <main className="page-content">
-        <section className="panel">
-          <p className="muted-text">Loading user...</p>
+      <main className="space-y-6">
+        <section className="surface-card p-6">
+          <p className="text-sm text-muted-foreground">Loading user...</p>
         </section>
       </main>
     )
@@ -219,144 +219,187 @@ function PermissionDetailPage() {
 
   if (state.error) {
     return (
-      <main className="page-content">
-        <section className="panel">
-          <p className="error-text">{state.error}</p>
+      <main className="space-y-6">
+        <section className="surface-card p-6">
+          <p className="text-sm font-medium text-destructive">{state.error}</p>
         </section>
       </main>
     )
   }
 
+  const messageIsError = message.toLowerCase().includes('could not')
+
   return (
-    <main className="page-content">
+    <main className="space-y-6">
       <PageHeader
         eyebrow="Permission detail"
         title={user.username}
         description="Review profile, role, and effective permissions."
         actions={
-          <Link className="pill-link" to="/admin/users">
+          <Link
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60"
+            to="/admin/users"
+          >
             Back
           </Link>
         }
       />
 
-      <section className="summary-grid">
-        <div className="summary-card">
-          <span>Email</span>
-          <strong className="stat-value-small">{user.email || '-'}</strong>
-        </div>
-        <div className="summary-card">
-          <span>Company</span>
-          <strong className="stat-value-small">{user.company_name || '-'}</strong>
-        </div>
-        <div className="summary-card">
-          <span>Entity</span>
-          <strong className="stat-value-small">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Email</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{user.email || '-'}</p>
+        </article>
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Company</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{user.company_name || '-'}</p>
+        </article>
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Entity</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">
             {user.entity_name || '-'} ({user.entity_type || '-'})
-          </strong>
-        </div>
-        <div className="summary-card">
-          <span>Status</span>
-          <strong className="stat-value-small">{user.is_active ? 'Active' : 'Inactive'}</strong>
-        </div>
+          </p>
+        </article>
+        <article className="surface-card p-4">
+          <p className="text-xs text-muted-foreground">Status</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{user.is_active ? 'Active' : 'Inactive'}</p>
+        </article>
       </section>
 
-      <section className="detail-grid">
-        <section className="panel" style={{ gridColumn: '1 / -1' }}>
-          <p className="eyebrow">Profile</p>
-          <h2>User information</h2>
-          {!canEdit && <p className="muted-text">Read only: same-level users cannot be modified.</p>}
-          {message && (
-            <p className={message.toLowerCase().includes('could not') ? 'error-text' : 'muted-text'}>
-              {message}
-            </p>
-          )}
-          <form
-            className="stack-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              saveProfile()
-            }}
-          >
-            <input
-              value={profileForm.username}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, username: event.target.value }))
-              }
-              placeholder="Username"
-              disabled={!canEdit}
-              required
-            />
-            <input
-              value={profileForm.email}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, email: event.target.value }))
-              }
-              placeholder="Email"
-              disabled={!canEdit}
-            />
-            <input
-              value={profileForm.first_name}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, first_name: event.target.value }))
-              }
-              placeholder="First name"
-              disabled={!canEdit}
-            />
-            <input
-              value={profileForm.last_name}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, last_name: event.target.value }))
-              }
-              placeholder="Last name"
-              disabled={!canEdit}
-            />
-            <input
-              value={profileForm.job_title}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, job_title: event.target.value }))
-              }
-              placeholder="Job title"
-              disabled={!canEdit}
-            />
-            <input
-              value={profileForm.phone_number}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, phone_number: event.target.value }))
-              }
-              placeholder="Phone number"
-              disabled={!canEdit}
-            />
-            <input
-              type="password"
-              value={profileForm.password}
-              onChange={(event) =>
-                setProfileForm((current) => ({ ...current, password: event.target.value }))
-              }
-              placeholder="New password (optional)"
-              disabled={!canEdit}
-            />
-            <label className="switch-control" htmlFor="active-user-switch">
-              <span>Active user</span>
+      <section className="surface-card p-5">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Profile</p>
+        <h2 className="mt-1 text-lg font-semibold text-foreground">User Information</h2>
+        {!canEdit && <p className="mt-2 text-sm text-muted-foreground">Read only: same-level users cannot be modified.</p>}
+        {message && (
+          <p className={`mt-2 text-sm font-medium ${messageIsError ? 'text-destructive' : 'text-success'}`}>
+            {message}
+          </p>
+        )}
+
+        <form
+          className="mt-4 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            saveProfile()
+          }}
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="space-y-1.5">
+              <label htmlFor="username" className="text-sm font-medium text-foreground">Username</label>
+              <input
+                id="username"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.username}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, username: event.target.value }))
+                }
+                disabled={!canEdit}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="text-sm font-medium text-foreground">Email</label>
+              <input
+                id="email"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.email}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, email: event.target.value }))
+                }
+                disabled={!canEdit}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="phone_number" className="text-sm font-medium text-foreground">Phone Number</label>
+              <input
+                id="phone_number"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.phone_number}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, phone_number: event.target.value }))
+                }
+                disabled={!canEdit}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="first_name" className="text-sm font-medium text-foreground">First Name</label>
+              <input
+                id="first_name"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.first_name}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, first_name: event.target.value }))
+                }
+                disabled={!canEdit}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="last_name" className="text-sm font-medium text-foreground">Last Name</label>
+              <input
+                id="last_name"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.last_name}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, last_name: event.target.value }))
+                }
+                disabled={!canEdit}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="job_title" className="text-sm font-medium text-foreground">Job Title</label>
+              <input
+                id="job_title"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.job_title}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, job_title: event.target.value }))
+                }
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="password" className="text-sm font-medium text-foreground">New Password (Optional)</label>
+              <input
+                id="password"
+                type="password"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.password}
+                onChange={(event) =>
+                  setProfileForm((current) => ({ ...current, password: event.target.value }))
+                }
+                disabled={!canEdit}
+              />
+            </div>
+            <label htmlFor="active-user-switch" className="flex h-10 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 text-sm text-foreground">
               <input
                 id="active-user-switch"
                 type="checkbox"
-                className="switch-input"
+                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
                 checked={profileForm.is_active}
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, is_active: event.target.checked }))
                 }
                 disabled={!canEdit}
               />
-              <span className="switch-slider" aria-hidden="true" />
+              <span>Active User</span>
             </label>
+          </div>
 
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {canShowCompany && (
-              <div>
-                <label htmlFor="company_id">Company</label>
+              <div className="space-y-1.5">
+                <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
                 <select
                   id="company_id"
-                  className="app-select"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={profileForm.company_id}
                   onChange={(event) =>
                     setProfileForm((current) => ({
@@ -380,11 +423,11 @@ function PermissionDetailPage() {
             )}
 
             {canShowEntity && (
-              <div>
-                <label htmlFor="entity_id">Entity</label>
+              <div className="space-y-1.5">
+                <label htmlFor="entity_id" className="text-sm font-medium text-foreground">Entity</label>
                 <select
                   id="entity_id"
-                  className="app-select"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={profileForm.entity_id}
                   onChange={(event) =>
                     setProfileForm((current) => ({
@@ -407,11 +450,11 @@ function PermissionDetailPage() {
             )}
 
             {canShowTeamLeader && (
-              <div>
-                <label htmlFor="team_leader_id">Team leader</label>
+              <div className="space-y-1.5">
+                <label htmlFor="team_leader_id" className="text-sm font-medium text-foreground">Team Leader</label>
                 <select
                   id="team_leader_id"
-                  className="app-select"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={profileForm.team_leader_id}
                   onChange={(event) =>
                     setProfileForm((current) => ({ ...current, team_leader_id: event.target.value }))
@@ -427,73 +470,96 @@ function PermissionDetailPage() {
                 </select>
               </div>
             )}
+          </div>
 
-            <div>
-              <p className="eyebrow">Roles</p>
-              <h2 style={{ marginBottom: '0.75rem' }}>Assigned role</h2>
-              <div className="check-grid role-options-grid">
-                {roleOptions.map((role) => (
-                  <label key={role.key} className="role-radio-option" htmlFor={`role-${role.key}`}>
-                    <input
-                      id={`role-${role.key}`}
-                      type="radio"
-                      className="role-radio-input"
-                      name="role-selection"
-                      checked={selectedRole === role.key}
-                      onChange={() => setSelectedRole(role.key)}
-                      disabled={!canEdit}
-                    />
-                    <span>
-                      {role.name} <small>(level {role.level})</small>
-                    </span>
-                  </label>
-                ))}
-              </div>
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Roles</p>
+            <h3 className="text-sm font-semibold text-foreground">Assigned Role</h3>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {roleOptions.map((role) => (
+                <label
+                  key={role.key}
+                  className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-foreground"
+                  htmlFor={`role-${role.key}`}
+                >
+                  <input
+                    id={`role-${role.key}`}
+                    type="radio"
+                    className="h-4 w-4 border-border text-primary focus:ring-ring"
+                    name="role-selection"
+                    checked={selectedRole === role.key}
+                    onChange={() => setSelectedRole(role.key)}
+                    disabled={!canEdit}
+                  />
+                  <span>
+                    {role.name} <small className="text-muted-foreground">(level {role.level})</small>
+                  </span>
+                </label>
+              ))}
             </div>
+          </div>
 
-            <button type="submit" disabled={!canEdit || isSaving}>
-              {isSaving ? 'Saving...' : 'Save user'}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              disabled={!canEdit || isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save User'}
             </button>
-            {message && (
-              <p className={message.toLowerCase().includes('could not') ? 'error-text' : 'muted-text'}>
-                {message}
-              </p>
-            )}
-          </form>
-        </section>
+            <Link
+              to="/admin/users"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60"
+            >
+              Cancel
+            </Link>
+          </div>
+
+          {message && (
+            <p className={`text-sm font-medium ${messageIsError ? 'text-destructive' : 'text-success'}`}>
+              {message}
+            </p>
+          )}
+        </form>
       </section>
 
-      <section className="panel">
-        <div className="workspace-section-title">
+      <section className="surface-card p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="eyebrow">Permissions</p>
-            <h2>Permission matrix</h2>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Permissions</p>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">Permission Matrix</h2>
           </div>
-          <span className="muted-text">{user.permissions.length} permission(s)</span>
+          <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
         </div>
-        <div className="permission-list">
+        <div className="grid gap-2">
           {user.permissions.map((permission) => (
-            <article key={permission.key} className="permission-card">
+            <article
+              key={permission.key}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-3"
+            >
               <div>
-                <strong>{permission.name}</strong>
-                <div className="subline">{permission.key}</div>
-                <div className="tag-row">
-                  <span className={`status-tag ${permission.effective ? 'active' : 'danger'}`}>
-                    {permission.effective ? 'Allowed' : 'Denied'}
-                  </span>
-                </div>
+                <p className="text-sm font-semibold text-foreground">{permission.name}</p>
+                <p className="text-xs text-muted-foreground">{permission.key}</p>
+                <span
+                  className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                    permission.effective
+                      ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
+                      : 'border-red-200 bg-red-100 text-red-700'
+                  }`}
+                >
+                  {permission.effective ? 'Allowed' : 'Denied'}
+                </span>
               </div>
-              <label className="switch-control" htmlFor={`permission-${permission.key}`}>
-                <span>{permission.effective ? 'ON' : 'OFF'}</span>
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-foreground" htmlFor={`permission-${permission.key}`}>
                 <input
                   id={`permission-${permission.key}`}
                   type="checkbox"
-                  className="switch-input"
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
                   checked={permission.effective}
                   onChange={(event) => updatePermission(permission.key, event.target.checked)}
                   disabled={!canEdit}
                 />
-                <span className="switch-slider" aria-hidden="true" />
+                <span>{permission.effective ? 'ON' : 'OFF'}</span>
               </label>
             </article>
           ))}
