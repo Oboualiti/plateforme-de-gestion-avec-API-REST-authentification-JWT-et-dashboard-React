@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-
 import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { Button } from '../components/ui/button'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
+import { Input } from '../components/ui/input'
+import { Badge } from '../components/ui/badge'
 
 function PermissionManagementPage() {
   const navigate = useNavigate()
@@ -30,29 +33,18 @@ function PermissionManagementPage() {
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState('')
   const importInputRef = useRef(null)
+  
   const isSuccessMessage = actionMessage && !actionMessage.toLowerCase().includes('could not')
   const roleKeys = user?.role_keys || []
   const isSenior = roleKeys.includes('senior')
   const isSuperAdmin = roleKeys.includes('super_admin')
   const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
-  const pageTitle = isSenior
-    ? 'Company users'
-    : isManager
-      ? 'Entity users'
-      : isTeamLeader
-        ? 'My team users'
-        : 'Manageable users'
-  const pageSubtitle = isSenior
-    ? 'Add, edit, and remove users inside your company.'
-    : isManager
-      ? 'Manage users assigned to your entity.'
-      : isTeamLeader
-        ? 'Manage your own team members.'
-        : 'Manage users based on your access scope.'
-  const showEntityTypeFilter = useMemo(() => {
-    return roleKeys.includes('super_admin') || roleKeys.includes('senior')
-  }, [roleKeys])
+  
+  const pageTitle = isSenior ? 'Company users' : isManager ? 'Entity users' : isTeamLeader ? 'My team users' : 'Manageable users'
+  const pageSubtitle = isSenior ? 'Add, edit, and remove users inside your company.' : isManager ? 'Manage users assigned to your entity.' : isTeamLeader ? 'Manage your own team members.' : 'Manage users based on your access scope.'
+
+  const showEntityTypeFilter = isSuperAdmin || isSenior
   const showCompanyFilter = isSuperAdmin
   const showEntityFilter = isSenior
 
@@ -72,8 +64,7 @@ function PermissionManagementPage() {
             error: '',
             users: results,
             scope: usersResponse.data.scope || '',
-            currentEntityName:
-              usersResponse.data.current_entity_name || results[0]?.entity_name || '-',
+            currentEntityName: usersResponse.data.current_entity_name || results[0]?.entity_name || '-',
           })
           setDirectoryOptions({
             companies: optionsPayload.company_options || [],
@@ -94,9 +85,7 @@ function PermissionManagementPage() {
       }
     }
     loadUsers()
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
@@ -119,10 +108,7 @@ function PermissionManagementPage() {
   }, [state.users])
 
   const companyOptions = useMemo(() => {
-    const names = directoryOptions.companies
-      .map((item) => item.name)
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b))
+    const names = directoryOptions.companies.map((item) => item.name).filter(Boolean).sort((a, b) => a.localeCompare(b))
     return ['all', ...names]
   }, [directoryOptions.companies])
 
@@ -131,100 +117,47 @@ function PermissionManagementPage() {
       if (companyFilter === 'all') return true
       return item.company_name === companyFilter
     })
-    const names = filteredEntities
-      .map((item) => item.name)
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b))
+    const names = filteredEntities.map((item) => item.name).filter(Boolean).sort((a, b) => a.localeCompare(b))
     return ['all', ...names]
   }, [companyFilter, directoryOptions.entities])
-
-  useEffect(() => {
-    if (companyFilter === 'all') return
-    if (entityFilter === 'all') return
-    const hasMatch = entityOptions.includes(entityFilter)
-    if (!hasMatch) {
-      setEntityFilter('all')
-    }
-  }, [companyFilter, entityFilter, entityOptions])
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
     return state.users.filter((item) => {
       const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim().toLowerCase()
       const username = (item.username || '').toLowerCase()
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        fullName.includes(normalizedSearch) ||
-        username.includes(normalizedSearch)
-
-      const matchesRole =
-        roleFilter === 'all' || item.roles.some((role) => role.key === roleFilter)
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'active' ? item.is_active : !item.is_active)
-      const matchesEntityType =
-        !showEntityTypeFilter || entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
-      const matchesCompany =
-        !showCompanyFilter || companyFilter === 'all' || item.company_name === companyFilter
-      const matchesEntity =
-        !showEntityFilter || entityFilter === 'all' || item.entity_name === entityFilter
-
-      return (
-        matchesSearch &&
-        matchesRole &&
-        matchesStatus &&
-        matchesEntityType &&
-        matchesCompany &&
-        matchesEntity
-      )
+      const matchesSearch = normalizedSearch.length === 0 || fullName.includes(normalizedSearch) || username.includes(normalizedSearch)
+      const matchesRole = roleFilter === 'all' || item.roles.some((role) => role.key === roleFilter)
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? item.is_active : !item.is_active)
+      const matchesEntityType = !showEntityTypeFilter || entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
+      const matchesCompany = !showCompanyFilter || companyFilter === 'all' || item.company_name === companyFilter
+      const matchesEntity = !showEntityFilter || entityFilter === 'all' || item.entity_name === entityFilter
+      return matchesSearch && matchesRole && matchesStatus && matchesEntityType && matchesCompany && matchesEntity
     })
-  }, [
-    searchText,
-    roleFilter,
-    statusFilter,
-    entityTypeFilter,
-    companyFilter,
-    entityFilter,
-    showEntityTypeFilter,
-    showCompanyFilter,
-    showEntityFilter,
-    state.users,
-  ])
+  }, [searchText, roleFilter, statusFilter, entityTypeFilter, companyFilter, entityFilter, showEntityTypeFilter, showCompanyFilter, showEntityFilter, state.users])
 
   async function deleteUser(event, userId, username) {
     event.stopPropagation()
     const confirmed = window.confirm(`Delete user "${username}"?`)
-    if (!confirmed) {
-      return
-    }
+    if (!confirmed) return
     try {
       await api.delete(`/admin/users/manageable/${userId}/`)
-      setState((current) => ({
-        ...current,
-        users: current.users.filter((item) => item.id !== userId),
-      }))
+      setState((current) => ({ ...current, users: current.users.filter((item) => item.id !== userId) }))
       setActionMessage('User deleted.')
     } catch (error) {
       setActionMessage(error.response?.data?.detail || 'Could not delete user.')
     }
   }
 
-  function openDetailPage(event, userId) {
-    event.stopPropagation()
-    navigate(`/admin/users/${userId}`)
-  }
-
   async function exportUsers(format) {
     setExporting(format)
     setActionMessage('')
     try {
-      const response = await api.get(`/admin/users/manageable/export/?file_format=${format}`, {
-        responseType: 'blob',
-      })
+      const response = await api.get(`/admin/users/manageable/export/?file_format=${format}`, { responseType: 'blob' })
       const url = window.URL.createObjectURL(response.data)
       const link = document.createElement('a')
       link.href = url
-      link.download = format === 'xlsx' ? 'users_export.xlsx' : 'users_export.csv'
+      link.download = `users_export_${new Date().toISOString().split('T')[0]}.${format}`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -245,9 +178,7 @@ function PermissionManagementPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const response = await api.post('/admin/users/manageable/import/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const response = await api.post('/admin/users/manageable/import/', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
       const data = response.data || {}
       if (data.created_users?.length) {
         setState((current) => {
@@ -256,20 +187,9 @@ function PermissionManagementPage() {
           return { ...current, users: [...additions, ...current.users] }
         })
       }
-      const summary = `Import done. Created ${data.created_count || 0} user(s). Errors: ${data.error_count || 0}.`
-      if (data.error_count) {
-        const firstError = data.errors?.[0]
-        const errorKey = firstError ? Object.keys(firstError.errors || {})[0] : ''
-        const errorText = firstError && errorKey
-          ? `${errorKey}: ${Array.isArray(firstError.errors[errorKey]) ? firstError.errors[errorKey][0] : firstError.errors[errorKey]}`
-          : 'Check import rows.'
-        setActionMessage(`${summary} First error at line ${firstError?.line || '-'} (${errorText})`)
-      } else {
-        setActionMessage(summary)
-      }
+      setActionMessage(`Import done. Created ${data.created_count || 0} user(s). Errors: ${data.error_count || 0}.`)
     } catch (error) {
-      const detail = error.response?.data?.detail
-      setActionMessage(typeof detail === 'string' ? detail : 'Could not import users.')
+      setActionMessage('Could not import users.')
     } finally {
       setImporting(false)
       event.target.value = ''
@@ -277,154 +197,72 @@ function PermissionManagementPage() {
   }
 
   return (
-    <main className="page-content">
+    <main className="space-y-6">
       <PageHeader
         eyebrow="Permission management"
         title={pageTitle}
         description={pageSubtitle}
         actions={
-          !state.loading && !state.error ? (
-            <>
-              <Link className="pill-link" to="/admin/users/create">
-                Add user
-              </Link>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => exportUsers('csv')}
-                disabled={Boolean(exporting)}
-              >
-                {exporting === 'csv' ? 'Exporting CSV...' : 'Export CSV'}
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => exportUsers('xlsx')}
-                disabled={Boolean(exporting)}
-              >
-                {exporting === 'xlsx' ? 'Exporting Excel...' : 'Export Excel'}
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => importInputRef.current?.click()}
-                disabled={importing}
-              >
-                {importing ? 'Importing...' : 'Import file'}
-              </button>
-            </>
-          ) : null
+          <div className="flex gap-2">
+            <Button asChild>
+              <Link to="/admin/users/create">Add user</Link>
+            </Button>
+            <Button variant="outline" onClick={() => exportUsers('csv')} disabled={Boolean(exporting)}>
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={() => importInputRef.current?.click()} disabled={importing}>
+              Import
+            </Button>
+          </div>
         }
         meta={
-          !state.loading && !state.error ? (
-            <>
-              <span className="muted-text">Scope: {state.scope || '-'}</span>
-              <span className="muted-text">Entity: {state.currentEntityName || '-'}</span>
-            </>
-          ) : null
+          <div className="flex items-center gap-4 text-xs">
+            <span className="text-muted-foreground uppercase tracking-widest font-bold">Scope:</span>
+            <span>{state.scope || '-'}</span>
+            <span className="text-muted-foreground uppercase tracking-widest font-bold ml-2">Entity:</span>
+            <span>{state.currentEntityName || '-'}</span>
+          </div>
         }
       />
 
-      <input
-        ref={importInputRef}
-        id="import-users-file"
-        type="file"
-        accept=".csv,.xlsx"
-        onChange={importUsers}
-        disabled={importing}
-        style={{ display: 'none' }}
-      />
-      {!state.loading && !state.error && actionMessage && (
-        <p className={isSuccessMessage ? 'success-text' : 'error-text'}>{actionMessage}</p>
-      )}
-      {state.loading && <p className="muted-text">Loading users...</p>}
-      {state.error && <p className="error-text">{state.error}</p>}
+      <input ref={importInputRef} type="file" accept=".csv,.xlsx" onChange={importUsers} className="hidden" />
 
-      {!state.loading && !state.error && (
-        <section className="table-wrap">
-          <div className="card-toolbar">
-            <div>
-              <p className="eyebrow">Filters</p>
-              <h2>User directory</h2>
-            </div>
-            <span className="muted-text">{filteredUsers.length} result(s)</span>
-          </div>
-          <div className="filter-bar table-caption">
-            <input
+      {actionMessage && (
+        <Card className={isSuccessMessage ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"}>
+          <CardContent className="py-3 text-sm font-medium flex items-center gap-2">
+            <span className={isSuccessMessage ? "text-success" : "text-destructive"}>
+              {actionMessage}
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="surface-card">
+        <div className="filter-bar">
+          <div className="relative flex-1 min-w-[240px]">
+            <Input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search by name or username"
+              placeholder="Search by name or username..."
+              className="h-9"
             />
-            <select
-              className="app-select"
-              value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value)}
-            >
-              {roleOptions.map((role) => (
-                <option key={role.key} value={role.key}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="app-select"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="all">All status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-            {showEntityTypeFilter ? (
-              <>
-                <select
-                  className="app-select"
-                  value={entityTypeFilter}
-                  onChange={(event) => setEntityTypeFilter(event.target.value)}
-                >
-                  <option value="all">All entity types</option>
-                  <option value="PROD">Prod</option>
-                  <option value="SUPPORT">Support</option>
-                  <option value="TDEV">T.Dev</option>
-                </select>
-                {showCompanyFilter && (
-                  <select
-                    className="app-select"
-                    value={companyFilter}
-                    onChange={(event) => {
-                      setCompanyFilter(event.target.value)
-                      setEntityFilter('all')
-                    }}
-                  >
-                    <option value="all">All companies</option>
-                    {companyOptions
-                      .filter((item) => item !== 'all')
-                      .map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                  </select>
-                )}
-                {showEntityFilter && (
-                  <select
-                    className="app-select"
-                    value={entityFilter}
-                    onChange={(event) => setEntityFilter(event.target.value)}
-                  >
-                    <option value="all">All entities</option>
-                    {entityOptions
-                      .filter((item) => item !== 'all')
-                      .map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                  </select>
-                )}
-              </>
-            ) : null}
           </div>
+          <select className="app-select" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+            {roleOptions.map((role) => <option key={role.key} value={role.key}>{role.name}</option>)}
+          </select>
+          <select className="app-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">All status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          {showEntityTypeFilter && (
+            <select className="app-select" value={entityTypeFilter} onChange={(event) => setEntityTypeFilter(event.target.value)}>
+              <option value="all">All types</option>
+              {['PROD', 'SUPPORT', 'TDEV'].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="overflow-x-auto">
           <table className="data-table">
             <thead>
               <tr>
@@ -432,47 +270,56 @@ function PermissionManagementPage() {
                 <th>Roles</th>
                 <th>Status</th>
                 <th>Scope</th>
-                <th>Actions</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((item) => (
-                <tr
-                  key={item.id}
-                  className={item.can_edit ? 'clickable-row' : 'readonly-row'}
-                  onClick={() => navigate(`/admin/users/${item.id}`)}
-                >
-                  <td>{item.username}</td>
-                  <td>{item.roles.map((role) => role.name).join(', ') || 'No roles'}</td>
-                  <td>{item.is_active ? 'Active' : 'Inactive'}</td>
-                  <td>
-                    {item.company_name || '-'} / {item.entity_name || '-'} ({item.entity_type || '-'})
+                <tr key={item.id} className="cursor-pointer">
+                  <td className="font-medium" onClick={() => navigate(`/admin/users/${item.id}`)}>{item.username}</td>
+                  <td onClick={() => navigate(`/admin/users/${item.id}`)}>
+                    <div className="flex flex-wrap gap-1">
+                      {item.roles.length > 0 ? item.roles.map(r => (
+                        <Badge key={r.key} variant="secondary" className="px-1.5 py-0 text-[10px] uppercase font-bold">
+                          {r.name}
+                        </Badge>
+                      )) : <span className="text-xs text-muted-foreground italic">No roles</span>}
+                    </div>
                   </td>
-                  <td className="table-actions">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={(event) => openDetailPage(event, item.id)}
-                      disabled={!item.can_edit}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={(event) => deleteUser(event, item.id, item.username)}
-                      disabled={!item.can_edit}
-                    >
-                      Delete
-                    </button>
+                  <td onClick={() => navigate(`/admin/users/${item.id}`)}>
+                    <Badge variant={item.is_active ? "success" : "secondary"}>
+                      {item.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </td>
+                  <td onClick={() => navigate(`/admin/users/${item.id}`)}>
+                    <div className="text-xs">
+                      <div className="font-medium">{item.company_name || '-'}</div>
+                      <div className="text-muted-foreground">{item.entity_name || '-'} ({item.entity_type || '-'})</div>
+                    </div>
+                  </td>
+                  <td className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/admin/users/${item.id}`) }} disabled={!item.can_edit}>
+                        Edit
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => deleteUser(e, item.id, item.username)} disabled={!item.can_edit}>
+                        Delete
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!filteredUsers.length && <p className="muted-text">No users match the filters.</p>}
-        </section>
-      )}
+          {!filteredUsers.length && !state.loading && (
+            <div className="py-20 text-center space-y-2">
+              <p className="text-sm font-medium">No results found</p>
+              <p className="text-xs text-muted-foreground">Try adjusting your filters or search terms.</p>
+            </div>
+          )}
+          {state.loading && <div className="py-20 text-center text-sm muted-text">Loading directory...</div>}
+        </div>
+      </Card>
     </main>
   )
 }

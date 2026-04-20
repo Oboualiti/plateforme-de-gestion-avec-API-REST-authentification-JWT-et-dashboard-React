@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-
 import { useAuth } from '../context/AuthContext'
+import { Skeleton } from '../components/ui/skeleton'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
 
 function ProtectedRoute({ allowedRoles, requireRequestCreate = false, redirectTo = '/requests' }) {
   const { isAuthenticated, loading, user } = useAuth()
@@ -8,11 +9,11 @@ function ProtectedRoute({ allowedRoles, requireRequestCreate = false, redirectTo
 
   if (loading) {
     return (
-      <main className="page-shell">
-        <section className="panel state-card">
-          <h1>Loading</h1>
-          <p className="subtitle">Checking your access...</p>
-        </section>
+      <main className="min-h-svh flex items-center justify-center p-8">
+        <div className="w-full max-w-sm space-y-4">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-24 w-full" />
+        </div>
       </main>
     )
   }
@@ -26,11 +27,18 @@ function ProtectedRoute({ allowedRoles, requireRequestCreate = false, redirectTo
     const allowed = allowedRoles.some((role) => roleKeys.includes(role))
     if (!allowed) {
       return (
-        <main className="page-shell">
-          <section className="panel state-card">
-            <h1>Access denied</h1>
-            <p className="subtitle">You do not have access to this page.</p>
-          </section>
+        <main className="min-h-svh flex items-center justify-center p-8 text-center">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle className="text-destructive font-bold">Access denied</CardTitle>
+              <CardDescription>You do not have access to this operational workspace.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Please contact your supervisor or platform administrator if you believe this is an error.
+              </p>
+            </CardContent>
+          </Card>
         </main>
       )
     }

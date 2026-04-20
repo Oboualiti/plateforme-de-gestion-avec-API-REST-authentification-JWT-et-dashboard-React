@@ -41,57 +41,74 @@ function LoginPage() {
   }
 
   return (
-    <main className="page-shell login-shell">
-      <section className="login-stack">
-        <div className="login-brand">
-          <div className="login-logo-mark" aria-hidden="true">
-            <svg fill="none" height="44" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 64 24" width="118">
-              <circle cx="10" cy="8" r="4.5" />
-              <path d="M10 12.5c3 0 5.5 2.4 5.5 5.5" />
-              <path d="M15 10.5c9 0 18 .1 31 .1" />
-              <path d="m40 8 12 2-12 2" />
+    <main className="min-h-svh flex items-center justify-center bg-background p-4 sm:p-8">
+      <section className="flex w-full max-w-4xl flex-col gap-12 lg:flex-row lg:items-center">
+        <div className="flex-1 space-y-6">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
+            <svg fill="none" height="24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="24">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2v20M2 12h20" />
             </svg>
           </div>
-          <div className="login-wordmark">W-Service</div>
-          <h1>Enterprise request operations</h1>
-          <p className="login-subtitle">
-            Manage requests, approvals, assignments, and team activity from one role-based workspace.
-          </p>
-          <div className="login-meta">
-            <span className="status-tag info">Secure access</span>
-            <span className="status-tag active">Role-based</span>
+          <div>
+            <div className="text-sm font-semibold tracking-wider text-primary uppercase">W-Service</div>
+            <h1 className="mt-2 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+              Enterprise request operations
+            </h1>
+            <p className="mt-4 text-lg text-muted-foreground">
+              Manage requests, approvals, assignments, and team activity from one role-based workspace.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">Secure access</span>
+            <span className="rounded-full bg-success/10 px-3 py-1 text-xs font-semibold text-success">Role-based</span>
           </div>
         </div>
 
-        <form className="panel form-panel login-panel login-panel-centered" onSubmit={handleSubmit}>
-          <div className="page-intro">
-            <p className="eyebrow">Authentication</p>
-            <h2>Sign in to continue</h2>
-            <p>Use your workspace credentials to access the platform.</p>
+        <form className="w-full max-w-md space-y-6 rounded-2xl border border-border bg-card p-8 shadow-xl" onSubmit={handleSubmit}>
+          <div className="space-y-2">
+            <p className="text-xs font-bold tracking-widest text-muted-foreground uppercase">Authentication</p>
+            <h2 className="text-2xl font-semibold text-foreground">Sign in to continue</h2>
+            <p className="text-sm text-muted-foreground">Use your workspace credentials to access the platform.</p>
           </div>
-          <label htmlFor="username">Username</label>
-          <input
-            id="username"
-            placeholder="name@w-service.com"
-            value={form.username}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, username: event.target.value }))
-            }
-          />
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, password: event.target.value }))
-            }
-          />
-          <button type="submit" disabled={loading}>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="username" className="text-sm font-medium text-foreground">Username</label>
+              <input
+                id="username"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="name@w-service.com"
+                value={form.username}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, username: event.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-foreground">Password</label>
+              <input
+                id="password"
+                type="password"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="Password"
+                value={form.password}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, password: event.target.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          >
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
-          {error && <p className="error-text">{error}</p>}
+          
+          {error && <p className="text-center text-sm font-medium text-destructive">{error}</p>}
         </form>
       </section>
     </main>

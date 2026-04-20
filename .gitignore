@@ -25,5 +25,5 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-
+./emd-flow-main/*
 frontend/vite.config.js
