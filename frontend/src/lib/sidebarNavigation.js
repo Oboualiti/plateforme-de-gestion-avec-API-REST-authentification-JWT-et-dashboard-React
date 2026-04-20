@@ -10,10 +10,12 @@ const enterpriseSections = [
   createSection('organization', 'Organization', 'org', [
     createItem('Companies', '/admin/companies'),
     createItem('Entities', '/admin/entities'),
+    createItem('Hierarchy', '/admin/hierarchy'),
   ]),
   createSection('access-control', 'Access Control', 'lock', [
     createItem('Users', '/admin/users', ['/admin/users/create', '/admin/users/', '/admin/permissions', '/admin/permissions/']),
-    createItem('Roles', '/admin/roles'),
+    createItem('Permissions', '/admin/permissions'),
+    createItem('Delegation', '/admin/delegation'),
   ]),
   createSection('operations', 'Operations', 'ops', [
     createItem('Requests', '/requests'),

@@ -7,6 +7,11 @@ import Dashboard from '../pages/Dashboard'
 import CreateRequestPage from '../pages/CreateRequestPage'
 import CreateManagedUserPage from '../pages/CreateManagedUserPage'
 import AdminControlCenterPage from '../pages/AdminControlCenterPage'
+import HierarchyPage from '../pages/HierarchyPage'
+import PermissionsPage from '../pages/PermissionsPage'
+import UsersPage from '../pages/UsersPage'
+import DelegationPage from '../pages/DelegationPage'
+import ReportsPage from '../pages/ReportsPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
 import NotificationsPage from '../pages/NotificationsPage'
@@ -141,19 +146,21 @@ function AppRoutes() {
           <ProtectedRoute allowedRoles={['super_admin', 'senior', 'manager', 'team_leader']} />
         }
       >
-        <Route element={<MainLayout />}>
+<Route element={<MainLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/hierarchy" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/hierarchy" element={<HierarchyPage />} />
           <Route path="/admin/status-tracking" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/requests" replace />} />
+          <Route path="/admin/audit-logs" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/audit-logs/:category" element={<AdminControlCenterPage />} />
-          <Route path="/admin/:section" element={<AdminControlCenterPage />} />
           <Route path="/admin/users/create" element={<CreateManagedUserPage />} />
-          <Route path="/admin/users" element={<PermissionManagementPage />} />
+          <Route path="/admin/users" element={<UsersPage />} />
           <Route path="/admin/users/:userId" element={<PermissionDetailPage />} />
-          <Route path="/admin/permissions" element={<PermissionManagementPage />} />
+          <Route path="/admin/permissions" element={<PermissionsPage />} />
           <Route path="/admin/permissions/:userId" element={<PermissionDetailPage />} />
+          <Route path="/admin/delegation" element={<DelegationPage />} />
+          <Route path="/admin/reports" element={<ReportsPage />} />
+          <Route path="/admin/:section" element={<AdminControlCenterPage />} />
         </Route>
       </Route>
 

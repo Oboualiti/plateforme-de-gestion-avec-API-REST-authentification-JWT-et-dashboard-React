@@ -34,6 +34,7 @@ class CompanyWriteSerializer(serializers.ModelSerializer):
 
 class EntityAdminSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source="company.name", read_only=True)
+    company_id = serializers.IntegerField(source="company.id", read_only=True)
     user_count = serializers.IntegerField(read_only=True)
     manager_name = serializers.CharField(read_only=True)
 
@@ -46,6 +47,7 @@ class EntityAdminSerializer(serializers.ModelSerializer):
             "entity_type",
             "is_active",
             "company",
+            "company_id",
             "company_name",
             "user_count",
             "manager_name",

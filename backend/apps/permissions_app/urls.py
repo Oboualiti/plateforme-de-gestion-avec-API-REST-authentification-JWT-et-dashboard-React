@@ -28,6 +28,8 @@ from .views import (
     ManageableUserImportView,
     ManageableUserListView,
     ManageUserDetailView,
+    UserAccessDelegationDetailView,
+    UserAccessDelegationListCreateView,
     ManageUserPermissionOverrideView,
 )
 
@@ -79,5 +81,15 @@ urlpatterns = [
         "users/<int:user_id>/permissions/",
         ManageUserPermissionOverrideView.as_view(),
         name="manage-user-permissions",
+    ),
+    path(
+        "users/delegations/",
+        UserAccessDelegationListCreateView.as_view(),
+        name="user-access-delegations",
+    ),
+    path(
+        "users/delegations/<int:delegation_id>/",
+        UserAccessDelegationDetailView.as_view(),
+        name="user-access-delegation-detail",
     ),
 ]

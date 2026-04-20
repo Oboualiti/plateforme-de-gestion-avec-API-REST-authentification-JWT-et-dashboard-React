@@ -84,3 +84,40 @@ class UserPermissionOverride(models.Model):
     def __str__(self):
         mode = "allow" if self.is_allowed else "deny"
         return f"{self.user}: {mode} {self.permission.key}"
+
+
+class UserAccessDelegation(models.Model):
+    delegator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="delegations_given",
+    )
+    delegate = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="delegations_received",
+    )
+    permissions = models.ManyToManyField(
+        AppPermission,
+        related_name="user_access_delegations",
+        blank=True,
+    )
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.CharField(max_length=255, blank=True)
+    is_revoked = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="delegations_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.delegator} -> {self.delegate} ({self.start_date} to {self.end_date})"

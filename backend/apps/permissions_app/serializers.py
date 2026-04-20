@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
+from apps.permissions_app.models import AppPermission, UserAccessDelegation, UserPermissionOverride, UserRole
 from apps.companies.models import Company
 from apps.notifications.models import UserNotification
 from apps.notifications.services import create_notification
@@ -10,9 +10,12 @@ from apps.entities.models import Entity
 
 from .services import (
     ROLE_HIERARCHY,
+    can_manage_target_user,
+    get_delegatable_permission_keys,
     get_effective_permission_keys,
     get_primary_role_key,
     get_permission_matrix_for_user,
+    get_user_max_role_level,
 )
 
 
@@ -26,10 +29,13 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
     max_role_level = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    company_id = serializers.IntegerField(source="company.id", read_only=True)
     company_name = serializers.CharField(source="company.name", read_only=True)
+    entity_id = serializers.IntegerField(source="entity.id", read_only=True)
     entity_name = serializers.CharField(source="entity.name", read_only=True)
     entity_type = serializers.CharField(source="entity.entity_type", read_only=True)
     entity_label = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -40,11 +46,14 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "is_active",
+            "company_id",
             "company_name",
+            "entity_id",
             "entity_name",
             "entity_type",
             "entity_label",
             "roles",
+            "role",
             "max_role_level",
             "can_edit",
         ]
@@ -66,6 +75,12 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
     def get_can_edit(self, obj):
         actor_level = self.context.get("actor_level", 0)
         return self.get_max_role_level(obj) < actor_level
+
+    def get_role(self, obj):
+        roles = self.get_roles(obj)
+        if not roles:
+            return "user"
+        return max(roles, key=lambda r: r.get("level", 0)).get("key", "user")
 
     def get_entity_label(self, obj):
         if not obj.entity:
@@ -299,6 +314,138 @@ class UserPermissionOverrideSerializer(serializers.Serializer):
             },
         )
         return override
+
+
+class UserAccessDelegationSerializer(serializers.ModelSerializer):
+    delegator_name = serializers.SerializerMethodField()
+    delegate_name = serializers.SerializerMethodField()
+    permission_keys = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserAccessDelegation
+        fields = [
+            "id",
+            "delegator",
+            "delegate",
+            "delegator_name",
+            "delegate_name",
+            "start_date",
+            "end_date",
+            "reason",
+            "is_revoked",
+            "is_active",
+            "status",
+            "permission_keys",
+            "created_at",
+        ]
+
+    def get_delegator_name(self, obj):
+        return obj.delegator.get_full_name() or obj.delegator.username
+
+    def get_delegate_name(self, obj):
+        return obj.delegate.get_full_name() or obj.delegate.username
+
+    def get_permission_keys(self, obj):
+        return sorted(obj.permissions.values_list("key", flat=True))
+
+    def get_is_active(self, obj):
+        from django.utils import timezone
+
+        today = timezone.now().date()
+        return (not obj.is_revoked) and obj.start_date <= today <= obj.end_date
+
+    def get_status(self, obj):
+        from django.utils import timezone
+
+        today = timezone.now().date()
+        if obj.is_revoked:
+            return "revoked"
+        if today < obj.start_date:
+            return "scheduled"
+        if today > obj.end_date:
+            return "ended"
+        return "active"
+
+
+class UserAccessDelegationWriteSerializer(serializers.Serializer):
+    delegator_user_id = serializers.IntegerField()
+    delegate_user_id = serializers.IntegerField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    permission_keys = serializers.ListField(child=serializers.CharField(), allow_empty=False)
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        actor = request.user
+
+        if attrs["start_date"] > attrs["end_date"]:
+            raise serializers.ValidationError({"end_date": "End date must be on or after start date."})
+
+        delegator = User.objects.filter(id=attrs["delegator_user_id"], is_active=True).first()
+        delegate = User.objects.filter(id=attrs["delegate_user_id"], is_active=True).first()
+        if delegator is None:
+            raise serializers.ValidationError({"delegator_user_id": "Delegator user not found."})
+        if delegate is None:
+            raise serializers.ValidationError({"delegate_user_id": "Delegate user not found."})
+        if delegator.id == delegate.id:
+            raise serializers.ValidationError({"delegate_user_id": "Delegate must be a different user."})
+
+        actor_can_manage_delegator = actor.id == delegator.id or can_manage_target_user(actor, delegator)
+        actor_can_manage_delegate = can_manage_target_user(actor, delegate)
+        if not actor_can_manage_delegator:
+            raise serializers.ValidationError({"delegator_user_id": "You cannot manage this delegator."})
+        if not actor_can_manage_delegate:
+            raise serializers.ValidationError({"delegate_user_id": "You cannot manage this delegate."})
+
+        if delegator.company_id != delegate.company_id:
+            raise serializers.ValidationError("Delegator and delegate must belong to the same company.")
+
+        delegator_level = get_user_max_role_level(delegator)
+        delegate_level = get_user_max_role_level(delegate)
+        if delegate_level > delegator_level:
+            raise serializers.ValidationError("Delegate role level cannot be higher than delegator role level.")
+
+        known_keys = set(AppPermission.objects.values_list("key", flat=True))
+        requested_keys = list(dict.fromkeys(attrs["permission_keys"]))
+        unknown_keys = sorted(set(requested_keys) - known_keys)
+        if unknown_keys:
+            raise serializers.ValidationError({"permission_keys": f"Unknown keys: {', '.join(unknown_keys)}"})
+
+        delegator_delegatable = set(get_delegatable_permission_keys(delegator))
+        disallowed = sorted(set(requested_keys) - delegator_delegatable)
+        if disallowed:
+            raise serializers.ValidationError(
+                {"permission_keys": f"Delegator cannot delegate: {', '.join(disallowed)}"}
+            )
+
+        delegator_effective = set(get_effective_permission_keys(delegator))
+        not_owned = sorted(set(requested_keys) - delegator_effective)
+        if not_owned:
+            raise serializers.ValidationError(
+                {"permission_keys": f"Delegator does not currently have: {', '.join(not_owned)}"}
+            )
+
+        attrs["delegator"] = delegator
+        attrs["delegate"] = delegate
+        attrs["permission_keys"] = requested_keys
+        return attrs
+
+    def create(self):
+        data = self.validated_data
+        delegation = UserAccessDelegation.objects.create(
+            delegator=data["delegator"],
+            delegate=data["delegate"],
+            start_date=data["start_date"],
+            end_date=data["end_date"],
+            reason=data.get("reason", ""),
+            created_by=self.context["request"].user,
+        )
+        permissions = list(AppPermission.objects.filter(key__in=data["permission_keys"]))
+        delegation.permissions.set(permissions)
+        return delegation
 
 
 class ManagedUserCreateSerializer(serializers.Serializer):

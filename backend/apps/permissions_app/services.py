@@ -1,9 +1,12 @@
+from django.utils import timezone
+
 from django.db.models import Q
 
 from apps.permissions_app.models import (
     AppPermission,
     PermissionDelegation,
     RolePermission,
+    UserAccessDelegation,
     UserPermissionOverride,
 )
 
@@ -53,13 +56,23 @@ def get_inherited_permission_keys(user):
 
 def get_effective_permission_keys(user):
     inherited = get_inherited_permission_keys(user)
+    today = timezone.now().date()
+    delegated = set(
+        UserAccessDelegation.objects.filter(
+            delegate=user,
+            is_revoked=False,
+            start_date__lte=today,
+            end_date__gte=today,
+            permissions__isnull=False,
+        ).values_list("permissions__key", flat=True)
+    )
     overrides = {
         item["permission__key"]: item["is_allowed"]
         for item in UserPermissionOverride.objects.filter(user=user).values(
             "permission__key", "is_allowed"
         )
     }
-    allowed = inherited | {key for key, value in overrides.items() if value}
+    allowed = inherited | delegated | {key for key, value in overrides.items() if value}
     denied = {key for key, value in overrides.items() if not value}
     return sorted(allowed - denied)
 
