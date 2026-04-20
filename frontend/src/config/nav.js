@@ -102,9 +102,17 @@ export function getNavForRole(role) {
           items: [
             { label: "Requests", to: "/requests", icon: Briefcase },
             { label: "Monitoring", to: "/admin/monitoring", icon: BarChart3 },
-            { label: "Audit Logs", to: "/admin/audit", icon: ScrollText },
-            { label: "Notifications", to: "/admin/notifications", icon: Bell },
+            { label: "Notifications", to: "/notifications", icon: Bell },
             { label: "Reports", to: "/admin/reports", icon: BarChart3 },
+          ],
+        },
+        {
+          label: "Audit Logs",
+          items: [
+            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
+            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
+            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
+            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
           ],
         },
         { label: "Account", items: [profile] },

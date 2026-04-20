@@ -240,7 +240,30 @@ class AdminEntitiesView(AdminBaseView):
             ).first()
             entity.manager_name = manager.username if manager else ""
             rows.append(entity)
-        return Response(EntityAdminSerializer(rows, many=True).data)
+        scoped_companies = self.scoped_companies(request.user)
+        if company_id:
+            scoped_companies = scoped_companies.filter(id=company_id)
+
+        scoped_managers = self.scoped_users(request.user).filter(
+            assigned_roles__role__key="manager",
+            is_active=True,
+        )
+        if company_id:
+            scoped_managers = scoped_managers.filter(company_id=company_id)
+
+        return Response(
+            {
+                "entities": EntityAdminSerializer(rows, many=True).data,
+                "companies": list(
+                    scoped_companies.values("id", "name", "code", "is_active").order_by("name")
+                ),
+                "manager_options": list(
+                    scoped_managers.values("id", "username", "company_id", "entity_id")
+                    .distinct()
+                    .order_by("username")
+                ),
+            }
+        )
 
     def post(self, request):
         serializer = EntityWriteSerializer(data=request.data)

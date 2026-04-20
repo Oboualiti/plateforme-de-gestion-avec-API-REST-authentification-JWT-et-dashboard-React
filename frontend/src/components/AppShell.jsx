@@ -1,12 +1,12 @@
-import { NavLink, useLocation } from "react-router-dom";
-import { useState } from "react";
-import { Bell, ChevronDown, LogOut, Menu, Search, Settings, X } from "lucide-react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Bell, LogOut, Menu, Search, Settings, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useAuth } from "../context/AuthContext";
-import { ROLE_LABELS } from "../lib/constants";
+import { ROLE_LABELS, ROLE_RANK } from "../lib/constants";
 import { getNavForRole } from "../config/nav";
-import { companies, entities, users as allUsers, notifications } from "../data/mock";
 import { cn } from "../lib/utils";
+import { api } from "../lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,18 +16,15 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
-import { Button } from "./ui/button";
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-        <span className="text-sm font-bold">E</span>
-      </div>
-      <div className="leading-tight">
-        <div className="text-sm font-semibold text-foreground">EMD Platform</div>
-        <div className="text-[11px] text-muted-foreground">Request Management</div>
-      </div>
+    <div className="flex items-center">
+      <img
+        src="/logo.png"
+        alt="W-service logo"
+        className="h-10 w-auto max-w-[170px] object-contain"
+      />
     </div>
   );
 }
@@ -37,6 +34,13 @@ function SidebarContent({ onNavigate }) {
   const role = user?.role_keys?.[0] || user?.role || "super_admin";
   const groups = getNavForRole(role);
   const location = useLocation();
+  const roleKeys = user?.role_keys || [];
+  const primaryRoleKey = roleKeys.length
+    ? roleKeys.reduce((best, current) =>
+      (ROLE_RANK[current] || 0) > (ROLE_RANK[best] || 0) ? current : best,
+    roleKeys[0])
+    : (user?.role || "user");
+  const roleLabel = ROLE_LABELS[primaryRoleKey] || "User";
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
@@ -83,7 +87,7 @@ function SidebarContent({ onNavigate }) {
               <Avatar name={user.fullName || user.username || "User"} color={user.avatarColor} size={28} />
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-foreground">{user.fullName || user.username}</div>
-                <div className="truncate text-xs text-muted-foreground">{ROLE_LABELS[user.role] || "User"}</div>
+                <div className="truncate text-xs text-muted-foreground">{roleLabel}</div>
               </div>
             </div>
           ) : (
@@ -98,46 +102,6 @@ function SidebarContent({ onNavigate }) {
         </div>
       </div>
     </div>
-  );
-}
-
-function RoleSwitcher() {
-  const { user, login } = useAuth();
-  const grouped = ["super_admin", "senior", "manager", "team_leader", "user"];
-  
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
-          <span className="hidden text-xs text-muted-foreground sm:inline">Demo:</span>
-          <span className="text-sm font-medium">{user?.role ? ROLE_LABELS[user.role] : "Switch"}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel>View as another role</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {grouped.map((role) => {
-          const u = allUsers.find((x) => x.role === role);
-          if (!u) return null;
-          const company = companies.find((c) => c.id === u.companyId);
-          const entity = entities.find((e) => e.id === u.entityId);
-          return (
-            <DropdownMenuItem key={role} onClick={() => {/* Handle role switch if needed */}} className="flex items-start gap-2">
-              <Avatar name={u.fullName} color={u.avatarColor} size={28} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">{u.fullName}</div>
-                <div className="text-xs text-muted-foreground">
-                  {ROLE_LABELS[role]}
-                  {company && ` · ${company.code}`}
-                  {entity && ` · ${entity.code}`}
-                </div>
-              </div>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -172,11 +136,48 @@ function UserMenu() {
 }
 
 function NotificationsBell() {
-  const { user } = useAuth();
-  const items = notifications.filter((n) => n.userId === user?.id);
-  const unread = items.filter((n) => !n.read).length;
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [unread, setUnread] = useState(0);
+
+  async function loadNotifications() {
+    try {
+      const unreadResp = await api.get("/notifications/", { params: { unread_only: "true" } });
+      const unreadItems = Array.isArray(unreadResp.data) ? unreadResp.data : [];
+      setItems(unreadItems.slice(0, 6));
+      setUnread(unreadItems.length);
+    } catch {
+      setItems([]);
+      setUnread(0);
+    }
+  }
+
+  useEffect(() => {
+    loadNotifications();
+
+    function handleChanged() {
+      loadNotifications();
+    }
+
+    window.addEventListener("notifications:changed", handleChanged);
+    return () => window.removeEventListener("notifications:changed", handleChanged);
+  }, []);
+
+  async function openNotification(item) {
+    try {
+      if (!item.is_read) {
+        await api.post(`/notifications/${item.id}/read/`);
+        window.dispatchEvent(new Event("notifications:changed"));
+      }
+    } catch {
+    } finally {
+      await loadNotifications();
+      navigate(item.link || "/notifications");
+    }
+  }
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && loadNotifications()}>
       <DropdownMenuTrigger asChild>
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
           <Bell className="h-4 w-4" />
@@ -194,18 +195,29 @@ function NotificationsBell() {
         {items.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">You're all caught up.</div>
         ) : (
-          items.slice(0, 6).map((n) => (
-            <DropdownMenuItem key={n.id} asChild>
-              <NavLink to={n.link || "#"} className="flex flex-col items-start gap-0.5">
+          items.map((n) => (
+            <DropdownMenuItem
+              key={n.id}
+              onSelect={(event) => {
+                event.preventDefault();
+                void openNotification(n);
+              }}
+              className="flex flex-col items-start gap-0.5"
+            >
                 <div className="flex w-full items-center gap-2">
-                  {!n.read && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                  {!n.is_read && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
                   <span className="text-sm font-medium">{n.title}</span>
                 </div>
-                <span className="text-xs text-muted-foreground">{n.body}</span>
-              </NavLink>
+                <span className="text-xs text-muted-foreground">{n.message}</span>
             </DropdownMenuItem>
           ))
         )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <NavLink to="/notifications" className="text-sm font-medium">
+            Open notifications page
+          </NavLink>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -251,8 +263,7 @@ export function AppShell({ children }) {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search requests, users, entities…" className="h-9 pl-9" />
           </div>
-          <div className="flex flex-1 items-center justify-end gap-1.5 md:flex-none">
-            <RoleSwitcher />
+          <div className="ml-auto flex items-center gap-1.5">
             <NotificationsBell />
             <UserMenu />
           </div>
@@ -264,3 +275,4 @@ export function AppShell({ children }) {
     </div>
   );
 }
+

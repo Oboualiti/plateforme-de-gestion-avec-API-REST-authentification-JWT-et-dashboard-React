@@ -229,9 +229,7 @@ class RequestListCreateView(APIView):
             requester_unit=requester_unit,
             target_unit=target_unit,
         )
-        recipients = resolve_request_notification_recipients(
-            service_request, exclude_user_id=request.user.id
-        )
+        recipients = resolve_request_notification_recipients(service_request)
         recipients = filter_recipients_by_request_visibility(service_request, recipients)
         create_bulk_notifications(
             users=recipients,
@@ -311,9 +309,7 @@ class RequestCommentCreateView(APIView):
             sender=request.user,
             message=serializer.validated_data["message"],
         )
-        recipients = resolve_request_notification_recipients(
-            service_request, exclude_user_id=request.user.id
-        )
+        recipients = resolve_request_notification_recipients(service_request)
         recipients = filter_recipients_by_request_visibility(service_request, recipients)
         create_bulk_notifications(
             users=recipients,
@@ -401,9 +397,7 @@ class RequestStatusUpdateView(APIView):
             sender=request.user,
             message=progress_message,
         )
-        recipients = resolve_request_notification_recipients(
-            service_request, exclude_user_id=request.user.id
-        )
+        recipients = resolve_request_notification_recipients(service_request)
         recipients = filter_recipients_by_request_visibility(service_request, recipients)
         create_bulk_notifications(
             users=recipients,

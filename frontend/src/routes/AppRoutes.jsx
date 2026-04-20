@@ -51,7 +51,7 @@ function LoginPage() {
             </svg>
           </div>
           <div>
-            <div className="text-sm font-semibold tracking-wider text-primary uppercase">W-Service</div>
+            <div className="text-sm font-semibold tracking-wider text-primary">W-service</div>
             <h1 className="mt-2 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
               Enterprise request operations
             </h1>
@@ -125,6 +125,7 @@ function AppRoutes() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/team" element={<PermissionManagementPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:requestId" element={<RequestDetailsPage />} />
         </Route>
@@ -143,7 +144,8 @@ function AppRoutes() {
       >
         <Route element={<MainLayout />}>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
+          <Route path="/admin/audit" element={<Navigate to="/admin/audit-logs/requests" replace />} />
           <Route path="/admin/hierarchy" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/status-tracking" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/requests" replace />} />
