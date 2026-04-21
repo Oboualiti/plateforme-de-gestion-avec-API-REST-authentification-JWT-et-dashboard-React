@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 const dashboard = { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard };
+const adminDashboard = { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard };
 const profile = { label: "Profile", to: "/profile", icon: UserCircle };
 
 export function getNavForRole(role) {
@@ -34,7 +35,6 @@ export function getNavForRole(role) {
           items: [
             dashboard,
             { label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox },
-            { label: "Team Requests", to: "/requests?scope=team-all", icon: ListChecks },
             { label: "Create Request", to: "/requests/create", icon: PlusCircle },
             { label: "Team Members", to: "/team", icon: UsersRound },
           ],
@@ -86,7 +86,7 @@ export function getNavForRole(role) {
     case "super_admin":
     default:
       return [
-        { label: "Platform", items: [dashboard] },
+        { label: "Platform", items: [adminDashboard] },
         {
           label: "Organization",
           items: [
@@ -107,7 +107,6 @@ export function getNavForRole(role) {
           label: "Operations",
           items: [
             { label: "Requests", to: "/requests", icon: Briefcase },
-            { label: "Monitoring", to: "/admin/monitoring", icon: BarChart3 },
             { label: "Notifications", to: "/notifications", icon: Bell },
             { label: "Reports", to: "/admin/reports", icon: BarChart3 },
           ],

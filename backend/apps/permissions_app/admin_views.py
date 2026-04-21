@@ -1,7 +1,7 @@
 from datetime import timedelta
 
-from django.db.models import Count, Q
-from django.db.models.functions import TruncDate
+from django.db.models import Count, Q, Value
+from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -1485,9 +1485,17 @@ class AdminReportsView(AdminBaseView):
 
     def get(self, request):
         queryset = self.scoped_requests(request.user)
+        volume_by_company = (
+            queryset.annotate(
+                company_name=Coalesce("company__name", "requester_user__company__name", Value("No company"))
+            )
+            .values("company_name")
+            .annotate(total=Count("id"))
+            .order_by("-total", "company_name")
+        )
         return Response(
             {
-                "request_volume_by_company": list(queryset.values("company__name").annotate(total=Count("id")).order_by("-total")),
+                "request_volume_by_company": list(volume_by_company),
                 "request_volume_by_entity": list(queryset.values("target_entity__name").annotate(total=Count("id")).order_by("-total")),
                 "requests_by_type": list(queryset.values("category").annotate(total=Count("id")).order_by("-total")),
                 "requests_by_status": list(queryset.values("status").annotate(total=Count("id")).order_by("-total")),

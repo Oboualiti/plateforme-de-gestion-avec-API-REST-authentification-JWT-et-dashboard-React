@@ -1,18 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  MessageSquarePlus,
+  ArrowRight,
+  User2,
+  Clock,
+  ExternalLink,
+  Bot,
+  History,
+} from 'lucide-react'
 
+import { Avatar } from '../components/Avatar'
+import PageHeader from '../components/layout/PageHeader'
+import { Button } from '../components/ui/button'
+import { Select } from '../components/ui/select'
+import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
-import { Select } from '../components/ui/select'
-
-const statusClassMap = {
-  NEW: 'status-tag info',
-  ACCEPTED: 'status-tag active',
-  IN_PROGRESS: 'status-tag warning',
-  REJECTED: 'status-tag danger',
-  COMPLETED: 'status-tag active',
-  CLOSED: 'status-tag muted',
-}
+import { cn } from '../lib/utils'
 
 const statusLabelMap = {
   NEW: 'New',
@@ -23,608 +32,468 @@ const statusLabelMap = {
   CLOSED: 'Closed',
 }
 
-const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
+const statusToneMap = {
+  NEW: 'bg-slate-100 text-slate-700 border-slate-200',
+  ACCEPTED: 'bg-blue-100 text-blue-700 border-blue-200',
+  IN_PROGRESS: 'bg-amber-100 text-amber-800 border-amber-200',
+  REJECTED: 'bg-red-100 text-red-700 border-red-200',
+  COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  CLOSED: 'bg-slate-200 text-slate-700 border-slate-300',
+}
 
-function formatRole(roleKeys) {
-  if (!roleKeys?.length) return 'User'
-  return roleKeys[0]
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
+const stepperStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED']
+
+function badgeClass(baseClass) {
+  return `inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${baseClass}`
 }
 
 function formatDateTime(value) {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function getInitials(name) {
-  if (!name) return 'NA'
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() || '')
-    .join('')
+function formatRelative(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  const diffMs = Date.now() - date.getTime()
+  const diffMinutes = Math.floor(diffMs / 60000)
+  if (diffMinutes < 1) return 'just now'
+  if (diffMinutes < 60) return `${diffMinutes}m ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d ago`
+}
+
+function StatusStepper({ currentStatus }) {
+  const currentIndex = stepperStatuses.indexOf(currentStatus)
+  const isTerminal = terminalStatuses.has(currentStatus) && currentStatus !== 'COMPLETED'
+
+  return (
+    <div className="flex w-full items-center gap-0 overflow-hidden rounded-lg border border-border bg-card">
+      {stepperStatuses.map((status, i) => {
+        const isPast = i < currentIndex
+        const isCurrent = i === currentIndex
+        const isFuture = i > currentIndex && !isTerminal
+
+        return (
+          <div
+            key={status}
+            className={cn(
+              "flex flex-1 items-center justify-center py-3 text-[10px] font-bold uppercase tracking-[0.14em] transition-colors relative",
+              isCurrent && "bg-primary text-primary-foreground shadow-brutal border-x-2 border-ink z-10",
+              isPast && "bg-primary/5 text-primary",
+              isFuture && "text-muted-foreground bg-card",
+              isTerminal && i >= currentIndex && "opacity-40 grayscale"
+            )}
+          >
+            {statusLabelMap[status]}
+            {isPast && <CheckCircle2 className="ml-1.5 h-3 w-3" />}
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 function RequestDetailsPage() {
   const { requestId } = useParams()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
+  const [activeTab, setActiveTab] = useState('comments')
   const [comment, setComment] = useState('')
   const [commentAttachment, setCommentAttachment] = useState(null)
-  const [assignmentForm, setAssignmentForm] = useState({ userId: '', note: '' })
   const [actionState, setActionState] = useState({ busy: false, error: '' })
   const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
-  const discussionScrollRef = useRef(null)
+  const discussionRef = useRef(null)
 
   const request = state.request
-  const roleKeys = user?.role_keys || []
-  const isManager = roleKeys.includes('manager')
-  const isTeamLeader = roleKeys.includes('team_leader')
+  const comments = request?.comments || []
   const canChangeStatus = Boolean(request?.can_update_status)
   const canAssignToMe = Boolean(request?.can_assign_to_me)
-  const potentialAssignees = request?.potential_assignees || []
-  const canManagerAssignTl =
-    isManager && Boolean(request?.can_update_status) && !request?.current_assignee && potentialAssignees.length > 0
 
-  const lastCommentId = useMemo(() => {
-    const comments = request?.comments || []
-    return comments.length ? comments[comments.length - 1].id : null
-  }, [request?.comments])
+  const historyItems = useMemo(() => {
+    const backendHistory = request?.history || request?.status_history || []
+    if (backendHistory.length) return backendHistory
+    if (!request) return []
+    return [{
+      id: `created-${request.id}`,
+      type: 'created',
+      actor_name: request.requester_name,
+      created_at: request.created_at,
+    }]
+  }, [request])
 
   useEffect(() => {
-    let active = true
-
-    async function loadRequest() {
+    async function load() {
       try {
         const response = await api.get(`/requests/${requestId}/`)
-        if (!active) return
         setState({ loading: false, error: '', request: response.data })
       } catch (error) {
-        if (!active) return
-        setState({
-          loading: false,
-          error: error.response?.data?.detail || 'Could not load request.',
-          request: null,
-        })
+        setState({ loading: false, error: error.response?.data?.detail || 'Could not load request.', request: null })
       }
     }
-
-    loadRequest()
-    return () => {
-      active = false
-    }
+    load()
   }, [requestId])
 
+  // Real-time polling
   useEffect(() => {
-    if (!request) return undefined
-
-    let active = true
+    if (!requestId) return undefined
     const intervalId = setInterval(async () => {
-      try {
-        const response = await api.get(`/requests/${requestId}/`)
-        if (!active) return
+       try {
+         const response = await api.get(`/requests/${requestId}/`)
+         setState(curr => {
+           if (!curr.request) return curr
+           // Only update if something meaningful changed to avoid flash
+           const hasChange = curr.request.status !== response.data.status || 
+                            (curr.request.comments || []).length !== (response.data.comments || []).length ||
+                            curr.request.current_assignee !== response.data.current_assignee
+           return hasChange ? { ...curr, request: response.data } : curr
+         })
+       } catch {}
+    }, 3000)
+    return () => clearInterval(intervalId)
+  }, [requestId])
 
-        setState((current) => {
-          const currentRequest = current.request
-          if (!currentRequest) return current
-
-          const currentComments = currentRequest.comments || []
-          const nextComments = response.data.comments || []
-          const hasCommentChange =
-            currentComments.length !== nextComments.length ||
-            currentComments[currentComments.length - 1]?.id !== nextComments[nextComments.length - 1]?.id
-          const hasStatusChange = currentRequest.status !== response.data.status
-          const hasAssigneeChange = currentRequest.current_assignee !== response.data.current_assignee
-
-          if (!hasCommentChange && !hasStatusChange && !hasAssigneeChange) {
-            return current
-          }
-
-          return { ...current, request: response.data }
-        })
-      } catch {
-      }
-    }, 2500)
-
-    return () => {
-      active = false
-      clearInterval(intervalId)
-    }
-  }, [requestId, request])
-
-  useEffect(() => {
-    const container = discussionScrollRef.current
-    if (!container) return
-    container.scrollTop = container.scrollHeight
-  }, [requestId, lastCommentId])
-
-  async function refreshFromResponse(requestPromise) {
+  async function handleAction(promise) {
     setActionState({ busy: true, error: '' })
     try {
-      const response = await requestPromise
-      setState((current) => ({ ...current, request: response.data }))
+      const response = await promise
+      setState(curr => ({ ...curr, request: response.data }))
       setComment('')
       setCommentAttachment(null)
       setActionState({ busy: false, error: '' })
     } catch (error) {
-      setActionState({
-        busy: false,
-        error: error.response?.data?.detail || error.response?.data?.note?.[0] || 'Action failed.',
-      })
+      setActionState({ busy: false, error: error.response?.data?.detail || 'Action failed.' })
     }
   }
 
-  async function submitComment(event) {
-    event.preventDefault()
+  async function submitComment(e) {
+    e.preventDefault()
     if (!comment.trim() && !commentAttachment) return
-    const payload = new FormData()
-    payload.append('message', comment)
-    if (commentAttachment) {
-      payload.append('attachment', commentAttachment)
+    const formData = new FormData()
+    formData.append('message', comment)
+    if (commentAttachment) formData.append('attachment', commentAttachment)
+    await handleAction(api.post(`/requests/${requestId}/comments/`, formData))
+    // Scroll to bottom after post
+    if (discussionRef.current) {
+        discussionRef.current.scrollTop = discussionRef.current.scrollHeight
     }
-    await refreshFromResponse(api.post(`/requests/${requestId}/comments/`, payload))
   }
 
-  async function updateStatus(nextStatus, nextNote = '') {
-    await refreshFromResponse(
-      api.post(`/requests/${requestId}/status/`, {
-        status: nextStatus,
-        note: nextNote,
-      }),
-    )
-  }
-
-  async function handleLifecycleStatusChange(nextStatus) {
-    if (!canChangeStatus || actionState.busy || request.status === nextStatus) return
-
-    const nextNote = terminalStatuses.has(nextStatus)
-      ? window.prompt('Resolution note is required for this status.')?.trim()
-      : window.prompt('Optional note for this status change:')?.trim() || ''
-
-    if (terminalStatuses.has(nextStatus) && !nextNote) {
-      setActionState({ busy: false, error: 'Resolution note is required.' })
+  async function updateStatus(status) {
+    const isTerminal = terminalStatuses.has(status)
+    const promptMsg = isTerminal ? 'Resolution note is required:' : 'Optional note for this change:'
+    const note = window.prompt(promptMsg)?.trim()
+    if (isTerminal && !note) {
+      alert('Resolution note is required for terminal statuses.')
       return
     }
-
-    await updateStatus(nextStatus, nextNote || '')
+    await handleAction(api.post(`/requests/${requestId}/status/`, { status, note: note || '' }))
   }
 
   async function handleAssignToMe() {
-    if (!canAssignToMe || actionState.busy) return
-    await refreshFromResponse(api.post(`/requests/${requestId}/assign/`, {}))
+    await handleAction(api.post(`/requests/${requestId}/assign/`, {}))
   }
 
-  async function handleAssignToUser() {
-    if (!canManagerAssignTl || actionState.busy || !assignmentForm.userId) return
-    await refreshFromResponse(
-      api.post(`/requests/${requestId}/assign_user/`, {
-        user_id: Number(assignmentForm.userId),
-        note: assignmentForm.note || 'Assigned by manager',
-      }),
-    )
-    setAssignmentForm({ userId: '', note: '' })
-  }
-
-  async function handleSummarizeDiscussion() {
-    if (aiSummary.loading) return
+  async function loadAiSummary() {
     setAiSummary({ loading: true, error: '', data: null })
     try {
-      const response = await api.post(`/requests/${requestId}/ai-summary/`, {})
-      setAiSummary({
-        loading: false,
-        error: '',
-        data: response.data || null,
-      })
-    } catch (nextError) {
-      setAiSummary({
-        loading: false,
-        error: nextError.response?.data?.detail || 'Could not summarize discussion with AI.',
-        data: null,
-      })
+      const response = await api.post(`/requests/${requestId}/ai-summary/`)
+      setAiSummary({ loading: false, error: '', data: response.data })
+    } catch (err) {
+      setAiSummary({ loading: false, error: 'AI summarization failed.', data: null })
     }
   }
 
-  if (state.loading) {
-    return (
-      <main className="space-y-6">
-        <section className="surface-card p-6">
-          <p className="text-sm text-muted-foreground">Loading request...</p>
-        </section>
-      </main>
-    )
-  }
+  if (state.loading) return (
+    <main className="page-content space-y-6">
+      <Skeleton className="h-6 w-32" />
+      <Skeleton className="h-12 w-full rounded-lg" />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-96 w-full rounded-xl" />
+        </div>
+        <Skeleton className="h-[500px] w-full rounded-xl" />
+      </div>
+    </main>
+  )
 
-  if (state.error || !request) {
-    return (
-      <main className="space-y-6">
-        <section className="surface-card p-6">
-          <p className="text-sm font-medium text-destructive">{state.error || 'Could not load request.'}</p>
-        </section>
-      </main>
-    )
-  }
-
-  const lifecycleSteps = [
-    { key: 'new', label: 'New', value: 'NEW', helper: 'Awaiting review' },
-    { key: 'decision', label: 'Ownership confirmed', helper: 'Accepted or rejected' },
-    { key: 'in_progress', label: 'In progress', value: 'IN_PROGRESS', helper: 'Work underway' },
-    { key: 'completed', label: 'Completed', value: 'COMPLETED', helper: 'Work delivered' },
-    { key: 'closed', label: 'Closed', value: 'CLOSED', helper: 'Finalized' },
-  ]
-
-  const lifecycleStageMap = {
-    NEW: 0,
-    ACCEPTED: 1,
-    REJECTED: 1,
-    IN_PROGRESS: 2,
-    COMPLETED: 3,
-    CLOSED: 4,
-  }
-  const activeLifecycleIndex = lifecycleStageMap[request.status] ?? 0
-  const decisionSelection =
-    request.status === 'REJECTED'
-      ? 'REJECTED'
-      : ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(request.status)
-      ? 'ACCEPTED'
-      : ''
-  const comments = request.comments || []
-  const summaryItems = [
-    { label: 'Created', value: formatDateTime(request.created_at) },
-    { label: 'Company', value: request.company_name || '-' },
-    { label: 'Source Entity', value: request.source_entity_name || '-' },
-    { label: 'Target Entity', value: request.target_entity_name || '-' },
-    { label: 'Creator', value: request.requester_name || '-' },
-    { label: 'Type', value: request.type || '-' },
-    { label: 'Assignee', value: request.assignee_name || 'Unassigned' },
-    { label: 'Current Status', value: statusLabelMap[request.status] || request.status },
-  ]
+  if (state.error || !request) return (
+    <main className="page-content py-12 text-center">
+      <div className="rounded-xl border-2 border-destructive bg-destructive/5 p-8 max-w-md mx-auto">
+        <p className="text-destructive font-bold uppercase tracking-wider">{state.error || 'Request Not Found'}</p>
+        <Button variant="outline" className="mt-6" asChild>
+          <Link to="/requests"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Requests</Link>
+        </Button>
+      </div>
+    </main>
+  )
 
   return (
-    <main className="space-y-6">
-      <section className="surface-card p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 font-mono text-xs text-muted-foreground">
-                {request.reference_code || request.request_number}
-              </span>
-              <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
-                {statusLabelMap[request.status] || request.status}
-              </span>
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Request Details</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">
-                {request.title || 'Untitled request'}
-              </h1>
-            </div>
-            <p className="max-w-3xl text-sm text-muted-foreground">
-              {request.description || 'No description provided for this request.'}
-            </p>
-            {request.attachment_url ? (
-              <a
-                href={request.attachment_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs font-semibold text-foreground transition hover:bg-muted/40"
-              >
-                Open request attachment
-              </a>
-            ) : null}
-            <div className="grid gap-3 text-sm sm:grid-cols-3">
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Company</p>
-                <p className="font-medium text-foreground">{request.company_name || 'No company'}</p>
-              </div>
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Source Entity</p>
-                <p className="font-medium text-foreground">{request.source_entity_name || 'Unknown source'}</p>
-              </div>
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Created</p>
-                <p className="font-medium text-foreground">{formatDateTime(request.created_at)}</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60"
-              to="/requests"
-            >
-              Back To List
-            </Link>
-          </div>
+    <main className="page-content pb-12 space-y-6">
+      <PageHeader
+        eyebrow={request.reference_code || `#${request.request_number}`}
+        title={request.title || 'Untitled Request'}
+        description={request.description?.slice(0, 100) + (request.description?.length > 100 ? '...' : '')}
+        meta={
+            <Button variant="ghost" size="sm" asChild className="-ml-3 text-muted-foreground hover:text-foreground">
+              <Link to="/requests"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Workspace</Link>
+            </Button>
+        }
+      />
+
+      {/* Process Stepper */}
+      <section className="animate-fade-in">
+        <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <span>Operational Lifecycle</span>
+          <span className="text-primary">{statusLabelMap[request.status]}</span>
         </div>
+        <StatusStepper currentStatus={request.status} />
       </section>
 
-      {actionState.error ? (
-        <section className="surface-card p-4">
-          <p className="text-sm font-medium text-destructive">{actionState.error}</p>
-        </section>
-      ) : null}
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {summaryItems.map((item) => (
-          <article className="surface-card p-4" key={item.label}>
-            <p className="text-xs text-muted-foreground">{item.label}</p>
-            <p className="mt-1 text-sm font-semibold text-foreground">{item.value}</p>
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main Content Column */}
+        <div className="space-y-6 lg:col-span-2">
+          {/* Detailed Description */}
+          <article className="surface-card p-8">
+             <div className="mb-6 flex flex-wrap gap-3">
+               <span className={badgeClass("bg-slate-100 text-slate-700")}>{request.type || 'Standard'}</span>
+               <span className={badgeClass(request.priority === 'HIGH' ? "bg-red-50 text-red-600 border-red-100" : "bg-emerald-50 text-emerald-600 border-emerald-100")}>
+                 {request.priority} PRIORITY
+               </span>
+               <span className="flex items-center text-[10px] font-bold text-muted-foreground uppercase ml-auto">
+                 <Calendar className="mr-1.5 h-3 w-3" /> Opened {formatDateTime(request.created_at)}
+               </span>
+             </div>
+             <div>
+               <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Request Context</h2>
+               <div className="prose prose-sm max-w-none text-foreground/90 whitespace-pre-line leading-relaxed">
+                 {request.description || "No detailed description provided."}
+               </div>
+             </div>
+             {request.attachment_url && (
+               <div className="mt-8 pt-6 border-t border-border">
+                  <a href={request.attachment_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2 text-xs font-semibold hover:bg-muted/50 transition">
+                    <ExternalLink className="h-3.5 w-3.5" /> View Original Attachment
+                  </a>
+               </div>
+             )}
           </article>
-        ))}
-      </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="surface-card p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Executive Summary</p>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">Report Narrative</h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {request.description || 'No detailed description was provided for this request.'}
-          </p>
-          <div className="mt-4 rounded-md border border-border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Resolution Note</p>
-            <p className="mt-1 text-sm font-medium text-foreground">{request.resolution_note || 'No resolution note yet.'}</p>
-          </div>
-        </article>
-
-        <article className="surface-card p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Assignment</p>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">Ownership Control</h2>
-          <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Current Assignee</p>
-            <p className="mt-1 text-sm font-medium text-foreground">{request.assignee_name || 'Unassigned'}</p>
-          </div>
-
-          {isTeamLeader && (
-            <div className="mt-3">
-              <button
-                type="button"
-                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:opacity-60"
-                disabled={!canAssignToMe || actionState.busy}
-                onClick={handleAssignToMe}
+          {/* Discussion & History Area */}
+          <article className="surface-card overflow-hidden">
+            <div className="flex border-b border-border bg-muted/5">
+              <button 
+                onClick={() => setActiveTab('comments')}
+                className={cn("flex-1 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2", 
+                  activeTab === 'comments' ? "border-primary text-foreground bg-card" : "border-transparent text-muted-foreground hover:text-foreground")}
               >
-                {request.current_assignee ? 'Already Assigned' : actionState.busy ? 'Saving...' : 'Take For Myself'}
+                Discussion ({comments.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('history')}
+                className={cn("flex-1 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2", 
+                  activeTab === 'history' ? "border-primary text-foreground bg-card" : "border-transparent text-muted-foreground hover:text-foreground")}
+              >
+                Activity Log ({historyItems.length})
               </button>
             </div>
-          )}
 
-          {canManagerAssignTl && (
-            <div className="mt-4 space-y-2">
-              <label htmlFor="assign-team-leader" className="text-sm font-medium text-foreground">Assign To Team Leader</label>
-              <Select
-                id="assign-team-leader"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={assignmentForm.userId}
-                onChange={(event) =>
-                  setAssignmentForm((current) => ({ ...current, userId: event.target.value }))
-                }
-              >
-                <option value="">Select team leader</option>
-                {potentialAssignees.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.username}
-                  </option>
-                ))}
-              </Select>
-
-              <label htmlFor="assign-note" className="text-sm font-medium text-foreground">Assignment Note (Optional)</label>
-              <textarea
-                id="assign-note"
-                className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={assignmentForm.note}
-                onChange={(event) =>
-                  setAssignmentForm((current) => ({ ...current, note: event.target.value }))
-                }
-                placeholder="Context for the assigned team leader..."
-              />
-
-              <button
-                type="button"
-                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-                disabled={!assignmentForm.userId || actionState.busy}
-                onClick={handleAssignToUser}
-              >
-                {actionState.busy ? 'Saving...' : 'Assign To Team Leader'}
-              </button>
-            </div>
-          )}
-        </article>
-      </section>
-
-      <section className="surface-card p-5">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Process Tracking</p>
-        <h2 className="mt-1 text-lg font-semibold text-foreground">Journey Map</h2>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          {lifecycleSteps.map((step, index) => {
-            const isActive = activeLifecycleIndex === index
-            const isComplete = activeLifecycleIndex > index
-            const isDecisionStep = step.key === 'decision'
-            const stepClass = isActive
-              ? 'border-primary bg-primary-soft'
-              : isComplete
-                ? 'border-emerald-200 bg-emerald-50'
-                : 'border-border bg-muted/20'
-
-            return (
-              <article key={step.key} className={`rounded-md border p-3 ${stepClass}`}>
-                <p className="text-xs text-muted-foreground">{step.helper}</p>
-                {!isDecisionStep ? (
-                  <button
-                    type="button"
-                    className="mt-1 text-sm font-semibold text-foreground hover:text-primary disabled:opacity-60"
-                    disabled={!canChangeStatus || actionState.busy}
-                    onClick={() => handleLifecycleStatusChange(step.value)}
-                  >
-                    {step.label}
-                  </button>
-                ) : (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={`inline-flex h-8 items-center justify-center rounded-md border px-2.5 text-xs font-medium transition ${decisionSelection === 'ACCEPTED' ? 'border-blue-300 bg-blue-100 text-blue-800' : 'border-border bg-background text-foreground hover:bg-muted/60'}`}
-                      disabled={!canChangeStatus || actionState.busy}
-                      onClick={() => handleLifecycleStatusChange('ACCEPTED')}
-                    >
-                      Accepted
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-flex h-8 items-center justify-center rounded-md border px-2.5 text-xs font-medium transition ${decisionSelection === 'REJECTED' ? 'border-red-300 bg-red-100 text-red-800' : 'border-border bg-background text-foreground hover:bg-muted/60'}`}
-                      disabled={!canChangeStatus || actionState.busy}
-                      onClick={() => handleLifecycleStatusChange('REJECTED')}
-                    >
-                      Rejected
-                    </button>
+            <div className="p-8">
+              {activeTab === 'comments' ? (
+                <div className="space-y-8">
+                  {/* Message List */}
+                  <div ref={discussionRef} className="max-h-[500px] overflow-y-auto space-y-6 pr-4 custom-scrollbar">
+                    {comments.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground">
+                         <MessageSquarePlus className="mx-auto h-8 w-8 mb-3 opacity-20" />
+                         <p className="text-xs font-bold uppercase tracking-widest">No messages yet</p>
+                      </div>
+                    ) : (
+                      comments.map(item => (
+                        <div key={item.id} className="flex gap-4">
+                          <Avatar name={item.sender_name} size={32} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-4 mb-1">
+                               <span className="text-sm font-bold text-foreground truncate">{item.sender_name}</span>
+                               <span className="text-[10px] font-medium text-muted-foreground">{formatRelative(item.created_at)}</span>
+                            </div>
+                            <div className="bg-muted/30 rounded-lg rounded-tl-none p-4 text-sm text-foreground/90 whitespace-pre-line border border-border/40">
+                              {item.message}
+                              {item.attachment_url && (
+                                <div className="mt-3 pt-3 border-t border-border/50">
+                                   <a href={item.attachment_url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-primary hover:underline">
+                                     📎 VIEW ATTACHMENT
+                                   </a>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                )}
-              </article>
-            )
-          })}
-        </div>
-      </section>
 
-      <section className="surface-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</p>
-            <h2 className="mt-1 text-lg font-semibold text-foreground">Summarize discussion</h2>
-          </div>
-          <button
-            type="button"
-            onClick={handleSummarizeDiscussion}
-            disabled={aiSummary.loading}
-            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {aiSummary.loading ? 'Summarizing...' : 'Summarize discussion'}
-          </button>
-        </div>
-
-        {aiSummary.error ? (
-          <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {aiSummary.error}
-          </p>
-        ) : null}
-
-        {aiSummary.data ? (
-          <div className="mt-3 space-y-2 rounded-md border border-border bg-muted/20 p-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Short summary</p>
-              <p className="text-sm text-foreground">{aiSummary.data.short_summary || '-'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Current progress</p>
-              <p className="text-sm text-foreground">{aiSummary.data.current_progress || '-'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Latest blocker</p>
-              <p className="text-sm text-foreground">{aiSummary.data.latest_blocker || '-'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Pending from</p>
-              <p className="text-sm font-medium text-foreground">{aiSummary.data.pending_from || 'unknown'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Next action needed</p>
-              <p className="text-sm text-foreground">{aiSummary.data.next_action || '-'}</p>
-            </div>
-            {Array.isArray(aiSummary.data.already_done) && aiSummary.data.already_done.length > 0 ? (
-              <div>
-                <p className="text-xs text-muted-foreground">Already done</p>
-                <ul className="list-disc pl-5 text-sm text-foreground">
-                  {aiSummary.data.already_done.map((item, index) => (
-                    <li key={`${item}-${index}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {Array.isArray(aiSummary.data.still_needed) && aiSummary.data.still_needed.length > 0 ? (
-              <div>
-                <p className="text-xs text-muted-foreground">Still needed</p>
-                <ul className="list-disc pl-5 text-sm text-foreground">
-                  {aiSummary.data.still_needed.map((item, index) => (
-                    <li key={`${item}-${index}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="surface-card p-5">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Discussion</p>
-        <h2 className="mt-1 text-lg font-semibold text-foreground">Conversation</h2>
-
-        <div
-          className="mt-4 max-h-96 space-y-3 overflow-y-auto rounded-md border border-border bg-muted/20 p-3"
-          ref={discussionScrollRef}
-        >
-          {comments.length === 0 ? <p className="text-sm text-muted-foreground">No comments yet.</p> : null}
-          {comments.map((item) => (
-            <article key={item.id} className="rounded-md border border-border bg-card p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-bold text-primary">
-                    {getInitials(item.sender_name)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{item.sender_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatRole(item.sender_role_keys)} | {item.sender_entity_name || 'Unknown entity'}
-                    </p>
-                  </div>
+                  {/* Comment Input */}
+                  <form onSubmit={submitComment} className="mt-8 border-t border-border pt-8">
+                    <textarea
+                      value={comment}
+                      onChange={e => setComment(e.target.value)}
+                      placeholder="Type your message..."
+                      className="w-full min-h-[120px] rounded-lg border-2 border-ink bg-card p-4 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none transition-all placeholder:text-muted-foreground"
+                    />
+                    <div className="mt-3 flex items-center justify-between">
+                      <input 
+                        type="file" 
+                        id="file-upload" 
+                        className="hidden" 
+                        onChange={e => setCommentAttachment(e.target.files?.[0])}
+                      />
+                      <label htmlFor="file-upload" className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
+                        {commentAttachment ? `📎 ${commentAttachment.name}` : 'Attach File'}
+                      </label>
+                      <Button size="sm" type="submit" disabled={actionState.busy || (!comment.trim() && !commentAttachment)}>
+                        Post Message
+                      </Button>
+                    </div>
+                  </form>
                 </div>
-                <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
-              </div>
-              <p className="mt-2 text-sm text-foreground">{item.message}</p>
-              {item.attachment_url ? (
-                <a
-                  href={item.attachment_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-flex items-center rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs font-semibold text-foreground transition hover:bg-muted/40"
-                >
-                  Open attachment
-                </a>
-              ) : null}
-            </article>
-          ))}
+              ) : (
+                <div className="space-y-6">
+                  {historyItems.map((item, i) => (
+                    <div key={i} className="flex gap-4 relative">
+                       {i !== historyItems.length - 1 && <div className="absolute left-4 top-8 bottom-[-24px] w-0.5 bg-border" />}
+                       <div className="h-8 w-8 rounded-full border-2 border-border bg-card flex items-center justify-center shrink-0 z-10">
+                          <History className="h-3.5 w-3.5 text-muted-foreground" />
+                       </div>
+                       <div className="pb-8">
+                          <p className="text-sm font-bold text-foreground">
+                            {item.actor_name || item.sender_name || 'System User'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {item.type === 'status_changed' ? `Transitioned status to ${item.to_status || 'Next'}` : 
+                             item.type === 'comment' ? 'Added a new comment' : 
+                             item.type === 'assigned' ? 'Updated the assignment' : 'Initialized the request'}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-2 font-mono uppercase">
+                             {formatDateTime(item.created_at || item.timestamp)}
+                          </p>
+                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </article>
         </div>
 
-        <form className="mt-3 space-y-2" onSubmit={submitComment}>
-          <textarea
-            className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-            placeholder="Add a comment"
-          />
-          <input
-            type="file"
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-semibold"
-            onChange={(event) => setCommentAttachment(event.target.files?.[0] || null)}
-          />
-          {commentAttachment ? (
-            <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <span className="truncate pr-2">{commentAttachment.name}</span>
-              <button
-                type="button"
-                className="font-semibold text-foreground hover:underline"
-                onClick={() => setCommentAttachment(null)}
-              >
-                Remove
-              </button>
+        {/* Sidebar Column */}
+        <aside className="space-y-6">
+          {/* Actions Card */}
+          <div className="surface-card p-6">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground mb-4">Operations</h3>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Update Status</label>
+                <div className="flex gap-2">
+                  <Select 
+                    value={request.status} 
+                    onChange={e => updateStatus(e.target.value)}
+                    disabled={!canChangeStatus || actionState.busy}
+                    className="flex-1"
+                  >
+                    {Object.keys(statusLabelMap).map(k => (
+                      <option key={k} value={k}>{statusLabelMap[k]}</option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              {canAssignToMe && (
+                <Button variant="outline" className="w-full" onClick={handleAssignToMe} disabled={actionState.busy}>
+                  Assign to me
+                </Button>
+              )}
             </div>
-          ) : null}
-          <button
-            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-            disabled={actionState.busy || (!comment.trim() && !commentAttachment)}
-            type="submit"
-          >
-            Send Comment
-          </button>
-        </form>
-      </section>
+            {actionState.error && <p className="mt-3 text-[10px] font-bold text-destructive uppercase text-center">{actionState.error}</p>}
+          </div>
+
+          {/* Metadata Card */}
+          <div className="surface-card p-6 space-y-6">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Entity Mapping</h3>
+            <div className="space-y-4">
+              <div className="flex gap-3">
+                <Building2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Originating Company</p>
+                  <p className="text-sm font-bold text-foreground truncate">{request.company_name || 'Global'}</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <ArrowRight className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Source Entity</p>
+                  <p className="text-sm font-bold text-foreground truncate">{request.source_entity_name || '-'}</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <ArrowRight className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Target Destination</p>
+                  <p className="text-sm font-bold text-foreground truncate">{request.target_entity_name || '-'}</p>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-border">
+                <User2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Current Owner</p>
+                  <p className="text-sm font-bold text-foreground truncate">{request.current_assignee_name || 'Unassigned'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* AI Summary Sidebar Card */}
+          <div className="surface-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-primary" />
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">AI Review</h3>
+              </div>
+              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="h-7 px-2">
+                {aiSummary.loading ? 'Updating...' : 'Refresh'}
+              </Button>
+            </div>
+            {aiSummary.data ? (
+              <div className="space-y-4 text-sm">
+                <div className="bg-primary-soft p-3 rounded-lg border border-primary/20">
+                   <p className="text-[10px] font-bold text-primary uppercase mb-1">Brief</p>
+                   <p className="text-xs font-medium text-foreground leading-snug">{aiSummary.data.short_summary}</p>
+                </div>
+                <div>
+                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Next Action</p>
+                   <p className="text-xs font-medium text-foreground">{aiSummary.data.next_action || 'Pending follow-up'}</p>
+                </div>
+                <div>
+                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Pending From</p>
+                   <p className="text-xs font-bold text-primary uppercase">{aiSummary.data.pending_from || 'Unknown'}</p>
+                </div>
+              </div>
+            ) : (
+                <div className="py-8 text-center bg-muted/20 rounded-lg border border-dashed border-border">
+                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No AI Insight yet</p>
+                   <Button variant="link" size="sm" onClick={loadAiSummary} className="mt-1 h-auto text-xs">Generate Summary</Button>
+                </div>
+            )}
+          </div>
+        </aside>
+      </div>
     </main>
   )
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import PageHeader from '../components/layout/PageHeader'
 import { Select } from '../components/ui/select'
+import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 
 const ROLE_LABELS = {
@@ -139,7 +140,40 @@ function UsersPage() {
           title="Users"
           description="Manage all users, their roles, and entity assignments."
         />
-        <div className="py-8 text-center text-muted-foreground">Loading...</div>
+        <div className="surface-card mb-4 p-4">
+          <div className="grid gap-3 lg:grid-cols-12">
+            <Skeleton className="h-10 lg:col-span-5" />
+            <Skeleton className="h-10 lg:col-span-3" />
+            <Skeleton className="h-10 lg:col-span-2" />
+            <Skeleton className="h-10 lg:col-span-2" />
+          </div>
+        </div>
+        <div className="surface-card overflow-hidden p-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-4 py-3 text-left font-medium">User</th>
+                <th className="px-4 py-3 text-left font-medium">Role</th>
+                <th className="px-4 py-3 text-left font-medium">Company</th>
+                <th className="px-4 py-3 text-left font-medium">Entity</th>
+                <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 8 }).map((_, index) => (
+                <tr key={`user-row-skeleton-${index}`} className="border-b border-border last:border-0">
+                  <td className="px-4 py-3"><Skeleton className="h-8 w-44" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-5 w-20 rounded-full" /></td>
+                  <td className="px-4 py-3"><Skeleton className="h-6 w-16" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </main>
     )
   }

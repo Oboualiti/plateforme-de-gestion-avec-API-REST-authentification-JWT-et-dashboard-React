@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge'
 import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
+import { Skeleton } from '../components/ui/skeleton'
 
 function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
   if (!editState.open) return null
@@ -1355,8 +1356,21 @@ function AdminControlCenterPage() {
       />
 
       {state.loading && (
-        <div className="py-20 text-center text-sm text-muted-foreground">
-          Loading {config.title.toLowerCase()}...
+        <div className="space-y-4">
+          {(sectionKey === 'users' || sectionKey === 'entities' || sectionKey === 'companies') ? (
+            <AdminTableSkeleton rows={8} cols={6} />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Card key={`admin-metric-skeleton-${index}`}>
+                  <CardHeader className="pb-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-9 w-16" />
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
       
@@ -1632,6 +1646,37 @@ function MetricCard({ title, value }) {
         <CardDescription className="uppercase text-[10px] font-bold tracking-widest">{title}</CardDescription>
         <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
       </CardHeader>
+    </Card>
+  )
+}
+
+function AdminTableSkeleton({ rows = 8, cols = 6 }) {
+  return (
+    <Card className="surface-card">
+      <div className="overflow-x-auto p-4">
+        <table className="data-table">
+          <thead>
+            <tr>
+              {Array.from({ length: cols }).map((_, idx) => (
+                <th key={`admin-skeleton-head-${idx}`}>
+                  <Skeleton className="h-3 w-20" />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }).map((_, rowIdx) => (
+              <tr key={`admin-skeleton-row-${rowIdx}`}>
+                {Array.from({ length: cols }).map((__, colIdx) => (
+                  <td key={`admin-skeleton-cell-${rowIdx}-${colIdx}`}>
+                    <Skeleton className="h-4 w-full max-w-[160px]" />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   )
 }

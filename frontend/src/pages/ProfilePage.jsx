@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Building2, Mail, ShieldCheck } from 'lucide-react'
+import { Building2, KeyRound, ShieldCheck } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
 import PageHeader from '../components/layout/PageHeader'
@@ -39,26 +39,6 @@ function ProfilePage() {
   )
   const roleKey = user?.role_keys?.[0] || 'user'
   const roleLabel = ROLE_LABELS[roleKey] || roleKey.replaceAll('_', ' ')
-  const notificationOptions = useMemo(() => {
-    const base = [
-      'When a request is assigned to me',
-      'When a request I created changes status',
-      'When someone comments on my requests',
-      "Weekly summary of my team's activity",
-    ]
-
-    if (roleKey === 'super_admin') {
-      return [
-        ...base,
-        'When a company or entity is created/updated/deactivated',
-        'When user roles or permissions are changed',
-        'When delegation rules are created or revoked',
-        'When critical security or audit events are detected',
-      ]
-    }
-
-    return base
-  }, [roleKey])
 
   if (!user) return null
 
@@ -80,7 +60,7 @@ function ProfilePage() {
                 <ShieldCheck className="h-3 w-3" /> {roleLabel}
               </span>
               {!isSuperAdmin && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 font-medium">
+                <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 font-medium text-white">
                   <Building2 className="h-3 w-3" /> {user?.company_name || '-'}
                 </span>
               )}
@@ -117,16 +97,40 @@ function ProfilePage() {
       </section>
 
       <section className="surface-card p-6">
-        <h2 className="text-base font-semibold">Notifications</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Choose what you'd like to be notified about.</p>
+        <h2 className="text-base font-semibold">Account settings</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Update your password and security preferences.</p>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Current password</label>
+            <Input type="password" placeholder="••••••••" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">New password</label>
+            <Input type="password" placeholder="••••••••" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Confirm password</label>
+            <Input type="password" placeholder="••••••••" />
+          </div>
+        </div>
+
         <div className="mt-4 space-y-3 text-sm">
-          {notificationOptions.map((label) => (
-            <label key={label} className="flex items-center gap-3 rounded-md border border-border p-3">
-              <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border accent-primary" />
-              <Mail className="h-4 w-4 text-muted-foreground" />
-              <span>{label}</span>
-            </label>
-          ))}
+          <label className="flex items-center gap-3 rounded-md border border-border p-3">
+            <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border accent-primary" />
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            <span>Require password re-entry for sensitive actions</span>
+          </label>
+          <label className="flex items-center gap-3 rounded-md border border-border p-3">
+            <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border accent-primary" />
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
+            <span>Enable stronger password policy reminders</span>
+          </label>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline">Cancel</Button>
+          <Button>Update settings</Button>
         </div>
       </section>
     </main>

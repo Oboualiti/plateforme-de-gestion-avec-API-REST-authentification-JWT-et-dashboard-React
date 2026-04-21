@@ -7,6 +7,7 @@ import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
+import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -78,6 +79,8 @@ function RequestsPage() {
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const isGlobalAdmin = roleKeys.includes('super_admin')
+  const isTeamLeader = roleKeys.includes('team_leader')
+  const isIncomingQueueTeamLeader = isTeamLeader && scope === 'team'
   const scopeTitle = {
     all: 'All requests',
     mine: 'My requests',
@@ -85,6 +88,27 @@ function RequestsPage() {
     'team-all': 'Team requests',
     entity: 'Entity requests',
     company: 'Company requests',
+  }
+
+  const applyScopeFilter = (items) => {
+    if (!Array.isArray(items)) return []
+    if (scope !== 'team' || !user?.entity_id) return items
+
+    const currentEntityId = Number(user.entity_id)
+    const currentEntityName = (user.entity_name || '').trim().toLowerCase()
+    const currentEntityCode = (user.entity_code || user.entity?.code || '').trim().toLowerCase()
+
+    return items.filter((item) => {
+      const targetId = Number(item.target_entity_id || item.target_entity?.id || 0)
+      if (targetId && currentEntityId && targetId === currentEntityId) return true
+
+      const targetName = (item.target_entity_name || item.target_entity?.name || '').trim().toLowerCase()
+      const targetCode = (item.target_entity_code || item.target_entity?.code || item.target_unit?.code || '').trim().toLowerCase()
+
+      if (currentEntityName && targetName && targetName === currentEntityName) return true
+      if (currentEntityCode && targetCode && targetCode === currentEntityCode) return true
+      return false
+    })
   }
 
   useEffect(() => {
@@ -150,8 +174,9 @@ function RequestsPage() {
     try {
       await refreshUser()
       const params = {
-        page: pagination.page,
-        page_size: pagination.pageSize,
+        page: scope === 'team' ? 1 : pagination.page,
+        page_size: scope === 'team' ? 200 : pagination.pageSize,
+        scope: scope !== 'all' ? scope : undefined,
         search: filters.search || undefined,
         company_id: isGlobalAdmin ? filters.company_id || undefined : user?.company_id || undefined,
         source_entity_id: filters.source_entity_id || undefined,
@@ -160,13 +185,14 @@ function RequestsPage() {
       }
       const response = await api.get('/requests/', { params })
       const payload = response.data || {}
-      const results = Array.isArray(payload.results) ? payload.results : []
+      const rawResults = Array.isArray(payload.results) ? payload.results : []
+      const results = applyScopeFilter(rawResults)
       setState({ loading: false, error: '', requests: results })
       setPagination((current) => ({
         ...current,
-        count: Number(payload.count || 0),
-        next: payload.next || null,
-        previous: payload.previous || null,
+        count: scope === 'team' ? results.length : Number(payload.count || 0),
+        next: scope === 'team' ? null : payload.next || null,
+        previous: scope === 'team' ? null : payload.previous || null,
       }))
     } catch (error) {
       setState({
@@ -206,7 +232,7 @@ function RequestsPage() {
     setPagination((current) => ({ ...current, page: 1 }))
   }
 
-  const canShowCompanyFilter = isGlobalAdmin
+  const canShowCompanyFilter = isGlobalAdmin || isIncomingQueueTeamLeader
   const totalPages = Math.max(1, Math.ceil((pagination.count || 0) / pagination.pageSize))
   const fromIndex = pagination.count ? (pagination.page - 1) * pagination.pageSize + 1 : 0
   const toIndex = Math.min(pagination.page * pagination.pageSize, pagination.count || 0)
@@ -227,7 +253,9 @@ function RequestsPage() {
         }
       />
 
-      <div className="surface-card mb-4 p-4">
+      {isIncomingQueueTeamLeader ? <div className="h-0.5 w-full bg-border" /> : null}
+
+      <div className={`${isIncomingQueueTeamLeader ? 'rounded-md border-2 border-ink bg-card p-4 shadow-elev-sm' : 'surface-card mb-4 p-4'}`}>
         <div className="grid gap-3 lg:grid-cols-12">
           <div className="relative lg:col-span-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -242,15 +270,22 @@ function RequestsPage() {
           {canShowCompanyFilter && (
             <Select
               className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
-              value={filters.company_id}
+              value={isGlobalAdmin ? filters.company_id : (user?.company_id ? String(user.company_id) : '')}
               onChange={(event) => handleFilterChange('company_id', event.target.value)}
+              disabled={!isGlobalAdmin}
             >
-              <option value="">All companies</option>
-              {options.companies.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.code ? `${item.code} - ${item.name}` : item.name}
-                </option>
-              ))}
+              {isGlobalAdmin ? (
+                <>
+                  <option value="">All companies</option>
+                  {options.companies.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.code ? `${item.code} - ${item.name}` : item.name}
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <option value={user?.company_id ? String(user.company_id) : ''}>{(user?.company_name || 'My company').toUpperCase()}</option>
+              )}
             </Select>
           )}
 
@@ -306,13 +341,40 @@ function RequestsPage() {
         </div>
       </div>
 
-      <div className="surface-card overflow-hidden">
+      <div className={`${isIncomingQueueTeamLeader ? 'overflow-hidden rounded-md border-2 border-ink bg-card shadow-elev-sm' : 'surface-card overflow-hidden'}`}>
         {state.loading && state.requests.length === 0 ? (
-          <div className="py-16 text-center text-sm text-muted-foreground">Loading requests...</div>
+          <div className="overflow-x-auto p-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-3 text-left font-medium">Reference</th>
+                  <th className="px-4 py-3 text-left font-medium">Title</th>
+                  <th className="px-4 py-3 text-left font-medium">Source - Target</th>
+                  <th className="px-4 py-3 text-left font-medium">Type</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-left font-medium">Assignee</th>
+                  <th className="px-4 py-3 text-left font-medium">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <tr key={`request-row-skeleton-${index}`} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-44" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-5 w-20 rounded-full" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-5 w-24 rounded-full" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : state.error ? (
           <div className="py-16 text-center text-sm font-medium text-destructive">{state.error}</div>
         ) : state.requests.length === 0 ? (
-          <div className="py-16 text-center">
+          <div className={`${isIncomingQueueTeamLeader ? 'm-3 rounded-md border-2 border-dashed border-ink p-16 text-center' : 'py-16 text-center'}`}>
             <p className="text-sm font-medium">No requests match your filters</p>
             <p className="mt-1 text-xs text-muted-foreground">Try clearing filters or creating a new request.</p>
             {user?.request_creation_allowed ? (

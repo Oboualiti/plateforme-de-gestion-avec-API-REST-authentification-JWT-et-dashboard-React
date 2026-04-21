@@ -19,6 +19,8 @@ import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
 import ProtectedRoute from './ProtectedRoute'
 
+import { Logo } from '../components/Logo'
+
 function LoginPage() {
   const navigate = useNavigate()
   const { login, isAuthenticated } = useAuth()
@@ -47,16 +49,10 @@ function LoginPage() {
   return (
     <main className="min-h-svh flex items-center justify-center bg-background p-4 sm:p-8">
       <section className="flex w-full max-w-4xl flex-col gap-12 lg:flex-row lg:items-center">
-        <div className="flex-1 space-y-6">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-            <svg fill="none" height="24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="24">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 2v20M2 12h20" />
-            </svg>
-          </div>
+        <div className="flex-1 space-y-8">
+          <Logo className="h-16" />
           <div>
-            <div className="text-sm font-semibold tracking-wider text-primary">W-service</div>
-            <h1 className="mt-2 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
               Enterprise request operations
             </h1>
             <p className="mt-4 text-lg text-muted-foreground">
@@ -157,6 +153,8 @@ function AppRoutes() {
           <Route path="/admin/users" element={<UsersPage />} />
           <Route path="/admin/users/:userId" element={<PermissionDetailPage />} />
           <Route path="/admin/delegation" element={<DelegationPage />} />
+          <Route path="/admin/dashboard" element={<Navigate to="/admin/reports" replace />} />
+          <Route path="/admin/monitoring" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/reports" element={<ReportsPage />} />
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />
         </Route>

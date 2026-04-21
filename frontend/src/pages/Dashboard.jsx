@@ -1,23 +1,63 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card'
+import { Skeleton } from '../components/ui/skeleton'
+import { api } from '../lib/api'
 
 function Dashboard() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
+  const [stats, setStats] = useState({ loading: true, data: null, error: '' })
+  
+  const roleKeys = user?.role_keys || []
+  const isSuperAdmin = roleKeys.includes('super_admin')
+  const isSenior = roleKeys.includes('senior')
+  const isAdminView = isSuperAdmin || isSenior
+
+  useEffect(() => {
+    if (isAdminView) {
+      async function fetchStats() {
+        try {
+          const response = await api.get('/admin/dashboard/')
+          setStats({ loading: false, data: response.data, error: '' })
+        } catch (err) {
+          setStats({ loading: false, data: null, error: 'Could not load platform metrics.' })
+        }
+      }
+      fetchStats()
+    } else {
+      setStats({ loading: false, data: null, error: '' })
+    }
+  }, [isAdminView])
+
   const quickActions = [
     user?.request_creation_allowed ? { label: 'Create request', to: '/requests/create', variant: 'default' } : null,
     { label: 'Open requests', to: '/requests', variant: 'outline' },
-    { label: 'Admin workspace', to: '/admin/dashboard', variant: 'ghost' },
+    isAdminView ? { label: 'Platform Reports', to: '/admin/reports', variant: 'secondary' } : null,
   ].filter(Boolean)
+
+  const pageTitle = isSuperAdmin 
+    ? "Platform Administration" 
+    : isSenior 
+      ? "Company Overview" 
+      : "Operations overview"
+      
+  const pageDescription = isSuperAdmin
+    ? "Global oversight of users, companies, and request flow across the platform."
+    : isSenior
+      ? "Management of company entities, teams, and request lifecycle."
+      : "Monitor workload, ownership, and request flow from a single operational workspace."
+
+  const isLoading = authLoading || stats.loading
 
   return (
     <main className="space-y-8">
       <PageHeader
         eyebrow="Dashboard"
-        title="Operations overview"
-        description="Monitor workload, ownership, and request flow from a single operational workspace."
+        title={pageTitle}
+        description={pageDescription}
         actions={
           <div className="flex gap-2">
             {quickActions.map((action) => (
@@ -32,57 +72,124 @@ function Dashboard() {
             <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
               {user?.role_keys?.[0]?.replaceAll('_', ' ') || 'user'}
             </span>
-            <span>{user?.company_name || 'Global'}</span>
-            <span className="text-muted-foreground">{user?.entity_name || 'No entity assigned'}</span>
+            {!isSuperAdmin && (
+              <>
+                <span>{user?.company_name || 'Global'}</span>
+                <span className="text-muted-foreground">{user?.entity_name || 'No entity assigned'}</span>
+              </>
+            )}
+            {isSuperAdmin && <span className="text-muted-foreground">Global Platform</span>}
           </>
         }
       />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-primary text-primary-foreground">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-primary-foreground/70 uppercase text-[10px] font-bold tracking-widest">Access scope</CardDescription>
-            <CardTitle className="text-4xl tabular-nums">{user?.role_keys?.length || 0}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-primary-foreground/70">active role lane(s)</p>
-          </CardContent>
-        </Card>
+        {isLoading ? (
+          Array.from({ length: 4 }).map((_, index) => (
+            <Card key={`dashboard-stat-skeleton-${index}`}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-10 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-3 w-28" />
+              </CardContent>
+            </Card>
+          ))
+        ) : isAdminView && stats.data ? (
+          <>
+            <Card className="bg-primary text-primary-foreground shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-primary-foreground/70 uppercase text-[10px] font-bold tracking-widest text-dark-primary-foreground">
+                  {isSuperAdmin ? 'Total Companies' : 'Network Entities'}
+                </CardDescription>
+                <CardTitle className="text-4xl tabular-nums">
+                  {isSuperAdmin ? stats.data.totals?.companies : stats.data.totals?.entities}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-primary-foreground/70">active operational units</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Company</CardDescription>
-            <CardTitle className="text-xl truncate">{user?.company_name || 'Global'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground">current business scope</p>
-          </CardContent>
-        </Card>
+            <Card className="shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Global Users</CardDescription>
+                <CardTitle className="text-4xl tabular-nums">{stats.data.totals?.users}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">registered accounts</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Entity</CardDescription>
-            <CardTitle className="text-xl truncate">{user?.entity_name || 'Pending'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground">assigned operating unit</p>
-          </CardContent>
-        </Card>
+            <Card className="shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Total Requests</CardDescription>
+                <CardTitle className="text-4xl tabular-nums">{stats.data.totals?.requests}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">lifetime volume</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Request actions</CardDescription>
-            <CardTitle className="text-xl">{user?.request_creation_allowed ? 'Enabled' : 'View only'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground">workspace permissions</p>
-          </CardContent>
-        </Card>
+            <Card className="shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Stale Requests</CardDescription>
+                <CardTitle className="text-4xl tabular-nums text-destructive">{stats.data.queue?.stuck || 0}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">inactive {'>'} 7 days</p>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="bg-primary text-primary-foreground shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-primary-foreground/70 uppercase text-[10px] font-bold tracking-widest text-dark-primary-foreground">Access scope</CardDescription>
+                <CardTitle className="text-4xl tabular-nums">{user?.role_keys?.length || 0}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-primary-foreground/70">active role lane(s)</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Company</CardDescription>
+                <CardTitle className="text-xl truncate">{user?.company_name || 'Global'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">current business scope</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Entity</CardDescription>
+                <CardTitle className="text-xl truncate">{user?.entity_name || 'Pending'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">assigned operating unit</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-brutal">
+              <CardHeader className="pb-2">
+                <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Request actions</CardDescription>
+                <CardTitle className="text-xl">{user?.request_creation_allowed ? 'Enabled' : 'View only'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">workspace permissions</p>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          <Card>
+          <Card className="shadow-brutal">
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div className="space-y-1">
                 <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Queue health</CardDescription>
@@ -93,12 +200,20 @@ function Dashboard() {
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-px bg-border rounded-lg overflow-hidden border border-border">
-                {['Draft', 'Accepted', 'In progress', 'Completed', 'Closed'].map((step, i) => (
-                  <div key={step} className={`p-4 bg-background ${i === 0 ? 'bg-primary/5' : ''}`}>
-                    <p className={`text-sm font-semibold ${i === 0 ? 'text-primary' : ''}`}>{step}</p>
-                    <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
-                      {i === 0 ? 'Created and waiting review' : '...'}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-px bg-border rounded-lg overflow-hidden border border-border">
+                {[
+                  { label: 'Pending', value: stats.data?.queue?.pending, desc: 'Awaiting review' },
+                  { label: 'Open', value: stats.data?.queue?.open, desc: 'In progress' },
+                  { label: 'Unassigned', value: stats.data?.queue?.unassigned, desc: 'Needs owner' },
+                  { label: 'Stuck', value: stats.data?.queue?.stuck, desc: 'Inactive alerts' },
+                ].map((item, i) => (
+                  <div key={item.label} className={`p-4 ${i === 0 ? 'bg-primary-soft' : 'bg-background'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${i === 0 ? 'text-primary' : 'text-muted-foreground'}`}>{item.label}</p>
+                    <p className="text-2xl font-bold mt-1 tabular-nums">
+                      {isAdminView ? (item.value ?? 0) : '...'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                      {item.desc}
                     </p>
                   </div>
                 ))}
@@ -106,7 +221,7 @@ function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-brutal">
             <CardHeader>
               <CardDescription className="uppercase text-[10px] font-bold tracking-widest">Activity</CardDescription>
               <CardTitle>Operational focus areas</CardTitle>
@@ -114,9 +229,8 @@ function Dashboard() {
             <CardContent className="space-y-4">
               {[
                 { title: 'Requests', desc: 'Use list views as the main workspace for triage and tracking.', to: '/requests', label: 'Open' },
-                { title: 'Administration', desc: 'Manage users, entities, and permissions.', to: '/admin/dashboard', label: 'Review' },
-                { title: 'Monitoring', desc: 'Track logs, notifications, and reporting.', to: '/admin/reports', label: 'Explore' },
-              ].map((item) => (
+                isAdminView ? { title: 'Platform Reports', desc: 'Visual charts and historical analytics.', to: '/admin/reports', label: 'Analyze' } : null,
+              ].filter(Boolean).map((item) => (
                 <div key={item.title} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
                   <div>
                     <p className="text-sm font-medium">{item.title}</p>
@@ -132,14 +246,14 @@ function Dashboard() {
         </div>
 
         <div className="space-y-6">
-          <Card>
+          <Card className="shadow-brutal">
             <CardHeader>
               <CardDescription className="uppercase text-[10px] font-bold tracking-widest">User profile</CardDescription>
               <CardTitle>{user?.first_name || user?.username}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-xs text-muted-foreground">
-                {user?.company_name || 'Global'} · {user?.entity_name || 'No entity assigned'}
+                {isSuperAdmin ? 'Global Platform' : `${user?.company_name || 'Global'} · ${user?.entity_name || 'No entity assigned'}`}
               </div>
               <div className="pt-4 border-t border-border space-y-4">
                 <div>
@@ -164,6 +278,11 @@ function Dashboard() {
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Use the sidebar for role-specific modules, tables for operational work, and detail pages for actions.
               </p>
+              {isAdminView && (
+                <Button variant="link" className="p-0 h-auto text-xs mt-2" asChild>
+                  <Link to="/admin/reports">View Platform Analytics</Link>
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

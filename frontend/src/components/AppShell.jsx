@@ -16,16 +16,19 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
+import { Logo, LogoIcon } from "./Logo";
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="flex h-10 w-10 items-center justify-center rounded-md border-2 border-ink bg-primary shadow-brutal">
-        <img src="/logo.png" alt="W-service logo" className="h-7 w-7 object-contain" />
-      </div>
-      <div className="leading-tight">
-        <div className="text-sm font-extrabold uppercase tracking-tight text-foreground">W-Service</div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Request Management</div>
+    <div className="flex items-center gap-3">
+      <LogoIcon className="h-10 w-10 shrink-0" />
+      <div className="flex flex-col justify-center leading-none">
+        <span className="text-sm font-black uppercase tracking-tighter text-foreground">
+          W-Service
+        </span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+          Mgt Platform
+        </span>
       </div>
     </div>
   );
