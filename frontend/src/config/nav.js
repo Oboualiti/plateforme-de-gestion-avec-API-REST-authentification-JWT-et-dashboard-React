@@ -8,7 +8,6 @@ import {
   Network,
   Users,
   ShieldCheck,
-  KeyRound,
   ArrowLeftRight,
   ScrollText,
   Bell,
@@ -40,6 +39,7 @@ export function getNavForRole(role) {
             { label: "Team Members", to: "/team", icon: UsersRound },
           ],
         },
+        { label: "Admin", items: [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] },
         { label: "Account", items: [profile] },
       ];
     case "manager":
@@ -53,7 +53,13 @@ export function getNavForRole(role) {
             { label: "Team Members", to: "/team", icon: UsersRound },
           ],
         },
-        { label: "Admin", items: [{ label: "Users", to: "/admin/users", icon: Users }] },
+        {
+          label: "Admin",
+          items: [
+            { label: "Users", to: "/admin/users", icon: Users },
+            { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
+          ],
+        },
         { label: "Account", items: [profile] },
       ];
     case "senior":
@@ -72,6 +78,7 @@ export function getNavForRole(role) {
             { label: "Entities", to: "/admin/entities", icon: Boxes },
             { label: "Hierarchy", to: "/admin/hierarchy", icon: Network },
             { label: "Users", to: "/admin/users", icon: Users },
+            { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
           ],
         },
         { label: "Account", items: [profile] },
@@ -93,7 +100,6 @@ export function getNavForRole(role) {
           items: [
             { label: "Users", to: "/admin/users", icon: Users },
             { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
-            { label: "Permissions", to: "/admin/permissions", icon: KeyRound },
             { label: "Delegation Rules", to: "/admin/delegation", icon: ArrowLeftRight },
           ],
         },

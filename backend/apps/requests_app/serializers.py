@@ -117,6 +117,8 @@ class RequestCommentSerializer(serializers.ModelSerializer):
     sender_entity_type = serializers.CharField(
         source="sender.entity.entity_type", read_only=True
     )
+    attachment = serializers.FileField(read_only=True)
+    attachment_url = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestMessage
@@ -128,11 +130,21 @@ class RequestCommentSerializer(serializers.ModelSerializer):
             "sender_entity_name",
             "sender_entity_type",
             "message",
+            "attachment",
+            "attachment_url",
             "created_at",
         ]
 
     def get_sender_role_keys(self, obj):
         return get_user_role_keys(obj.sender)
+
+    def get_attachment_url(self, obj):
+        if not obj.attachment:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.attachment.url)
+        return obj.attachment.url
 
 
 class RequestHistorySerializer(serializers.ModelSerializer):
@@ -225,6 +237,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
     )
+    attachment = serializers.FileField(read_only=True)
+    attachment_url = serializers.SerializerMethodField()
     comments = RequestCommentSerializer(source="messages", many=True, read_only=True)
     status_history = RequestHistorySerializer(many=True, read_only=True)
     assignment_history = RequestAssignmentEventSerializer(many=True, read_only=True)
@@ -248,6 +262,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "reference_code",
             "title",
             "description",
+            "attachment",
+            "attachment_url",
             "type",
             "status",
             "created_at",
@@ -321,6 +337,14 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_is_stuck(self, obj):
         return bool(getattr(obj, "is_stuck", False))
+
+    def get_attachment_url(self, obj):
+        if not obj.attachment:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.attachment.url)
+        return obj.attachment.url
 
     def get_activity_timeline(self, obj):
         events = [
@@ -403,15 +427,35 @@ class RequestTargetReassignSerializer(serializers.Serializer):
 
 class RequestCreateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
-    description = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    attachment = serializers.FileField(required=False, allow_null=True)
     type = serializers.ChoiceField(choices=REQUEST_TYPE_CHOICES)
     target_team = serializers.IntegerField()
     company_id = serializers.IntegerField(required=False)
     source_entity_id = serializers.IntegerField(required=False)
 
+    def validate(self, attrs):
+        description = (attrs.get("description") or "").strip()
+        attachment = attrs.get("attachment")
+        if not description and not attachment:
+            raise serializers.ValidationError(
+                {"description": "Provide a description or attach a file."}
+            )
+        return attrs
+
 
 class RequestCommentCreateSerializer(serializers.Serializer):
-    message = serializers.CharField()
+    message = serializers.CharField(required=False, allow_blank=True)
+    attachment = serializers.FileField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        message = (attrs.get("message") or "").strip()
+        attachment = attrs.get("attachment")
+        if not message and not attachment:
+            raise serializers.ValidationError(
+                {"message": "Provide a comment message or attach a file."}
+            )
+        return attrs
 
 
 class RequestStatusUpdateSerializer(serializers.Serializer):

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -971,7 +971,7 @@ function AdminControlCenterPage() {
                   <td>{item.entity_label || '-'}</td>
                   <td>{item.is_active ? 'Active' : 'Inactive'}</td>
                   <td>
-                    <Link className="table-action" to={`/admin/permissions/${item.id}`}>Open</Link>
+                    <Link className="table-action" to={`/admin/users/${item.id}`}>Open</Link>
                   </td>
                 </tr>
               ))}
@@ -1005,14 +1005,19 @@ function AdminControlCenterPage() {
         }
         return (a.name || '').localeCompare(b.name || '')
       })
+      const canEditRole = (roleKey) =>
+        isSuperAdmin ||
+        (isSenior && seniorEditableRoleKeys.has(roleKey)) ||
+        (isManager && managerEditableRoleKeys.has(roleKey)) ||
+        (isTeamLeader && teamLeaderEditableRoleKeys.has(roleKey))
       return (
         <>
           {(isSuperAdmin || isSenior) && (
             <section className="panel">
-              <div className="filter-bar">
+              <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap">
                 {isSuperAdmin && (
                   <Select
-                    className="app-select"
+                    className="app-select min-w-[230px] flex-1"
                     value={roleScopeFilter.company_id}
                     onChange={(event) =>
                       setRoleScopeFilter({
@@ -1031,7 +1036,7 @@ function AdminControlCenterPage() {
                   </Select>
                 )}
                 <Select
-                  className="app-select"
+                  className="app-select min-w-[210px] flex-1"
                   value={roleScopeFilter.entity_type}
                   onChange={(event) =>
                     setRoleScopeFilter((current) => ({
@@ -1047,7 +1052,7 @@ function AdminControlCenterPage() {
                   <option value="TDEV">Dev</option>
                 </Select>
                 <Select
-                  className="app-select"
+                  className="app-select min-w-[230px] flex-1"
                   value={roleScopeFilter.entity_id}
                   onChange={(event) =>
                     setRoleScopeFilter((current) => ({
@@ -1066,25 +1071,13 @@ function AdminControlCenterPage() {
               </div>
             </section>
           )}
-          <div className="timeline-list">
-            {sortedRoles.map((item) => (
-              <EditableChecklistCard
-                key={item.id}
-                title={item.name}
-                subtitle={`Level ${item.level} | ${item.user_count} users`}
-                selectedKeys={item.default_permissions}
-                allItems={data.all_permission_keys || []}
-                onSave={(permissionKeys) => saveRolePermissions(item.id, permissionKeys)}
-                onRestore={() => restoreRolePermissions(item.id)}
-                canSave={
-                  isSuperAdmin ||
-                  (isSenior && seniorEditableRoleKeys.has(item.key)) ||
-                  (isManager && managerEditableRoleKeys.has(item.key)) ||
-                  (isTeamLeader && teamLeaderEditableRoleKeys.has(item.key))
-                }
-              />
-            ))}
-          </div>
+          <RolesPermissionMatrix
+            roles={sortedRoles}
+            allPermissionKeys={data.all_permission_keys || []}
+            canEditRole={canEditRole}
+            onSaveRole={saveRolePermissions}
+            onRestoreRole={restoreRolePermissions}
+          />
         </>
       )
     }
@@ -1446,54 +1439,192 @@ function RequestSummaryTable({ rows = [] }) {
   )
 }
 
-function EditableChecklistCard({ title, subtitle, selectedKeys, allItems, onSave, onRestore, canSave = true }) {
-  const [localKeys, setLocalKeys] = useState(selectedKeys)
+const permissionMetaByKey = {
+  manage_companies: { title: 'Manage Companies', description: 'Create / edit / disable companies', section: 'organization' },
+  view_all_companies: { title: 'View All Companies', description: 'View all companies', section: 'organization' },
+  manage_entities: { title: 'Manage Entities', description: 'Create / edit / disable entities', section: 'organization' },
+  view_company_entities: { title: 'View Company Entities', description: 'View company entities', section: 'organization' },
+  manage_users_global: { title: 'Manage Users Global', description: 'Invite / deactivate globally', section: 'access_control' },
+  manage_users_company: { title: 'Manage Users Company', description: 'Invite / deactivate within company', section: 'access_control' },
+  manage_users_entity: { title: 'Manage Users Entity', description: 'Invite / deactivate within entity', section: 'access_control' },
+  manage_users_team: { title: 'Manage Users Team', description: 'Manage team members', section: 'access_control' },
+  create_request: { title: 'Create Request', description: 'Create new requests', section: 'requests' },
+  view_all_requests: { title: 'View All Requests', description: 'View all requests', section: 'requests' },
+  view_company_requests: { title: 'View Company Requests', description: 'View company requests', section: 'requests' },
+  view_entity_requests: { title: 'View Entity Requests', description: 'View entity requests', section: 'requests' },
+  view_team_requests: { title: 'View Team Requests', description: 'View team requests', section: 'requests' },
+  view_own_requests: { title: 'View Own Requests', description: 'View own submitted requests', section: 'requests' },
+  approve_request_tl: { title: 'Approve Request TL', description: 'Approve as team leader', section: 'requests' },
+  approve_request_mgr: { title: 'Approve Request MGR', description: 'Approve as manager', section: 'requests' },
+  approve_request_snr: { title: 'Approve Request SNR', description: 'Approve as senior', section: 'requests' },
+  assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
+  resolve_request: { title: 'Resolve Request', description: 'Mark as resolved', section: 'requests' },
+  close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
+  view_global_reports: { title: 'View Global Reports', description: 'Access global reporting', section: 'monitoring' },
+  view_company_reports: { title: 'View Company Reports', description: 'Access company reporting', section: 'monitoring' },
+  view_entity_reports: { title: 'View Entity Reports', description: 'Access entity reporting', section: 'monitoring' },
+  export_data: { title: 'Export Data', description: 'Export monitoring data', section: 'monitoring' },
+}
+
+const permissionSectionOrder = ['organization', 'access_control', 'requests', 'monitoring', 'other']
+const permissionSectionTitle = {
+  organization: 'Organization',
+  access_control: 'Access Control',
+  requests: 'Requests',
+  monitoring: 'Monitoring',
+  other: 'Other',
+}
+
+function toTitleCaseFromKey(key) {
+  return key
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function buildPermissionRows(allPermissionKeys) {
+  return (allPermissionKeys || []).map((key) => {
+    const metadata = permissionMetaByKey[key]
+    return {
+      key,
+      title: metadata?.title || toTitleCaseFromKey(key),
+      description: metadata?.description || key.replaceAll('_', ' '),
+      section: metadata?.section || 'other',
+    }
+  })
+}
+
+function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRole, onRestoreRole }) {
+  const [draftByRoleId, setDraftByRoleId] = useState({})
+  const [savingByRoleId, setSavingByRoleId] = useState({})
 
   useEffect(() => {
-    setLocalKeys(selectedKeys)
-  }, [selectedKeys])
+    const next = {}
+    roles.forEach((role) => {
+      next[role.id] = [...(role.default_permissions || [])]
+    })
+    setDraftByRoleId(next)
+  }, [roles])
 
-  function toggleKey(key) {
-    setLocalKeys((current) =>
-      current.includes(key) ? current.filter((item) => item !== key) : current.concat(key),
-    )
+  const permissionRows = useMemo(() => buildPermissionRows(allPermissionKeys), [allPermissionKeys])
+  const rowsBySection = useMemo(() => {
+    const grouped = {}
+    permissionRows.forEach((row) => {
+      if (!grouped[row.section]) grouped[row.section] = []
+      grouped[row.section].push(row)
+    })
+    return grouped
+  }, [permissionRows])
+
+  function isChecked(roleId, permissionKey) {
+    const selected = draftByRoleId[roleId] || []
+    return selected.includes(permissionKey)
+  }
+
+  async function togglePermission(role, permissionKey) {
+    if (!canEditRole(role.key)) return
+    if (savingByRoleId[role.id]) return
+
+    const selected = draftByRoleId[role.id] || []
+    const next = selected.includes(permissionKey)
+      ? selected.filter((item) => item !== permissionKey)
+      : selected.concat(permissionKey)
+
+    setDraftByRoleId((current) => ({ ...current, [role.id]: next }))
+    setSavingByRoleId((current) => ({ ...current, [role.id]: true }))
+    try {
+      await onSaveRole(role.id, next)
+    } finally {
+      setSavingByRoleId((current) => ({ ...current, [role.id]: false }))
+    }
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{subtitle}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {allItems.map((item) => (
-            <label key={item} className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors border border-transparent hover:border-border">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-primary text-primary focus:ring-primary"
-                checked={localKeys.includes(item)}
-                onChange={() => toggleKey(item)}
-                disabled={!canSave}
-              />
-              <span className="text-sm font-medium">{item.replaceAll('_', ' ')}</span>
-            </label>
-          ))}
+    <Card className="overflow-hidden border-2 border-border">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/10 px-4 py-3">
+        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Restore defaults</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {roles.map((role) => {
+            const editable = canEditRole(role.key)
+            const saving = Boolean(savingByRoleId[role.id])
+            return (
+              <Button
+                key={`restore-${role.id}`}
+                variant="ghost"
+                size="sm"
+                onClick={() => onRestoreRole(role.id)}
+                disabled={!editable || saving}
+              >
+                Restore {role.name}
+              </Button>
+            )
+          })}
         </div>
-      </CardContent>
-      <div className="flex items-center justify-end gap-2 p-4 pt-0">
-        <Button variant="ghost" size="sm" onClick={onRestore} disabled={!canSave}>
-          Restore default
-        </Button>
-        <Button size="sm" onClick={() => onSave(localKeys)} disabled={!canSave}>
-          Save changes
-        </Button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1080px] border-collapse">
+          <thead>
+            <tr className="bg-[#e9e7db] text-foreground">
+              <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
+              {roles.map((role) => (
+                <th key={role.id} className="border-b-2 border-foreground/90 px-4 py-3 text-center text-xs font-bold uppercase tracking-widest">
+                  {role.name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {permissionSectionOrder.map((section) => {
+              const rows = rowsBySection[section] || []
+              if (!rows.length) return null
+              return (
+                <Fragment key={section}>
+                  <tr className="bg-[#f4f0dc]">
+                    <td colSpan={roles.length + 1} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
+                      {permissionSectionTitle[section] || section}
+                    </td>
+                  </tr>
+                  {rows.map((row) => (
+                    <tr key={row.key} className="border-b border-border/80">
+                      <td className="px-4 py-3 align-top">
+                        <div className="text-base font-bold leading-tight">{row.title}</div>
+                        <div className="text-sm text-muted-foreground">{row.description}</div>
+                      </td>
+                      {roles.map((role) => {
+                        const checked = isChecked(role.id, row.key)
+                        const editable = canEditRole(role.key)
+                        const saving = Boolean(savingByRoleId[role.id])
+                        return (
+                          <td key={`${row.key}-${role.id}`} className="px-4 py-3 text-center">
+                            <button
+                              type="button"
+                              className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
+                                checked
+                                  ? 'border-transparent text-emerald-600'
+                                  : 'border-muted-foreground/40 text-muted-foreground'
+                              } ${editable && !saving ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                              onClick={() => togglePermission(role, row.key)}
+                              disabled={!editable || saving}
+                              aria-label={`${checked ? 'Revoke' : 'Grant'} ${row.title} for ${role.name}`}
+                            >
+                              {checked ? '\u2713' : '-'}
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </Card>
   )
 }
-
-
 function MetricCard({ title, value }) {
   return (
     <Card>
@@ -1506,5 +1637,3 @@ function MetricCard({ title, value }) {
 }
 
 export default AdminControlCenterPage
-
-

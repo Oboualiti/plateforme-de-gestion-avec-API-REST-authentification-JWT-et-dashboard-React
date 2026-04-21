@@ -347,7 +347,7 @@ function CreateManagedUserPage() {
               <button
                 type="button"
                 className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition hover:bg-muted/60"
-                onClick={() => navigate('/admin/permissions')}
+                onClick={() => navigate('/admin/users')}
               >
                 Cancel
               </button>
@@ -393,5 +393,4 @@ function CreateManagedUserPage() {
 }
 
 export default CreateManagedUserPage
-
 

@@ -209,9 +209,16 @@ class AdminCompanyDetailView(AdminBaseView):
         company = self.scoped_companies(request.user).filter(id=company_id).first()
         if company is None:
             return Response({"detail": "Company not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        is_active = request.data.get('is_active')
+        
         serializer = CompanyWriteSerializer(company, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        
+        if is_active is not None:
+            User.objects.filter(company_id=company_id).update(is_active=is_active)
+        
         company.refresh_from_db()
         log_admin_action(actor=request.user, module="companies", action="update", target_model="Company", target_id=company.id, target_label=company.name)
         return Response(CompanyAdminSerializer(company).data)
@@ -280,9 +287,16 @@ class AdminEntityDetailView(AdminBaseView):
         entity = self.scoped_entities(request.user).filter(id=entity_id).first()
         if entity is None:
             return Response({"detail": "Entity not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        is_active = request.data.get('is_active')
+        
         serializer = EntityWriteSerializer(entity, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        
+        if is_active is not None:
+            User.objects.filter(entity_id=entity_id).update(is_active=is_active)
+        
         entity.refresh_from_db()
         log_admin_action(actor=request.user, module="entities", action="update", target_model="Entity", target_id=entity.id, target_label=entity.name)
         return Response(EntityAdminSerializer(entity).data)

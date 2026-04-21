@@ -22,6 +22,7 @@ from .admin_views import (
     AdminStatusTrackingView,
 )
 from .views import (
+    GlobalSearchView,
     ManageableUserCrudView,
     ManageableUserExportView,
     ManageableUserFormOptionsView,
@@ -55,6 +56,7 @@ urlpatterns = [
     path("notifications/", AdminNotificationsView.as_view(), name="admin-notifications"),
     path("notifications/<int:preference_id>/", AdminNotificationsView.as_view(), name="admin-notifications-detail"),
     path("reports/", AdminReportsView.as_view(), name="admin-reports"),
+    path("global-search/", GlobalSearchView.as_view(), name="global-search"),
     path("users/manageable/", ManageableUserListView.as_view(), name="manageable-users"),
     path(
         "users/manageable/export/",

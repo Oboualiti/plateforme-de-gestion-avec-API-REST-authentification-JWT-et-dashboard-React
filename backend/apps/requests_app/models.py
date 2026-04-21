@@ -86,6 +86,7 @@ class ServiceRequest(models.Model):
     request_number = models.CharField(max_length=50, unique=True)
     title = models.CharField(max_length=255)
     description = models.TextField()
+    attachment = models.FileField(upload_to="request_attachments/", null=True, blank=True)
     category = models.CharField(max_length=100)
     priority = models.CharField(
         max_length=20, choices=Priority.choices, default=Priority.MEDIUM

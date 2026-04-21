@@ -365,7 +365,7 @@ function PermissionDetailPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-1.5">
               <label htmlFor="password" className="text-sm font-medium text-foreground">New Password (Optional)</label>
               <input
@@ -379,19 +379,22 @@ function PermissionDetailPage() {
                 disabled={!canEdit}
               />
             </div>
-            <label htmlFor="active-user-switch" className="flex h-10 items-center gap-2 rounded-md border border-border bg-muted/20 px-3 text-sm text-foreground">
-              <input
-                id="active-user-switch"
-                type="checkbox"
-                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                checked={profileForm.is_active}
+            <div className="space-y-1.5">
+              <label htmlFor="status_select" className="text-sm font-medium text-foreground">Status</label>
+              <Select
+                id="status_select"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                value={profileForm.is_active ? 'active' : 'inactive'}
                 onChange={(event) =>
-                  setProfileForm((current) => ({ ...current, is_active: event.target.checked }))
+                  setProfileForm((current) => ({ ...current, is_active: event.target.value === 'active' }))
                 }
                 disabled={!canEdit}
-              />
-              <span>Active User</span>
-            </label>
+              >
+                <option value="">Select status</option>
+                <option value="active">Activate</option>
+                <option value="inactive">Deactivate</option>
+              </Select>
+            </div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -478,24 +481,24 @@ function PermissionDetailPage() {
             <h3 className="text-sm font-semibold text-foreground">Assigned Role</h3>
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               {roleOptions.map((role) => (
-                <label
-                  key={role.key}
-                  className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-foreground"
-                  htmlFor={`role-${role.key}`}
-                >
-                  <input
-                    id={`role-${role.key}`}
-                    type="radio"
-                    className="h-4 w-4 border-border text-primary focus:ring-ring"
-                    name="role-selection"
-                    checked={selectedRole === role.key}
-                    onChange={() => setSelectedRole(role.key)}
+                <div key={role.key} className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
+                      selectedRole === role.key
+                        ? 'border-transparent text-emerald-600'
+                        : 'border-muted-foreground/40 text-muted-foreground'
+                    } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                    onClick={() => setSelectedRole(role.key)}
                     disabled={!canEdit}
-                  />
-                  <span>
+                    aria-label={`Select ${role.name} role`}
+                  >
+                    {selectedRole === role.key ? '\u2713' : '-'}
+                  </button>
+                  <label className="text-sm text-foreground">
                     {role.name} <small className="text-muted-foreground">(level {role.level})</small>
-                  </span>
-                </label>
+                  </label>
+                </div>
               ))}
             </div>
           </div>
@@ -532,38 +535,40 @@ function PermissionDetailPage() {
           </div>
           <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
         </div>
-        <div className="grid gap-2">
-          {user.permissions.map((permission) => (
-            <article
-              key={permission.key}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-3"
-            >
-              <div>
-                <p className="text-sm font-semibold text-foreground">{permission.name}</p>
-                <p className="text-xs text-muted-foreground">{permission.key}</p>
-                <span
-                  className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                    permission.effective
-                      ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
-                      : 'border-red-200 bg-red-100 text-red-700'
-                  }`}
-                >
-                  {permission.effective ? 'Allowed' : 'Denied'}
-                </span>
-              </div>
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-foreground" htmlFor={`permission-${permission.key}`}>
-                <input
-                  id={`permission-${permission.key}`}
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                  checked={permission.effective}
-                  onChange={(event) => updatePermission(permission.key, event.target.checked)}
-                  disabled={!canEdit}
-                />
-                <span>{permission.effective ? 'ON' : 'OFF'}</span>
-              </label>
-            </article>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-[#e9e7db] text-foreground">
+                <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
+                <th className="border-b-2 border-foreground/90 px-4 py-3 text-center text-xs font-bold uppercase tracking-widest">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {user.permissions.map((permission) => (
+                <tr key={permission.key} className="border-b border-border/80">
+                  <td className="px-4 py-3 align-top">
+                    <div className="text-base font-bold leading-tight">{permission.name}</div>
+                    <div className="text-sm text-muted-foreground">{permission.key}</div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
+                        permission.effective
+                          ? 'border-transparent text-emerald-600'
+                          : 'border-muted-foreground/40 text-muted-foreground'
+                      } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                      onClick={() => updatePermission(permission.key, !permission.effective)}
+                      disabled={!canEdit}
+                      aria-label={`${permission.effective ? 'Revoke' : 'Grant'} ${permission.name}`}
+                    >
+                      {permission.effective ? '\u2713' : '-'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
     </main>

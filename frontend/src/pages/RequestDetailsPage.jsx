@@ -52,8 +52,10 @@ function RequestDetailsPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
   const [comment, setComment] = useState('')
+  const [commentAttachment, setCommentAttachment] = useState(null)
   const [assignmentForm, setAssignmentForm] = useState({ userId: '', note: '' })
   const [actionState, setActionState] = useState({ busy: false, error: '' })
+  const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
   const discussionScrollRef = useRef(null)
 
   const request = state.request
@@ -144,6 +146,7 @@ function RequestDetailsPage() {
       const response = await requestPromise
       setState((current) => ({ ...current, request: response.data }))
       setComment('')
+      setCommentAttachment(null)
       setActionState({ busy: false, error: '' })
     } catch (error) {
       setActionState({
@@ -155,8 +158,13 @@ function RequestDetailsPage() {
 
   async function submitComment(event) {
     event.preventDefault()
-    if (!comment.trim()) return
-    await refreshFromResponse(api.post(`/requests/${requestId}/comments/`, { message: comment }))
+    if (!comment.trim() && !commentAttachment) return
+    const payload = new FormData()
+    payload.append('message', comment)
+    if (commentAttachment) {
+      payload.append('attachment', commentAttachment)
+    }
+    await refreshFromResponse(api.post(`/requests/${requestId}/comments/`, payload))
   }
 
   async function updateStatus(nextStatus, nextNote = '') {
@@ -197,6 +205,25 @@ function RequestDetailsPage() {
       }),
     )
     setAssignmentForm({ userId: '', note: '' })
+  }
+
+  async function handleSummarizeDiscussion() {
+    if (aiSummary.loading) return
+    setAiSummary({ loading: true, error: '', data: null })
+    try {
+      const response = await api.post(`/requests/${requestId}/ai-summary/`, {})
+      setAiSummary({
+        loading: false,
+        error: '',
+        data: response.data || null,
+      })
+    } catch (nextError) {
+      setAiSummary({
+        loading: false,
+        error: nextError.response?.data?.detail || 'Could not summarize discussion with AI.',
+        data: null,
+      })
+    }
   }
 
   if (state.loading) {
@@ -276,6 +303,16 @@ function RequestDetailsPage() {
             <p className="max-w-3xl text-sm text-muted-foreground">
               {request.description || 'No description provided for this request.'}
             </p>
+            {request.attachment_url ? (
+              <a
+                href={request.attachment_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs font-semibold text-foreground transition hover:bg-muted/40"
+              >
+                Open request attachment
+              </a>
+            ) : null}
             <div className="grid gap-3 text-sm sm:grid-cols-3">
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Company</p>
@@ -448,6 +485,74 @@ function RequestDetailsPage() {
       </section>
 
       <section className="surface-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</p>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">Summarize discussion</h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleSummarizeDiscussion}
+            disabled={aiSummary.loading}
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {aiSummary.loading ? 'Summarizing...' : 'Summarize discussion'}
+          </button>
+        </div>
+
+        {aiSummary.error ? (
+          <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {aiSummary.error}
+          </p>
+        ) : null}
+
+        {aiSummary.data ? (
+          <div className="mt-3 space-y-2 rounded-md border border-border bg-muted/20 p-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Short summary</p>
+              <p className="text-sm text-foreground">{aiSummary.data.short_summary || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Current progress</p>
+              <p className="text-sm text-foreground">{aiSummary.data.current_progress || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Latest blocker</p>
+              <p className="text-sm text-foreground">{aiSummary.data.latest_blocker || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Pending from</p>
+              <p className="text-sm font-medium text-foreground">{aiSummary.data.pending_from || 'unknown'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Next action needed</p>
+              <p className="text-sm text-foreground">{aiSummary.data.next_action || '-'}</p>
+            </div>
+            {Array.isArray(aiSummary.data.already_done) && aiSummary.data.already_done.length > 0 ? (
+              <div>
+                <p className="text-xs text-muted-foreground">Already done</p>
+                <ul className="list-disc pl-5 text-sm text-foreground">
+                  {aiSummary.data.already_done.map((item, index) => (
+                    <li key={`${item}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {Array.isArray(aiSummary.data.still_needed) && aiSummary.data.still_needed.length > 0 ? (
+              <div>
+                <p className="text-xs text-muted-foreground">Still needed</p>
+                <ul className="list-disc pl-5 text-sm text-foreground">
+                  {aiSummary.data.still_needed.map((item, index) => (
+                    <li key={`${item}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="surface-card p-5">
         <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Discussion</p>
         <h2 className="mt-1 text-lg font-semibold text-foreground">Conversation</h2>
 
@@ -473,6 +578,16 @@ function RequestDetailsPage() {
                 <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
               </div>
               <p className="mt-2 text-sm text-foreground">{item.message}</p>
+              {item.attachment_url ? (
+                <a
+                  href={item.attachment_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center rounded-md border border-border bg-muted/20 px-2.5 py-1 text-xs font-semibold text-foreground transition hover:bg-muted/40"
+                >
+                  Open attachment
+                </a>
+              ) : null}
             </article>
           ))}
         </div>
@@ -484,9 +599,26 @@ function RequestDetailsPage() {
             onChange={(event) => setComment(event.target.value)}
             placeholder="Add a comment"
           />
+          <input
+            type="file"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-semibold"
+            onChange={(event) => setCommentAttachment(event.target.files?.[0] || null)}
+          />
+          {commentAttachment ? (
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <span className="truncate pr-2">{commentAttachment.name}</span>
+              <button
+                type="button"
+                className="font-semibold text-foreground hover:underline"
+                onClick={() => setCommentAttachment(null)}
+              >
+                Remove
+              </button>
+            </div>
+          ) : null}
           <button
             className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-            disabled={actionState.busy || !comment.trim()}
+            disabled={actionState.busy || (!comment.trim() && !commentAttachment)}
             type="submit"
           >
             Send Comment
@@ -498,5 +630,3 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
-
-

@@ -22,23 +22,24 @@ const statusLabelMap = {
 }
 
 const statusToneMap = {
-  NEW: 'bg-slate-100 text-slate-700 border-slate-200',
-  ACCEPTED: 'bg-blue-100 text-blue-700 border-blue-200',
-  IN_PROGRESS: 'bg-amber-100 text-amber-800 border-amber-200',
-  REJECTED: 'bg-red-100 text-red-700 border-red-200',
-  COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  CLOSED: 'bg-slate-200 text-slate-700 border-slate-300',
+  NEW: 'bg-slate-100 text-slate-700 border-slate-400',
+  ACCEPTED: 'bg-blue-100 text-blue-700 border-blue-400',
+  IN_PROGRESS: 'bg-amber-100 text-amber-800 border-amber-400',
+  REJECTED: 'bg-red-100 text-red-700 border-red-400',
+  COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-400',
+  CLOSED: 'bg-slate-200 text-slate-700 border-slate-500',
 }
 
 function statusPillClass(status) {
-  return `inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${statusToneMap[status] || 'bg-slate-100 text-slate-700 border-slate-200'}`
+  return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${statusToneMap[status] || 'bg-slate-100 text-slate-700 border-slate-400'}`
 }
 
 function typePillClass(type) {
-  if (type === 'SCRIPT') return 'bg-indigo-100 text-indigo-700 border-indigo-200'
-  if (type === 'TOOL') return 'bg-cyan-100 text-cyan-700 border-cyan-200'
-  if (type === 'APP_PROJECT') return 'bg-purple-100 text-purple-700 border-purple-200'
-  return 'bg-slate-100 text-slate-700 border-slate-200'
+  let baseClass = 'bg-slate-100 text-slate-700 border-slate-400'
+  if (type === 'SCRIPT') baseClass = 'bg-indigo-100 text-indigo-700 border-indigo-400'
+  if (type === 'TOOL') baseClass = 'bg-cyan-100 text-cyan-700 border-cyan-400'
+  if (type === 'APP_PROJECT') baseClass = 'bg-purple-100 text-purple-700 border-purple-400'
+  return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${baseClass}`
 }
 
 function formatUpdated(value) {
@@ -85,6 +86,14 @@ function RequestsPage() {
     entity: 'Entity requests',
     company: 'Company requests',
   }
+
+  useEffect(() => {
+    const nextSearch = searchParams.get('search') || ''
+    setFilters((current) => (
+      current.search === nextSearch ? current : { ...current, search: nextSearch }
+    ))
+    setPagination((current) => (current.page === 1 ? current : { ...current, page: 1 }))
+  }, [searchParams])
 
   useEffect(() => {
     if (!isGlobalAdmin) return
@@ -349,7 +358,7 @@ function RequestsPage() {
                       <span className="font-medium text-foreground">{item.target_entity_name || '-'}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${typePillClass(item.type)}`}>
+                      <span className={typePillClass(item.type)}>
                         {item.type || 'INFO'}
                       </span>
                     </td>
@@ -412,5 +421,4 @@ function RequestsPage() {
 }
 
 export default RequestsPage
-
 

@@ -255,6 +255,37 @@
     font-size: 17px;
   }
 
+  html {
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    scrollbar-color: hsl(var(--muted-foreground)) hsl(var(--surface-2));
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: hsl(var(--surface-2));
+    border: 1px solid hsl(var(--ink) / 0.2);
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.55);
+    border: 2px solid hsl(var(--surface-2));
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary));
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: hsl(var(--surface-2));
+  }
+
   select {
     color-scheme: light;
   }

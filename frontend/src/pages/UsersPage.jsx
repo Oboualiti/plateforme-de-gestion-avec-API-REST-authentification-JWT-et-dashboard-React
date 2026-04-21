@@ -231,7 +231,7 @@ function UsersPage() {
             className="rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
           >
             <option value="all">All entities</option>
-            {entities.filter(e => !companyId || companyId === 'all' || e.company === Number(companyId)).map((e) => (
+            {entities.filter(e => !companyId || companyId === 'all' || e.company_id === Number(companyId)).map((e) => (
               <option key={e.id} value={e.id}>{e.name} ({e.code})</option>
             ))}
           </Select>

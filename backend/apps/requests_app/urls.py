@@ -8,6 +8,8 @@ from .views import (
     RequestDetailView,
     RequestAssignToMeView,
     RequestAssignUserView,
+    RequestAiImproveView,
+    RequestAiSummaryView,
     RequestMessageViewSet,
     RequestListCreateView,
     RequestTargetReassignView,
@@ -30,6 +32,8 @@ router.register(
 router.register(r"request-messages", RequestMessageViewSet, basename="request-message")
 
 urlpatterns = [
+    path("requests/ai/improve/", RequestAiImproveView.as_view(), name="requests-ai-improve"),
+    path("requests/<int:request_id>/ai-summary/", RequestAiSummaryView.as_view(), name="requests-ai-summary"),
     path("requests/", RequestListCreateView.as_view(), name="requests-list-create"),
     path("requests/<int:request_id>/", RequestDetailView.as_view(), name="requests-detail"),
     path(

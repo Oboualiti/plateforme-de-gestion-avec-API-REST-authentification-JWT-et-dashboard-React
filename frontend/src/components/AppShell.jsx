@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { Bell, LogOut, Menu, Search, Settings, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bell, Building2, FileText, LogOut, Menu, Search, Settings, UserRound, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS, ROLE_RANK } from "../lib/constants";
@@ -32,7 +32,7 @@ function Brand() {
 }
 
 function SidebarContent({ onNavigate }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const role = user?.role_keys?.[0] || user?.role || "super_admin";
   const groups = getNavForRole(role);
   const location = useLocation();
@@ -78,10 +78,21 @@ function SidebarContent({ onNavigate }) {
                 );
               })}
             </div>
-          </div>
+            </div>
         ))}
       </nav>
       <div className="border-t-2 border-sidebar-border p-3">
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+            onNavigate?.();
+          }}
+          className="mb-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-card px-3 text-sm font-bold uppercase tracking-tight text-foreground shadow-elev-sm transition-colors hover:bg-primary-soft"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
         <div className="rounded-md border-2 border-ink bg-surface-2 p-3 shadow-elev-sm">
           <div className="eyebrow">Signed in as</div>
           {user ? (
@@ -226,7 +237,100 @@ function NotificationsBell() {
 }
 
 export function AppShell({ children }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState({
+    requests: [],
+    users: [],
+    entities: [],
+  });
+  const blurTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (location.pathname !== "/requests") return;
+    const params = new URLSearchParams(location.search);
+    setGlobalSearch(params.get("search") || "");
+  }, [location.pathname, location.search]);
+
+  function handleGlobalSearchSubmit(event) {
+    event.preventDefault();
+    const params = new URLSearchParams();
+    const query = globalSearch.trim();
+
+    if (location.pathname === "/requests") {
+      const currentParams = new URLSearchParams(location.search);
+      const currentScope = currentParams.get("scope");
+      if (currentScope) params.set("scope", currentScope);
+    }
+    if (query) params.set("search", query);
+
+    navigate(`/requests${params.toString() ? `?${params.toString()}` : ""}`);
+    setIsSearchOpen(false);
+  }
+
+  useEffect(() => {
+    const query = globalSearch.trim();
+    if (query.length < 2) {
+      setSearchLoading(false);
+      setSearchSuggestions({ requests: [], users: [], entities: [] });
+      return;
+    }
+
+    let active = true;
+    setSearchLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const response = await api.get("/admin/global-search/", {
+          params: { q: query, limit: 5 },
+        });
+        if (!active) return;
+        setSearchSuggestions({
+          requests: Array.isArray(response.data?.requests) ? response.data.requests : [],
+          users: Array.isArray(response.data?.users) ? response.data.users : [],
+          entities: Array.isArray(response.data?.entities) ? response.data.entities : [],
+        });
+      } catch {
+        if (!active) return;
+        setSearchSuggestions({ requests: [], users: [], entities: [] });
+      } finally {
+        if (active) setSearchLoading(false);
+      }
+    }, 220);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [globalSearch]);
+
+  function handleSearchFocus() {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    setIsSearchOpen(true);
+  }
+
+  function handleSearchBlur() {
+    blurTimeoutRef.current = setTimeout(() => {
+      setIsSearchOpen(false);
+    }, 140);
+  }
+
+  function handleSuggestionClick(item) {
+    setIsSearchOpen(false);
+    setGlobalSearch(item.label || "");
+    navigate(item.link);
+  }
+
+  const totalSuggestions =
+    searchSuggestions.requests.length +
+    searchSuggestions.users.length +
+    searchSuggestions.entities.length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -261,10 +365,80 @@ export function AppShell({ children }) {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className="relative hidden flex-1 max-w-md md:block">
+          <form className="relative hidden flex-1 max-w-md md:block" onSubmit={handleGlobalSearchSubmit}>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Search requests, users, entities…" className="h-9 pl-9" />
-          </div>
+            <Input
+              value={globalSearch}
+              onChange={(event) => setGlobalSearch(event.target.value)}
+              onFocus={handleSearchFocus}
+              onBlur={handleSearchBlur}
+              placeholder="Search requests, users, entities..."
+              className="h-9 pl-9"
+            />
+            {isSearchOpen && globalSearch.trim().length >= 2 && (
+              <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 rounded-md border-2 border-ink bg-card p-2 shadow-elev-lg">
+                {searchLoading ? (
+                  <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
+                ) : totalSuggestions === 0 ? (
+                  <div className="px-2 py-2 text-xs text-muted-foreground">No matching requests, users, or entities.</div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto">
+                    {searchSuggestions.requests.length > 0 && (
+                      <div className="mb-1">
+                        <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Requests</p>
+                        {searchSuggestions.requests.map((item) => (
+                          <button
+                            key={`request-${item.id}`}
+                            type="button"
+                            onMouseDown={() => handleSuggestionClick(item)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-primary-soft"
+                          >
+                            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate font-medium">{item.label}</span>
+                            <span className="truncate text-xs text-muted-foreground">{item.subtitle}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {searchSuggestions.users.length > 0 && (
+                      <div className="mb-1">
+                        <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Users</p>
+                        {searchSuggestions.users.map((item) => (
+                          <button
+                            key={`user-${item.id}`}
+                            type="button"
+                            onMouseDown={() => handleSuggestionClick(item)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-primary-soft"
+                          >
+                            <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate font-medium">{item.label}</span>
+                            <span className="truncate text-xs text-muted-foreground">{item.subtitle}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {searchSuggestions.entities.length > 0 && (
+                      <div>
+                        <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Entities</p>
+                        {searchSuggestions.entities.map((item) => (
+                          <button
+                            key={`entity-${item.id}`}
+                            type="button"
+                            onMouseDown={() => handleSuggestionClick(item)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-primary-soft"
+                          >
+                            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate font-medium">{item.label}</span>
+                            <span className="truncate text-xs text-muted-foreground">{item.subtitle}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </form>
           <div className="ml-auto flex items-center gap-1.5">
             <NotificationsBell />
             <UserMenu />

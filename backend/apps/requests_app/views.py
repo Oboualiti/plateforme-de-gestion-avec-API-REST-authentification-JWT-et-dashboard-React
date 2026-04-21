@@ -1,5 +1,12 @@
+import json
+import os
+import re
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from datetime import timedelta
+from pathlib import Path
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -38,6 +45,7 @@ from .serializers import (
     RequestStatusUpdateSerializer,
     RequestStatusHistorySerializer,
     RequestSummarySerializer,
+    REQUEST_TYPE_CHOICES,
     RequestAssignUserSerializer,
     RequestTargetReassignSerializer,
     RequestCreateSerializer,
@@ -51,6 +59,284 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+class OpenRouterMixin:
+    def _read_env_value(self, key):
+        candidate_files = [Path(settings.BASE_DIR) / ".env", Path(settings.BASE_DIR) / "env"]
+        for env_file in candidate_files:
+            if not env_file.exists():
+                continue
+            try:
+                for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    env_key, value = line.split("=", 1)
+                    if env_key.strip() == key:
+                        parsed = value.strip().strip('"').strip("'")
+                        if parsed:
+                            return parsed
+            except OSError:
+                continue
+        return os.getenv(key, "").strip()
+
+    def _get_openrouter_api_key(self):
+        api_key = self._read_env_value("OPENROUTER_API_KEY")
+        is_placeholder_key = api_key.startswith("<") and api_key.endswith(">")
+        if not api_key or is_placeholder_key:
+            raise ValueError(
+                "OpenRouter API key is not configured on the server. "
+                "Set OPENROUTER_API_KEY in backend/.env to your real key (starts with sk-or-v1-)."
+            )
+        return api_key
+
+    def _extract_json_object(self, raw_text):
+        stripped = (raw_text or "").strip()
+        if not stripped:
+            return {}
+        try:
+            return json.loads(stripped)
+        except (TypeError, ValueError):
+            pass
+        match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", stripped, re.DOTALL)
+        if not match:
+            return {}
+        try:
+            return json.loads(match.group(1))
+        except (TypeError, ValueError):
+            return {}
+
+    def _openrouter_chat(self, messages, model_name=None, max_tokens=700):
+        api_key = self._get_openrouter_api_key()
+        model = model_name or self._read_env_value("OPENROUTER_MODEL") or "nvidia/nemotron-3-super-120b-a12b:free"
+        endpoint = "https://openrouter.ai/api/v1/chat/completions"
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": 0.2,
+        }
+        request_payload = json.dumps(payload).encode("utf-8")
+        http_request = urllib_request.Request(
+            endpoint,
+            data=request_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib_request.urlopen(http_request, timeout=20) as response:
+                raw_body = response.read().decode("utf-8")
+            data = json.loads(raw_body)
+            choices = data.get("choices") or []
+            text = ""
+            if choices:
+                text = ((choices[0].get("message") or {}).get("content") or "").strip()
+            if not text:
+                text = "No response text returned from OpenRouter."
+            return text
+        except urllib_error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="ignore")
+            detail = "OpenRouter request failed."
+            try:
+                parsed = json.loads(body)
+                detail = (
+                    parsed.get("error", {}).get("message")
+                    or parsed.get("detail")
+                    or detail
+                )
+            except (TypeError, ValueError):
+                pass
+            raise RuntimeError(detail) from exc
+        except (urllib_error.URLError, TimeoutError):
+            raise RuntimeError("OpenRouter service is unreachable right now.")
+
+
+class RequestAiImproveView(OpenRouterMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        title = (request.data.get("title") or "").strip()
+        description = (request.data.get("description") or "").strip()
+        if not title and not description:
+            return Response(
+                {"detail": "Provide at least a title or description for AI improvement."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        current_type = (request.data.get("type") or "").strip().upper()
+        available_targets = request.data.get("available_targets") or []
+        if not isinstance(available_targets, list):
+            available_targets = []
+
+        normalized_targets = []
+        for item in available_targets:
+            if not isinstance(item, dict):
+                continue
+            target_id = item.get("id")
+            label = (item.get("label") or item.get("name") or "").strip()
+            if not label:
+                continue
+            normalized_targets.append({"id": target_id, "label": label})
+
+        allowed_types = [choice[0] for choice in REQUEST_TYPE_CHOICES]
+        target_guidance = ", ".join(f"{entry['id']}: {entry['label']}" for entry in normalized_targets) or "No target teams provided."
+
+        prompt = (
+            "You are helping enterprise users improve internal service requests.\n"
+            "Input may be in Darija, French, English, or mixed language.\n"
+            "Return ONLY valid JSON with keys:\n"
+            "suggested_title (string), improved_description (string), suggested_type (one of "
+            f"{allowed_types}), suggested_target_team_name (string), missing_information (array of strings), "
+            "normalized_language (string).\n"
+            "Keep business wording concise and clear."
+        )
+        user_message = (
+            f"Current title: {title or '-'}\n"
+            f"Current description: {description or '-'}\n"
+            f"Current type: {current_type or '-'}\n"
+            f"Allowed types: {', '.join(allowed_types)}\n"
+            f"Available target teams: {target_guidance}\n"
+            "If information is missing, list it in missing_information."
+        )
+
+        try:
+            raw = self._openrouter_chat(
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=900,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        parsed = self._extract_json_object(raw)
+        missing_info = parsed.get("missing_information") if isinstance(parsed, dict) else []
+        if not isinstance(missing_info, list):
+            missing_info = []
+        missing_info = [str(item).strip() for item in missing_info if str(item).strip()]
+
+        suggested_type = str((parsed or {}).get("suggested_type", "")).upper().strip()
+        if suggested_type not in allowed_types:
+            suggested_type = current_type if current_type in allowed_types else ""
+
+        suggested_target_name = str((parsed or {}).get("suggested_target_team_name", "")).strip()
+        suggested_target_id = None
+        if suggested_target_name:
+            lowered_suggestion = suggested_target_name.lower()
+            for target in normalized_targets:
+                lowered_label = target["label"].lower()
+                if lowered_suggestion == lowered_label or lowered_suggestion in lowered_label or lowered_label in lowered_suggestion:
+                    suggested_target_id = target["id"]
+                    suggested_target_name = target["label"]
+                    break
+
+        return Response(
+            {
+                "suggested_title": str((parsed or {}).get("suggested_title", "")).strip(),
+                "improved_description": str((parsed or {}).get("improved_description", "")).strip(),
+                "suggested_type": suggested_type,
+                "suggested_target_team_id": suggested_target_id,
+                "suggested_target_team_name": suggested_target_name,
+                "missing_information": missing_info,
+                "normalized_language": str((parsed or {}).get("normalized_language", "")).strip(),
+                "raw_response": raw if not parsed else "",
+            }
+        )
+
+
+class RequestAiSummaryView(OpenRouterMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None or not get_visible_requests_queryset(request.user).filter(id=request_id).exists():
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        comments = list(service_request.messages.all().order_by("created_at"))
+        status_events = list(service_request.status_history.all().order_by("changed_at"))
+        assignment_events = list(service_request.assignment_history.all().order_by("created_at"))
+
+        comment_lines = [
+            f"- [{item.created_at.isoformat()}] {item.sender.username}: {item.message}"
+            for item in comments[-40:]
+        ]
+        status_lines = [
+            f"- [{item.changed_at.isoformat()}] {item.changed_by.username}: {item.old_status} -> {item.new_status}. Note: {item.note or '-'}"
+            for item in status_events[-20:]
+        ]
+        assignment_lines = [
+            f"- [{item.created_at.isoformat()}] {item.assigned_by.username} assigned to {item.assignee.username}. Note: {item.note or '-'}"
+            for item in assignment_events[-20:]
+        ]
+
+        prompt = (
+            "You summarize enterprise support request discussions.\n"
+            "Return ONLY valid JSON with keys:\n"
+            "short_summary (string), current_progress (string), latest_blocker (string), "
+            "already_done (array of strings), still_needed (array of strings), "
+            "pending_from (one of requester, handler, both, unknown), next_action (string).\n"
+            "Be concise, factual, and avoid speculation."
+        )
+        user_message = (
+            f"Request title: {service_request.title}\n"
+            f"Request description: {service_request.description}\n"
+            f"Current status: {service_request.status}\n"
+            f"Current assignee: {service_request.current_assignee.username if service_request.current_assignee_id else 'Unassigned'}\n"
+            f"Resolution note: {service_request.resolution_note or '-'}\n"
+            "Status history:\n"
+            f"{chr(10).join(status_lines) or '- none -'}\n"
+            "Assignments:\n"
+            f"{chr(10).join(assignment_lines) or '- none -'}\n"
+            "Discussion comments:\n"
+            f"{chr(10).join(comment_lines) or '- none -'}"
+        )
+
+        try:
+            raw = self._openrouter_chat(
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=900,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        parsed = self._extract_json_object(raw)
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        def clean_list(key):
+            value = parsed.get(key) if isinstance(parsed.get(key), list) else []
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        pending_from = str(parsed.get("pending_from", "unknown")).strip().lower()
+        if pending_from not in {"requester", "handler", "both", "unknown"}:
+            pending_from = "unknown"
+
+        return Response(
+            {
+                "short_summary": str(parsed.get("short_summary", "")).strip(),
+                "current_progress": str(parsed.get("current_progress", "")).strip(),
+                "latest_blocker": str(parsed.get("latest_blocker", "")).strip(),
+                "already_done": clean_list("already_done"),
+                "still_needed": clean_list("still_needed"),
+                "pending_from": pending_from,
+                "next_action": str(parsed.get("next_action", "")).strip(),
+                "raw_response": raw if not parsed else "",
+            }
+        )
 
 
 class MainBranchViewSet(viewsets.ModelViewSet):
@@ -206,10 +492,21 @@ class RequestListCreateView(APIView):
             and "super_admin" not in role_keys
             and "senior" not in role_keys
         ):
-            if not selected_source_entity or target_entity.id != selected_source_entity.id:
+            if not selected_source_entity or selected_source_entity.id != request.user.entity_id:
                 return Response(
                     {
-                        "detail": "Managers and team leaders can create requests only for their own entity."
+                        "detail": "Managers and team leaders can create requests only from their own source entity."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            # For non-production manager/team_leader users, keep target restricted to own entity.
+            if (
+                request.user.entity.entity_type != Entity.EntityType.PROD
+                and target_entity.id != request.user.entity_id
+            ):
+                return Response(
+                    {
+                        "detail": "Managers and team leaders outside production can target only their own entity."
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
@@ -220,7 +517,8 @@ class RequestListCreateView(APIView):
         service_request = ServiceRequest.objects.create(
             request_number=f"REQ-{timezone.now():%Y%m%d%H%M%S%f}",
             title=serializer.validated_data["title"],
-            description=serializer.validated_data["description"],
+            description=serializer.validated_data.get("description", ""),
+            attachment=serializer.validated_data.get("attachment"),
             category=serializer.validated_data["type"],
             requester_user=request.user,
             company=selected_company,
@@ -307,7 +605,8 @@ class RequestCommentCreateView(APIView):
         request_message = RequestMessage.objects.create(
             request=service_request,
             sender=request.user,
-            message=serializer.validated_data["message"],
+            message=serializer.validated_data.get("message", ""),
+            attachment=serializer.validated_data.get("attachment"),
         )
         recipients = resolve_request_notification_recipients(service_request)
         recipients = filter_recipients_by_request_visibility(service_request, recipients)

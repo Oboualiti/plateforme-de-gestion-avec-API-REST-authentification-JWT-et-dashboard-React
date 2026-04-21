@@ -47,7 +47,7 @@ function PermissionManagementPage() {
 
   const showEntityTypeFilter = isSuperAdmin || isSenior
   const showCompanyFilter = isSuperAdmin
-  const showEntityFilter = isSenior
+  const showEntityFilter = isSenior || isSuperAdmin
 
   useEffect(() => {
     let active = true
@@ -68,8 +68,8 @@ function PermissionManagementPage() {
             currentEntityName: usersResponse.data.current_entity_name || results[0]?.entity_name || '-',
           })
           setDirectoryOptions({
-            companies: optionsPayload.company_options || [],
-            entities: optionsPayload.entity_options || [],
+            companies: optionsPayload.company_options || optionsPayload.companies || [],
+            entities: optionsPayload.entity_options || optionsPayload.entities || [],
           })
         }
       } catch (error) {
@@ -109,18 +109,149 @@ function PermissionManagementPage() {
   }, [state.users])
 
   const companyOptions = useMemo(() => {
-    const names = directoryOptions.companies.map((item) => item.name).filter(Boolean).sort((a, b) => a.localeCompare(b))
-    return ['all', ...names]
-  }, [directoryOptions.companies])
+    const fromOptions = (directoryOptions.companies || [])
+      .map((item) => ({
+        id: item?.id ?? item?.company_id ?? item?.company?.id ?? null,
+        name: item?.name ?? item?.company_name ?? item?.company?.name ?? '',
+        code: item?.code ?? item?.company_code ?? item?.company?.code ?? '',
+      }))
+    const fromUsers = (state.users || [])
+      .filter((item) => item?.company_id || item?.company_name)
+      .map((item) => ({
+        id: item?.company_id ?? null,
+        name: item?.company_name ?? '',
+        code: item?.company_code ?? '',
+      }))
+    const merged = [...fromOptions, ...fromUsers]
+    const deduped = Array.from(
+      new Map(
+        merged
+          .filter((item) => item?.id || item?.name)
+          .map((item) => [String(item.id ?? `${item.name}|${item.code}`), item]),
+      ).values(),
+    )
+    return deduped
+      .filter((item) => item?.id && item?.name)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [directoryOptions.companies, state.users])
 
   const entityOptions = useMemo(() => {
-    const filteredEntities = directoryOptions.entities.filter((item) => {
+    const selectedCompany = companyOptions.find(
+      (item) =>
+        String(item.id) === String(companyFilter) ||
+        item.name === companyFilter ||
+        item.code === companyFilter,
+    )
+    const selectedCompanyName = (selectedCompany?.name || '').trim().toLowerCase()
+    const selectedCompanyCode = (selectedCompany?.code || '').trim().toLowerCase()
+    const selectedCompanyId = selectedCompany?.id ?? companyFilter
+
+    const userMatchesSelectedCompany = (userItem) => {
       if (companyFilter === 'all') return true
-      return item.company_name === companyFilter
+      const userCompanyId = userItem?.company_id
+      const userCompanyName = (userItem?.company_name || '').trim().toLowerCase()
+      const userCompanyCode = (userItem?.company_code || '').trim().toLowerCase()
+      if (String(userCompanyId) === String(selectedCompanyId)) return true
+      if (selectedCompanyName && userCompanyName === selectedCompanyName) return true
+      if (selectedCompanyCode && userCompanyCode === selectedCompanyCode) return true
+      return false
+    }
+
+    const normalizedOptions = (directoryOptions.entities || []).map((item) => ({
+      id: item?.id ?? item?.entity_id ?? null,
+      name: item?.name ?? item?.entity_name ?? '',
+      company_id: item?.company_id ?? item?.company?.id ?? null,
+      company_name: item?.company_name ?? item?.company?.name ?? '',
+      company_code: item?.company_code ?? item?.company?.code ?? '',
+    }))
+    const fallbackFromUsers = state.users
+      .filter((item) => item?.entity_id)
+      .filter(userMatchesSelectedCompany)
+      .map((item) => ({
+        id: item.entity_id,
+        name: item.entity_name || `Entity ${item.entity_id}`,
+        company_id: item.company_id ?? null,
+        company_name: item.company_name ?? '',
+        company_code: item.company_code ?? '',
+      }))
+    const filteredOptions = normalizedOptions.filter((item) => {
+      if (companyFilter === 'all') return true
+      if (item.company_id !== null && item.company_id !== undefined && item.company_id !== '') {
+        return String(item.company_id) === String(selectedCompanyId)
+      }
+      const itemCompanyName = (item.company_name || '').trim().toLowerCase()
+      const itemCompanyCode = (item.company_code || '').trim().toLowerCase()
+      if (selectedCompanyName && itemCompanyName === selectedCompanyName) return true
+      if (selectedCompanyCode && itemCompanyCode === selectedCompanyCode) return true
+      return false
     })
-    const names = filteredEntities.map((item) => item.name).filter(Boolean).sort((a, b) => a.localeCompare(b))
-    return ['all', ...names]
-  }, [companyFilter, directoryOptions.entities])
+    const sourceOptions = [...filteredOptions, ...fallbackFromUsers]
+    const dedupedMap = new Map()
+    sourceOptions.forEach((item) => {
+      const key = String(item.id)
+      const existing = dedupedMap.get(key)
+      if (!existing) {
+        dedupedMap.set(key, item)
+        return
+      }
+      const existingHasCompany = existing.company_id !== null && existing.company_id !== undefined && existing.company_id !== ''
+      const currentHasCompany = item.company_id !== null && item.company_id !== undefined && item.company_id !== ''
+      if (!existingHasCompany && currentHasCompany) {
+        dedupedMap.set(key, item)
+      }
+    })
+    return Array.from(dedupedMap.values())
+      .filter((item) => item?.id)
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [companyFilter, companyOptions, directoryOptions.entities, state.users])
+
+  const usersForEntityOptions = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase()
+    return state.users.filter((item) => {
+      const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim().toLowerCase()
+      const username = (item.username || '').toLowerCase()
+      const matchesSearch = normalizedSearch.length === 0 || fullName.includes(normalizedSearch) || username.includes(normalizedSearch)
+      const matchesRole = roleFilter === 'all' || item.roles.some((role) => role.key === roleFilter)
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? item.is_active : !item.is_active)
+      const matchesEntityType = !showEntityTypeFilter || entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
+      const matchesCompany =
+        !showCompanyFilter ||
+        companyFilter === 'all' ||
+        String(item.company_id ?? item.company?.id ?? '') === String(companyFilter) ||
+        (item.company_name || '').trim().toLowerCase() ===
+          (companyOptions.find((c) => String(c.id) === String(companyFilter))?.name || '').trim().toLowerCase()
+      return matchesSearch && matchesRole && matchesStatus && matchesEntityType && matchesCompany
+    })
+  }, [
+    searchText,
+    roleFilter,
+    statusFilter,
+    entityTypeFilter,
+    companyFilter,
+    showEntityTypeFilter,
+    showCompanyFilter,
+    state.users,
+    companyOptions,
+  ])
+
+  const effectiveEntityOptions = useMemo(() => {
+    const fromVisibleUsers = usersForEntityOptions
+      .filter((item) => item?.entity_id)
+      .map((item) => ({
+        id: item.entity_id,
+        name: item.entity_name || `Entity ${item.entity_id}`,
+      }))
+    const base = fromVisibleUsers.length ? fromVisibleUsers : entityOptions
+    return Array.from(new Map(base.map((item) => [String(item.id), item])).values())
+      .filter((item) => item?.id)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [usersForEntityOptions, entityOptions])
+
+  useEffect(() => {
+    setEntityFilter('all')
+  }, [companyFilter])
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase()
@@ -131,8 +262,14 @@ function PermissionManagementPage() {
       const matchesRole = roleFilter === 'all' || item.roles.some((role) => role.key === roleFilter)
       const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? item.is_active : !item.is_active)
       const matchesEntityType = !showEntityTypeFilter || entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
-      const matchesCompany = !showCompanyFilter || companyFilter === 'all' || item.company_name === companyFilter
-      const matchesEntity = !showEntityFilter || entityFilter === 'all' || item.entity_name === entityFilter
+      const matchesCompany =
+        !showCompanyFilter ||
+        companyFilter === 'all' ||
+        String(item.company_id ?? item.company?.id ?? '') === String(companyFilter)
+      const matchesEntity =
+        !showEntityFilter ||
+        entityFilter === 'all' ||
+        String(item.entity_id ?? item.entity?.id ?? '') === String(entityFilter)
       return matchesSearch && matchesRole && matchesStatus && matchesEntityType && matchesCompany && matchesEntity
     })
   }, [searchText, roleFilter, statusFilter, entityTypeFilter, companyFilter, entityFilter, showEntityTypeFilter, showCompanyFilter, showEntityFilter, state.users])
@@ -261,6 +398,26 @@ function PermissionManagementPage() {
               <option value="all">All types</option>
               {['PROD', 'SUPPORT', 'TDEV'].map(t => <option key={t} value={t}>{t}</option>)}
             </Select>
+          )}
+          {showCompanyFilter && (
+            <select className="app-select" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)}>
+              <option value="all">All companies</option>
+              {companyOptions.map((item) => (
+                <option key={item.id} value={String(item.id)}>
+                  {item.name}{item.code ? ` (${item.code})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {showEntityFilter && (
+            <select className="app-select" value={entityFilter} onChange={(event) => setEntityFilter(event.target.value)}>
+              <option value="all">All entities</option>
+              {effectiveEntityOptions.map((item) => (
+                <option key={item.id} value={String(item.id)}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
           )}
         </div>
         <div className="overflow-x-auto">

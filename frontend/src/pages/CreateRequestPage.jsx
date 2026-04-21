@@ -21,9 +21,15 @@ function CreateRequestPage() {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [attachment, setAttachment] = useState(null)
   const [companies, setCompanies] = useState([])
   const [scopeEntities, setScopeEntities] = useState([])
   const [scopeLoading, setScopeLoading] = useState(false)
+  const [aiImprove, setAiImprove] = useState({
+    loading: false,
+    error: '',
+    result: null,
+  })
 
   const roleKeys = user?.role_keys || []
   const isSuperAdmin = roleKeys.includes('super_admin')
@@ -119,22 +125,77 @@ function CreateRequestPage() {
   )
   const targetOptions = isSuperAdmin || isSenior ? scopedTargetOptions : user?.available_target_teams || []
 
+  function getTargetLabel(team) {
+    return team.label || team.name || `Team ${team.id}`
+  }
+
+  async function handleImproveWithAi() {
+    if (aiImprove.loading) return
+    if (!form.title.trim() && !form.description.trim()) {
+      setAiImprove({
+        loading: false,
+        error: 'Add at least a title or description before running AI improvement.',
+        result: null,
+      })
+      return
+    }
+    setAiImprove({ loading: true, error: '', result: null })
+    try {
+      const response = await api.post('/requests/ai/improve/', {
+        title: form.title,
+        description: form.description,
+        type: form.type,
+        available_targets: targetOptions.map((team) => ({
+          id: team.id,
+          label: getTargetLabel(team),
+          entity_type: team.entity_type,
+        })),
+      })
+      setAiImprove({
+        loading: false,
+        error: '',
+        result: response.data || null,
+      })
+    } catch (nextError) {
+      setAiImprove({
+        loading: false,
+        error: nextError.response?.data?.detail || 'Could not improve request text with AI.',
+        result: null,
+      })
+    }
+  }
+
+  function applyAllAiSuggestions() {
+    if (!aiImprove.result) return
+    setForm((current) => ({
+      ...current,
+      title: aiImprove.result.suggested_title || current.title,
+      description: aiImprove.result.improved_description || current.description,
+      type: aiImprove.result.suggested_type || current.type,
+      target_team: aiImprove.result.suggested_target_team_id
+        ? String(aiImprove.result.suggested_target_team_id)
+        : current.target_team,
+    }))
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const payload = {
-        title: form.title,
-        description: form.description,
-        type: form.type,
-        target_team: Number(form.target_team),
+      const payload = new FormData()
+      payload.append('title', form.title)
+      payload.append('description', form.description)
+      payload.append('type', form.type)
+      payload.append('target_team', String(Number(form.target_team)))
+      if (attachment) {
+        payload.append('attachment', attachment)
       }
       if (isSuperAdmin) {
-        payload.company_id = Number(form.company_id)
-        payload.source_entity_id = Number(form.source_entity_id)
+        payload.append('company_id', String(Number(form.company_id)))
+        payload.append('source_entity_id', String(Number(form.source_entity_id)))
       } else if (isSenior) {
-        payload.source_entity_id = Number(form.source_entity_id)
+        payload.append('source_entity_id', String(Number(form.source_entity_id)))
       }
       await api.post('/requests/', payload)
       navigate('/requests', { replace: true })
@@ -296,7 +357,7 @@ function CreateRequestPage() {
                   <option value="">Select a support or development team</option>
                   {targetOptions.map((team) => (
                     <option key={team.id} value={team.id}>
-                      {team.label || team.name}
+                      {getTargetLabel(team)}
                     </option>
                   ))}
                 </Select>
@@ -315,6 +376,138 @@ function CreateRequestPage() {
                 }
               />
             </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="request-attachment" className="text-sm font-medium text-foreground">Attachment (optional)</label>
+              <input
+                id="request-attachment"
+                type="file"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-semibold"
+                onChange={(event) => setAttachment(event.target.files?.[0] || null)}
+              />
+              {attachment ? (
+                <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  <span className="truncate pr-2">{attachment.name}</span>
+                  <button
+                    type="button"
+                    className="font-semibold text-foreground hover:underline"
+                    onClick={() => setAttachment(null)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/10 px-3 py-2">
+              <p className="text-xs text-muted-foreground">
+                AI can improve title and description, suggest type/team, and highlight missing details.
+              </p>
+              <button
+                type="button"
+                onClick={handleImproveWithAi}
+                disabled={aiImprove.loading}
+                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-3 text-xs font-semibold text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {aiImprove.loading ? 'Improving...' : 'Improve with AI'}
+              </button>
+            </div>
+
+            {aiImprove.error ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {aiImprove.error}
+              </p>
+            ) : null}
+
+            {aiImprove.result ? (
+              <section className="space-y-3 rounded-md border border-border bg-muted/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">AI suggestions</h3>
+                  <button
+                    type="button"
+                    onClick={applyAllAiSuggestions}
+                    className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+                  >
+                    Apply all
+                  </button>
+                </div>
+
+                {aiImprove.result.suggested_title ? (
+                  <div className="rounded-md border border-border bg-background p-2">
+                    <p className="text-xs text-muted-foreground">Suggested title</p>
+                    <p className="mt-1 text-sm text-foreground">{aiImprove.result.suggested_title}</p>
+                    <button
+                      type="button"
+                      onClick={() => setForm((current) => ({ ...current, title: aiImprove.result.suggested_title }))}
+                      className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                    >
+                      Apply title
+                    </button>
+                  </div>
+                ) : null}
+
+                {aiImprove.result.improved_description ? (
+                  <div className="rounded-md border border-border bg-background p-2">
+                    <p className="text-xs text-muted-foreground">Improved description</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{aiImprove.result.improved_description}</p>
+                    <button
+                      type="button"
+                      onClick={() => setForm((current) => ({ ...current, description: aiImprove.result.improved_description }))}
+                      className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                    >
+                      Apply description
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {aiImprove.result.suggested_type ? (
+                    <div className="rounded-md border border-border bg-background p-2">
+                      <p className="text-xs text-muted-foreground">Suggested type</p>
+                      <p className="mt-1 text-sm text-foreground">{aiImprove.result.suggested_type}</p>
+                      <button
+                        type="button"
+                        onClick={() => setForm((current) => ({ ...current, type: aiImprove.result.suggested_type }))}
+                        className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                      >
+                        Apply type
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {aiImprove.result.suggested_target_team_name ? (
+                    <div className="rounded-md border border-border bg-background p-2">
+                      <p className="text-xs text-muted-foreground">Suggested target team</p>
+                      <p className="mt-1 text-sm text-foreground">{aiImprove.result.suggested_target_team_name}</p>
+                      <button
+                        type="button"
+                        disabled={!aiImprove.result.suggested_target_team_id}
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            target_team: String(aiImprove.result.suggested_target_team_id),
+                          }))
+                        }
+                        className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Apply team
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {Array.isArray(aiImprove.result.missing_information) && aiImprove.result.missing_information.length > 0 ? (
+                  <div className="rounded-md border border-border bg-background p-2">
+                    <p className="text-xs text-muted-foreground">Missing information</p>
+                    <ul className="mt-1 list-disc pl-5 text-sm text-foreground">
+                      {aiImprove.result.missing_information.map((item, index) => (
+                        <li key={`${item}-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             {error ? (
               <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -373,5 +566,3 @@ function CreateRequestPage() {
 }
 
 export default CreateRequestPage
-
-

@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.exceptions import NotFound
@@ -11,6 +12,7 @@ from apps.audit_logs.services import log_admin_action
 from apps.permissions_app.models import AppPermission, UserAccessDelegation, UserRole
 from apps.roles.models import Role
 from apps.users.models import User
+from apps.requests_app.views import get_visible_requests_queryset
 
 from .serializers import (
     ManagedUserCreateSerializer,
@@ -77,6 +79,111 @@ class BaseManageUsersView(APIView):
                 request,
                 message="You cannot view this user based on your scope or hierarchy.",
             )
+
+
+class GlobalSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _scoped_entities(self, user):
+        role_key = next(
+            (key for key in ("super_admin", "senior", "manager", "team_leader", "user") if key in set(user.assigned_roles.values_list("role__key", flat=True))),
+            "",
+        )
+        if role_key == "super_admin":
+            return Entity.objects.filter(is_active=True).select_related("company")
+        if role_key == "senior" and user.company_id:
+            return Entity.objects.filter(is_active=True, company_id=user.company_id).select_related("company")
+        if user.entity_id:
+            return Entity.objects.filter(is_active=True, id=user.entity_id).select_related("company")
+        return Entity.objects.none()
+
+    def get(self, request):
+        query = (request.query_params.get("q") or "").strip()
+        if len(query) < 2:
+            return Response({"requests": [], "users": [], "entities": []})
+
+        limit_raw = request.query_params.get("limit", "5")
+        try:
+            limit = int(limit_raw)
+        except (TypeError, ValueError):
+            limit = 5
+        limit = max(1, min(limit, 10))
+
+        requests_qs = (
+            get_visible_requests_queryset(request.user)
+            .filter(
+                Q(request_number__icontains=query)
+                | Q(title__icontains=query)
+                | Q(description__icontains=query)
+                | Q(category__icontains=query)
+                | Q(requester_user__username__icontains=query)
+            )
+            .order_by("-created_at")[:limit]
+        )
+        request_results = [
+            {
+                "id": item.id,
+                "label": item.title or item.request_number or f"Request #{item.id}",
+                "subtitle": item.request_number or "",
+                "link": f"/requests/{item.id}",
+                "type": "request",
+            }
+            for item in requests_qs
+        ]
+
+        visible_user_ids = list(get_visible_users_queryset(request.user).values_list("id", flat=True))
+        if request.user.id not in visible_user_ids:
+            visible_user_ids.append(request.user.id)
+        users_qs = (
+            User.objects.filter(id__in=visible_user_ids, is_active=True)
+            .select_related("company", "entity")
+            .filter(
+                Q(username__icontains=query)
+                | Q(first_name__icontains=query)
+                | Q(last_name__icontains=query)
+                | Q(email__icontains=query)
+                | Q(company__name__icontains=query)
+                | Q(entity__name__icontains=query)
+            )
+            .order_by("username")[:limit]
+        )
+        user_results = []
+        for item in users_qs:
+            can_open_admin_user = can_manage_any_users(request.user)
+            link = f"/admin/users/{item.id}" if can_open_admin_user else "/profile"
+            user_results.append(
+                {
+                    "id": item.id,
+                    "label": item.get_full_name() or item.username,
+                    "subtitle": item.email or item.username,
+                    "link": link,
+                    "type": "user",
+                }
+            )
+
+        entities_qs = (
+            self._scoped_entities(request.user)
+            .filter(Q(name__icontains=query) | Q(code__icontains=query) | Q(company__name__icontains=query))
+            .order_by("name")[:limit]
+        )
+        entity_results = [
+            {
+                "id": item.id,
+                "label": item.name,
+                "subtitle": f"{item.code} · {item.company.name}",
+                "link": "/admin/entities",
+                "type": "entity",
+            }
+            for item in entities_qs
+        ]
+
+        return Response(
+            {
+                "requests": request_results,
+                "users": user_results,
+                "entities": entity_results,
+            }
+        )
 
 
 class ManageableUserListView(BaseManageUsersView):
