@@ -8,7 +8,6 @@ import {
   Network,
   Users,
   ShieldCheck,
-  ArrowLeftRight,
   ScrollText,
   Bell,
   BarChart3,
@@ -25,7 +24,15 @@ export function getNavForRole(role) {
   switch (role) {
     case "user":
       return [
-        { label: "Workspace", items: [dashboard, { label: "Create Request", to: "/requests/create", icon: PlusCircle }, { label: "My Requests", to: "/requests?scope=mine", icon: ListChecks }] },
+        {
+          label: "Workspace",
+          items: [
+            dashboard,
+            { label: "Create Request", to: "/requests/create", icon: PlusCircle },
+            { label: "My Requests", to: "/requests?scope=mine", icon: ListChecks },
+            { label: "Notifications", to: "/notifications", icon: Bell },
+          ],
+        },
         { label: "Account", items: [profile] },
       ];
     case "team_leader":
@@ -37,9 +44,25 @@ export function getNavForRole(role) {
             { label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox },
             { label: "Create Request", to: "/requests/create", icon: PlusCircle },
             { label: "Team Members", to: "/team", icon: UsersRound },
+            { label: "Notifications", to: "/notifications", icon: Bell },
           ],
         },
-        { label: "Admin", items: [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] },
+        {
+          label: "Admin",
+          items: [
+            { label: "Hierarchy", to: "/admin/hierarchy", icon: Network },
+            { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
+          ],
+        },
+        {
+          label: "Audit Logs",
+          items: [
+            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
+            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
+            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
+            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
+          ],
+        },
         { label: "Account", items: [profile] },
       ];
     case "manager":
@@ -51,6 +74,7 @@ export function getNavForRole(role) {
             { label: "Entity Requests", to: "/requests?scope=entity", icon: ListChecks },
             { label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox },
             { label: "Team Members", to: "/team", icon: UsersRound },
+            { label: "Notifications", to: "/notifications", icon: Bell },
           ],
         },
         {
@@ -58,6 +82,16 @@ export function getNavForRole(role) {
           items: [
             { label: "Users", to: "/admin/users", icon: Users },
             { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
+            { label: "Hierarchy", to: "/admin/hierarchy", icon: Network },
+          ],
+        },
+        {
+          label: "Audit Logs",
+          items: [
+            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
+            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
+            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
+            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
           ],
         },
         { label: "Account", items: [profile] },
@@ -69,7 +103,8 @@ export function getNavForRole(role) {
           items: [
             dashboard,
             { label: "Company Requests", to: "/requests?scope=company", icon: ListChecks },
-            { label: "Monitoring", to: "/admin/monitoring", icon: BarChart3 },
+            { label: "Notifications", to: "/notifications", icon: Bell },
+            { label: "Reports", to: "/admin/reports", icon: BarChart3 },
           ],
         },
         {
@@ -79,6 +114,15 @@ export function getNavForRole(role) {
             { label: "Hierarchy", to: "/admin/hierarchy", icon: Network },
             { label: "Users", to: "/admin/users", icon: Users },
             { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
+          ],
+        },
+        {
+          label: "Audit Logs",
+          items: [
+            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
+            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
+            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
+            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
           ],
         },
         { label: "Account", items: [profile] },
@@ -100,7 +144,6 @@ export function getNavForRole(role) {
           items: [
             { label: "Users", to: "/admin/users", icon: Users },
             { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
-            { label: "Delegation Rules", to: "/admin/delegation", icon: ArrowLeftRight },
           ],
         },
         {

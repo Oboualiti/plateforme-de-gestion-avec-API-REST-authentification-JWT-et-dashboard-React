@@ -376,8 +376,8 @@ function PermissionManagementPage() {
       )}
 
       <Card className="surface-card">
-        <div className="filter-bar">
-          <div className="relative flex-1 min-w-[240px]">
+        <div className="filter-bar flex-nowrap overflow-x-auto">
+          <div className="relative min-w-[260px] flex-1">
             <Input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
@@ -385,22 +385,22 @@ function PermissionManagementPage() {
               className="h-9"
             />
           </div>
-          <Select className="app-select" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+          <Select className="app-select !w-[180px] shrink-0" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
             {roleOptions.map((role) => <option key={role.key} value={role.key}>{role.name}</option>)}
           </Select>
-          <Select className="app-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <Select className="app-select !w-[180px] shrink-0" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="all">All status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </Select>
           {showEntityTypeFilter && (
-            <Select className="app-select" value={entityTypeFilter} onChange={(event) => setEntityTypeFilter(event.target.value)}>
+            <Select className="app-select !w-[180px] shrink-0" value={entityTypeFilter} onChange={(event) => setEntityTypeFilter(event.target.value)}>
               <option value="all">All types</option>
               {['PROD', 'SUPPORT', 'TDEV'].map(t => <option key={t} value={t}>{t}</option>)}
             </Select>
           )}
           {showCompanyFilter && (
-            <select className="app-select" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)}>
+            <select className="app-select !w-[220px] shrink-0" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)}>
               <option value="all">All companies</option>
               {companyOptions.map((item) => (
                 <option key={item.id} value={String(item.id)}>
@@ -410,7 +410,7 @@ function PermissionManagementPage() {
             </select>
           )}
           {showEntityFilter && (
-            <select className="app-select" value={entityFilter} onChange={(event) => setEntityFilter(event.target.value)}>
+            <select className="app-select !w-[220px] shrink-0" value={entityFilter} onChange={(event) => setEntityFilter(event.target.value)}>
               <option value="all">All entities</option>
               {effectiveEntityOptions.map((item) => (
                 <option key={item.id} value={String(item.id)}>
@@ -483,5 +483,4 @@ function PermissionManagementPage() {
 }
 
 export default PermissionManagementPage
-
 

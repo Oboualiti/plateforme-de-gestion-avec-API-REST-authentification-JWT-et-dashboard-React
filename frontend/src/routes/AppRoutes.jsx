@@ -9,7 +9,6 @@ import CreateManagedUserPage from '../pages/CreateManagedUserPage'
 import AdminControlCenterPage from '../pages/AdminControlCenterPage'
 import HierarchyPage from '../pages/HierarchyPage'
 import UsersPage from '../pages/UsersPage'
-import DelegationPage from '../pages/DelegationPage'
 import ReportsPage from '../pages/ReportsPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
@@ -152,7 +151,6 @@ function AppRoutes() {
           <Route path="/admin/users/create" element={<CreateManagedUserPage />} />
           <Route path="/admin/users" element={<UsersPage />} />
           <Route path="/admin/users/:userId" element={<PermissionDetailPage />} />
-          <Route path="/admin/delegation" element={<DelegationPage />} />
           <Route path="/admin/dashboard" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/monitoring" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/reports" element={<ReportsPage />} />

@@ -6,7 +6,6 @@ from .admin_views import (
     AdminCompaniesView,
     AdminCompanyDetailView,
     AdminDashboardView,
-    AdminDelegationRulesView,
     AdminEntitiesView,
     AdminEntityDetailView,
     AdminHierarchyCompanyAssignView,
@@ -29,8 +28,6 @@ from .views import (
     ManageableUserImportView,
     ManageableUserListView,
     ManageUserDetailView,
-    UserAccessDelegationDetailView,
-    UserAccessDelegationListCreateView,
     ManageUserPermissionOverrideView,
 )
 
@@ -46,8 +43,6 @@ urlpatterns = [
     path("roles/", AdminRolesView.as_view(), name="admin-roles"),
     path("roles/<int:role_id>/", AdminRoleDetailView.as_view(), name="admin-role-detail"),
     path("permissions/catalog/", AdminPermissionsView.as_view(), name="admin-permissions"),
-    path("delegation-rules/", AdminDelegationRulesView.as_view(), name="admin-delegation-rules"),
-    path("delegation-rules/<int:role_id>/", AdminDelegationRulesView.as_view(), name="admin-delegation-rules-detail"),
     path("requests/", AdminRequestsView.as_view(), name="admin-requests"),
     path("requests/<int:request_id>/", AdminRequestDetailView.as_view(), name="admin-request-detail"),
     path("assignments/", AdminAssignmentsView.as_view(), name="admin-assignments"),
@@ -83,15 +78,5 @@ urlpatterns = [
         "users/<int:user_id>/permissions/",
         ManageUserPermissionOverrideView.as_view(),
         name="manage-user-permissions",
-    ),
-    path(
-        "users/delegations/",
-        UserAccessDelegationListCreateView.as_view(),
-        name="user-access-delegations",
-    ),
-    path(
-        "users/delegations/<int:delegation_id>/",
-        UserAccessDelegationDetailView.as_view(),
-        name="user-access-delegation-detail",
     ),
 ]

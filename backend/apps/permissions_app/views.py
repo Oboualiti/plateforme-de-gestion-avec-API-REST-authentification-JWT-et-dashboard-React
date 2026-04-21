@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from apps.entities.models import Entity
 from apps.companies.models import Company
 from apps.audit_logs.services import log_admin_action
-from apps.permissions_app.models import AppPermission, UserAccessDelegation, UserRole
+from apps.permissions_app.models import AppPermission, UserRole
 from apps.roles.models import Role
 from apps.users.models import User
 from apps.requests_app.views import get_visible_requests_queryset
@@ -18,8 +18,6 @@ from .serializers import (
     ManagedUserCreateSerializer,
     ManagedUserUpdateSerializer,
     ManageableUserListSerializer,
-    UserAccessDelegationSerializer,
-    UserAccessDelegationWriteSerializer,
     UserPermissionAdminDetailSerializer,
     UserPermissionOverrideSerializer,
     UserRoleUpdateSerializer,
@@ -569,99 +567,6 @@ class ManageableUserImportView(BaseManageUsersView):
             },
             status=status.HTTP_200_OK,
         )
-
-
-class UserAccessDelegationListCreateView(BaseManageUsersView):
-    def _user_options(self, request):
-        actor_level = get_user_max_role_level(request.user)
-        visible_ids = set(get_visible_users_queryset(request.user).values_list("id", flat=True))
-        visible_ids.add(request.user.id)
-        users = (
-            User.objects.filter(id__in=visible_ids)
-            .select_related("company", "entity")
-            .prefetch_related("assigned_roles__role")
-            .order_by("username")
-        )
-        return ManageableUserListSerializer(
-            users,
-            many=True,
-            context={"actor_level": actor_level},
-        ).data
-
-    def get(self, request):
-        visible_ids = set(get_visible_users_queryset(request.user).values_list("id", flat=True))
-        visible_ids.add(request.user.id)
-        queryset = (
-            UserAccessDelegation.objects.filter(
-                delegator_id__in=visible_ids,
-                delegate_id__in=visible_ids,
-            )
-            .select_related("delegator", "delegate", "created_by")
-            .prefetch_related("permissions")
-            .order_by("-created_at")
-        )
-        return Response(
-            {
-                "results": UserAccessDelegationSerializer(queryset, many=True).data,
-                "user_options": self._user_options(request),
-                "all_permission_keys": list(AppPermission.objects.values_list("key", flat=True).order_by("key")),
-                "actor_delegatable_permission_keys": get_delegatable_permission_keys(request.user),
-            }
-        )
-
-    def post(self, request):
-        serializer = UserAccessDelegationWriteSerializer(
-            data=request.data,
-            context={"request": request},
-        )
-        serializer.is_valid(raise_exception=True)
-        delegation = serializer.create()
-        log_admin_action(
-            actor=request.user,
-            module="delegation_rules",
-            action="create",
-            target_model="UserAccessDelegation",
-            target_id=delegation.id,
-            target_label=f"{delegation.delegator.username}->{delegation.delegate.username}",
-            metadata={
-                "delegator_user_id": delegation.delegator_id,
-                "delegate_user_id": delegation.delegate_id,
-                "permission_keys": sorted(delegation.permissions.values_list("key", flat=True)),
-                "start_date": str(delegation.start_date),
-                "end_date": str(delegation.end_date),
-            },
-        )
-        return Response(UserAccessDelegationSerializer(delegation).data, status=status.HTTP_201_CREATED)
-
-
-class UserAccessDelegationDetailView(BaseManageUsersView):
-    def delete(self, request, delegation_id):
-        delegation = (
-            UserAccessDelegation.objects.select_related("delegator", "delegate")
-            .prefetch_related("permissions")
-            .filter(id=delegation_id)
-            .first()
-        )
-        if delegation is None:
-            return Response({"detail": "Delegation not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        actor = request.user
-        can_manage_delegator = actor.id == delegation.delegator_id or can_manage_target_user(actor, delegation.delegator)
-        can_manage_delegate = can_manage_target_user(actor, delegation.delegate)
-        if not (can_manage_delegator and can_manage_delegate):
-            self.permission_denied(request, message="You cannot modify this delegation.")
-
-        delegation.is_revoked = True
-        delegation.save(update_fields=["is_revoked", "updated_at"])
-        log_admin_action(
-            actor=request.user,
-            module="delegation_rules",
-            action="delete",
-            target_model="UserAccessDelegation",
-            target_id=delegation.id,
-            target_label=f"{delegation.delegator.username}->{delegation.delegate.username}",
-        )
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ManageUserDetailView(BaseManageUsersView):

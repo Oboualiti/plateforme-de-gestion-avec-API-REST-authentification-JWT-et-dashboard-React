@@ -13,7 +13,7 @@ from apps.audit_logs.services import log_admin_action
 from apps.companies.models import Company
 from apps.entities.models import Entity
 from apps.notifications.models import NotificationPreference
-from apps.permissions_app.models import AppPermission, PermissionDelegation, RolePermission, UserPermissionOverride, UserRole
+from apps.permissions_app.models import AppPermission, RolePermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import (
     ROLE_HIERARCHY,
     can_manage_any_users,
@@ -34,7 +34,6 @@ from .admin_serializers import (
     AuditLogSerializer,
     CompanyAdminSerializer,
     CompanyWriteSerializer,
-    DelegationRuleWriteSerializer,
     EffectivePermissionUserSerializer,
     EntityAdminSerializer,
     EntityWriteSerializer,
@@ -59,7 +58,6 @@ ADMIN_MODULE_PERMISSIONS = {
     "users": {"super_admin", "senior", "manager", "team_leader"},
     "roles": {"super_admin", "senior", "manager", "team_leader"},
     "permissions": {"super_admin", "senior", "manager", "team_leader"},
-    "delegation_rules": {"super_admin"},
     "requests": {"super_admin", "senior", "manager", "team_leader"},
     "assignments": {"super_admin", "senior", "manager", "team_leader"},
     "status_tracking": {"super_admin", "senior", "manager", "team_leader"},
@@ -1239,41 +1237,6 @@ class AdminPermissionsView(AdminBaseView):
             if target and can_view_target_user(request.user, target):
                 payload["selected_user"] = EffectivePermissionUserSerializer(target).data
         return Response(payload)
-
-
-class AdminDelegationRulesView(AdminBaseView):
-    module_key = "delegation_rules"
-
-    def get(self, request):
-        payload = {}
-        for role in Role.objects.filter(key__in=ROLE_HIERARCHY.keys()).order_by("name"):
-            payload[role.key] = {
-                "role_id": role.id,
-                "role_name": role.name,
-                "permissions": sorted(PermissionDelegation.objects.filter(role=role).values_list("permission__key", flat=True)),
-                "manageable_target_roles": [key for key, level in ROLE_HIERARCHY.items() if level < ROLE_HIERARCHY.get(role.key, 0)],
-            }
-        return Response(
-            {
-                "rules": payload,
-                "all_permission_keys": list(AppPermission.objects.values_list("key", flat=True).order_by("key")),
-            }
-        )
-
-    def patch(self, request, role_id):
-        role = Role.objects.filter(id=role_id).first()
-        if role is None:
-            return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = DelegationRuleWriteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        permissions = list(AppPermission.objects.filter(key__in=serializer.validated_data["permission_keys"]))
-        PermissionDelegation.objects.filter(role=role).exclude(permission__in=permissions).delete()
-        existing_ids = set(PermissionDelegation.objects.filter(role=role).values_list("permission_id", flat=True))
-        for permission in permissions:
-            if permission.id not in existing_ids:
-                PermissionDelegation.objects.create(role=role, permission=permission)
-        log_admin_action(actor=request.user, module="delegation_rules", action="update", target_model="Role", target_id=role.id, target_label=role.name, metadata={"permission_keys": serializer.validated_data["permission_keys"]})
-        return self.get(request)
 
 
 class AdminRequestsView(AdminBaseView):

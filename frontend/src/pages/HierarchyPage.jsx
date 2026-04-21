@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
 import { Avatar } from '../components/Avatar'
@@ -29,6 +30,8 @@ function EntityTypeBadge({ type }) {
 function HierarchyPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', data: null })
+  const [expandedManagers, setExpandedManagers] = useState({})
+  const [expandedTeamLeaders, setExpandedTeamLeaders] = useState({})
 
   const isSuperAdmin = (user?.role_keys || []).includes('super_admin')
   const scopeLabel = isSuperAdmin ? 'Global' : (user?.company_name || 'Global')
@@ -47,6 +50,8 @@ function HierarchyPage() {
 
   const companies = state.data?.companies || []
   const entities = state.data?.entities || []
+  const managerOptions = state.data?.manager_options || []
+  const seniorOptions = state.data?.senior_options || []
 
   const entitiesByCompany = useMemo(() => {
     const map = {}
@@ -55,6 +60,34 @@ function HierarchyPage() {
     })
     return map
   }, [companies, entities])
+
+  const managersByEntityId = useMemo(() => {
+    const map = {}
+    managerOptions.forEach((manager) => {
+      if (manager.entity_id) {
+        map[manager.entity_id] = manager
+      }
+    })
+    return map
+  }, [managerOptions])
+
+  const seniorsByCompanyId = useMemo(() => {
+    const map = {}
+    seniorOptions.forEach((senior) => {
+      if (senior.company_id) {
+        map[senior.company_id] = senior
+      }
+    })
+    return map
+  }, [seniorOptions])
+
+  function toggleManager(managerKey) {
+    setExpandedManagers((current) => ({ ...current, [managerKey]: !current[managerKey] }))
+  }
+
+  function toggleTeamLeader(teamLeaderId) {
+    setExpandedTeamLeaders((current) => ({ ...current, [teamLeaderId]: !current[teamLeaderId] }))
+  }
 
   if (state.loading) {
     return (
@@ -99,7 +132,9 @@ function HierarchyPage() {
       <div className="space-y-4">
         {companies.map((company) => {
           const companyEntities = entitiesByCompany[company.id] || []
-          const seniorName = company.senior || ''
+          const seniorOption = seniorsByCompanyId[company.id]
+          const seniorId = seniorOption?.id
+          const seniorName = seniorOption?.username || company.senior || ''
 
           return (
             <section key={company.id} className="surface-card overflow-hidden">
@@ -112,7 +147,13 @@ function HierarchyPage() {
                   <div className="flex items-center gap-2 rounded-md border-2 border-ink bg-card px-3 py-1.5 shadow-elev-sm">
                     <Avatar name={seniorName} size={24} className="border-2 border-ink" />
                     <div className="text-xs">
-                      <span className="font-bold">{seniorName}</span>
+                      {seniorId ? (
+                        <Link to={`/admin/users/${seniorId}`} className="font-bold text-primary underline-offset-2 hover:underline">
+                          {seniorName}
+                        </Link>
+                      ) : (
+                        <span className="font-bold">{seniorName}</span>
+                      )}
                       <span className="text-muted-foreground"> - Senior</span>
                     </div>
                   </div>
@@ -122,8 +163,10 @@ function HierarchyPage() {
               <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
                 {companyEntities.map((entity) => {
                   const managerName = entity.manager || ''
+                  const managerOption = managersByEntityId[entity.id]
                   const leaders = entity.team_leaders || []
-                  const membersCount = leaders.reduce((count, leader) => count + ((leader.users || []).length), 0)
+                  const managerKey = `entity-${entity.id}-manager`
+                  const managerExpanded = Boolean(expandedManagers[managerKey])
 
                   return (
                     <article key={entity.id} className="rounded-md border-2 border-ink bg-card p-3 shadow-elev-sm">
@@ -137,32 +180,68 @@ function HierarchyPage() {
 
                       <div className="mt-3 space-y-2 text-sm">
                         {managerName ? (
-                          <div className="flex items-center gap-1.5">
-                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          <button
+                            type="button"
+                            onClick={() => toggleManager(managerKey)}
+                            className="flex w-full items-center gap-1.5 text-left"
+                          >
+                            <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${managerExpanded ? 'rotate-90' : ''}`} />
                             <Avatar name={managerName} size={22} className="border-2 border-ink" />
                             <span className="text-xs">
-                              <span className="font-bold">{managerName}</span>
+                              {managerOption?.id ? (
+                                <Link to={`/admin/users/${managerOption.id}`} className="font-bold text-primary underline-offset-2 hover:underline">
+                                  {managerName}
+                                </Link>
+                              ) : (
+                                <span className="font-bold">{managerName}</span>
+                              )}
                               <span className="text-muted-foreground"> - Manager</span>
                             </span>
-                          </div>
+                          </button>
                         ) : null}
 
-                        {leaders.map((leader) => (
-                          <div key={leader.id} className="flex items-center gap-1.5 pl-4">
-                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                            <Avatar name={leader.username} size={22} className="border-2 border-ink" />
-                            <span className="text-xs">
-                              <span className="font-bold">{leader.username}</span>
-                              <span className="text-muted-foreground"> - Team Leader</span>
-                            </span>
-                          </div>
-                        ))}
-
-                        {membersCount > 0 ? (
-                          <div className="pl-8 pt-1 text-xs text-muted-foreground">
-                            + {membersCount} member{membersCount === 1 ? '' : 's'}
-                          </div>
+                        {managerExpanded ? (
+                          leaders.length === 0 ? (
+                            <div className="pl-6 text-xs text-muted-foreground">No team leaders assigned.</div>
+                          ) : (
+                            leaders.map((leader) => (
+                              <div key={leader.id} className="pl-4">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTeamLeader(leader.id)}
+                                  className="flex w-full items-center gap-1.5 text-left"
+                                >
+                                  <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${expandedTeamLeaders[leader.id] ? 'rotate-90' : ''}`} />
+                                  <Avatar name={leader.username} size={22} className="border-2 border-ink" />
+                                  <span className="text-xs">
+                                    <Link to={`/admin/users/${leader.id}`} className="font-bold text-primary underline-offset-2 hover:underline">
+                                      {leader.username}
+                                    </Link>
+                                    <span className="text-muted-foreground"> - Team Leader</span>
+                                  </span>
+                                </button>
+                                {expandedTeamLeaders[leader.id] ? (
+                                  <div className="mt-1 space-y-1 pl-6">
+                                    {(leader.users || []).length === 0 ? (
+                                      <div className="text-xs text-muted-foreground">No users assigned.</div>
+                                    ) : (
+                                      leader.users.map((member) => (
+                                        <Link
+                                          key={member.id}
+                                          to={`/admin/users/${member.id}`}
+                                          className="block text-xs font-medium text-primary underline-offset-2 hover:underline"
+                                        >
+                                          {member.username}
+                                        </Link>
+                                      ))
+                                    )}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))
+                          )
                         ) : null}
+
                       </div>
                     </article>
                   )

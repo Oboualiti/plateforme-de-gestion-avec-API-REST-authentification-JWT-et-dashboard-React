@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import PageHeader from '../components/layout/PageHeader'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
+import { Button } from '../components/ui/button'
 import { useAuth } from '../context/AuthContext'
 
 const ROLE_LABELS = {
@@ -60,12 +61,6 @@ const MAIL_ICON = (
   </svg>
 )
 
-const PLUS_ICON = (
-  <svg className="mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-  </svg>
-)
-
 function UsersPage() {
   const { user } = useAuth()
   const isSuperAdmin = (user?.role_keys || []).includes('super_admin')
@@ -79,6 +74,9 @@ function UsersPage() {
   const [role, setRole] = useState('all')
   const [companyId, setCompanyId] = useState('all')
   const [entityId, setEntityId] = useState('all')
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState('')
+  const importInputRef = useRef(null)
 
   useEffect(() => {
     async function load() {
@@ -118,6 +116,49 @@ function UsersPage() {
       setUsers((current) => current.filter((item) => item.id !== userId))
     } catch (err) {
       window.alert(err?.response?.data?.detail || 'Could not delete user.')
+    }
+  }
+
+  async function exportUsers(format) {
+    setExporting(format)
+    try {
+      const response = await api.get(`/admin/users/manageable/export/?file_format=${format}`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `users_export_${new Date().toISOString().split('T')[0]}.${format}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      window.alert(err?.response?.data?.detail || 'Could not export users.')
+    } finally {
+      setExporting('')
+    }
+  }
+
+  async function importUsers(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await api.post('/admin/users/manageable/import/', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const created = response.data?.created_users || []
+      if (created.length) {
+        setUsers((current) => {
+          const existing = new Set(current.map((item) => item.id))
+          const additions = created.filter((item) => !existing.has(item.id))
+          return [...additions, ...current]
+        })
+      }
+    } catch (err) {
+      window.alert(err?.response?.data?.detail || 'Could not import users.')
+    } finally {
+      setImporting(false)
+      event.target.value = ''
     }
   }
 
@@ -213,9 +254,17 @@ function UsersPage() {
         title="Users"
         description="Manage all users, their roles, and entity assignments."
         actions={
-          <button className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            {PLUS_ICON} Invite user
-          </button>
+          <div className="flex items-center gap-2">
+            <Button asChild>
+              <Link to="/admin/users/create">Add user</Link>
+            </Button>
+            <Button variant="outline" onClick={() => exportUsers('csv')} disabled={Boolean(exporting)}>
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={() => importInputRef.current?.click()} disabled={importing}>
+              Import
+            </Button>
+          </div>
         }
         meta={
           <>
@@ -224,6 +273,7 @@ function UsersPage() {
           </>
         }
       />
+      <input ref={importInputRef} type="file" accept=".csv,.xlsx" onChange={importUsers} className="hidden" />
 
       <div className="surface-card mb-4 p-4">
         <div className="grid gap-3 lg:grid-cols-12">
@@ -343,5 +393,4 @@ function UsersPage() {
 }
 
 export default UsersPage
-
 

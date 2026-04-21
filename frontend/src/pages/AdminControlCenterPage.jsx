@@ -487,7 +487,13 @@ function AdminControlCenterPage() {
     if ((isSuperAdmin || isSenior) && roleScopeFilter.entity_type) {
       scopePayload.entity_type = roleScopeFilter.entity_type
     }
-    await patchRecord(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys, ...scopePayload }, 'Role permissions updated.')
+    try {
+      await api.patch(`/admin/roles/${roleId}/`, { permission_keys: permissionKeys, ...scopePayload })
+      setMessage('Role permissions updated.')
+    } catch (error) {
+      setMessage(error.response?.data?.detail || 'Could not save changes.')
+      throw error
+    }
   }
 
   async function restoreRolePermissions(roleId) {
@@ -949,8 +955,10 @@ function AdminControlCenterPage() {
     if (sectionKey === 'users') {
       return (
         <div className="table-wrap">
-          <div className="filter-bar">
-            <Link className="pill-link" to="/admin/users/create">Add user</Link>
+          <div className="filter-bar justify-end">
+            <Button asChild>
+              <Link to="/admin/users/create">Add user</Link>
+            </Button>
           </div>
           <table className="data-table">
             <thead>
@@ -1512,14 +1520,20 @@ function buildPermissionRows(allPermissionKeys) {
 function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRole, onRestoreRole }) {
   const [draftByRoleId, setDraftByRoleId] = useState({})
   const [savingByRoleId, setSavingByRoleId] = useState({})
+  const allowedPermissionKeySet = useMemo(
+    () => new Set(allPermissionKeys || []),
+    [allPermissionKeys],
+  )
 
   useEffect(() => {
     const next = {}
     roles.forEach((role) => {
-      next[role.id] = [...(role.default_permissions || [])]
+      next[role.id] = [...(role.default_permissions || [])].filter((key) =>
+        allowedPermissionKeySet.has(key),
+      )
     })
     setDraftByRoleId(next)
-  }, [roles])
+  }, [roles, allowedPermissionKeySet])
 
   const permissionRows = useMemo(() => buildPermissionRows(allPermissionKeys), [allPermissionKeys])
   const rowsBySection = useMemo(() => {
@@ -1540,7 +1554,9 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
     if (!canEditRole(role.key)) return
     if (savingByRoleId[role.id]) return
 
-    const selected = draftByRoleId[role.id] || []
+    const selected = (draftByRoleId[role.id] || []).filter((key) =>
+      allowedPermissionKeySet.has(key),
+    )
     const next = selected.includes(permissionKey)
       ? selected.filter((item) => item !== permissionKey)
       : selected.concat(permissionKey)
@@ -1549,6 +1565,8 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
     setSavingByRoleId((current) => ({ ...current, [role.id]: true }))
     try {
       await onSaveRole(role.id, next)
+    } catch {
+      setDraftByRoleId((current) => ({ ...current, [role.id]: selected }))
     } finally {
       setSavingByRoleId((current) => ({ ...current, [role.id]: false }))
     }
