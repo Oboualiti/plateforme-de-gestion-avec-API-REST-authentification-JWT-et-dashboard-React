@@ -4,6 +4,7 @@ import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 
 function getInitials(name) {
   if (!name) return '?'
@@ -76,25 +77,25 @@ function NewDelegationModal({ open, users, actorPermissionKeys, submitting, onSu
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">From user</label>
-              <select
+              <Select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={delegatorUserId}
                 onChange={(e) => setDelegatorUserId(e.target.value)}
               >
                 <option value="">Select delegator</option>
                 {users.map((item) => <option key={item.id} value={item.id}>{buildUserLabel(item)}</option>)}
-              </select>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">To user</label>
-              <select
+              <Select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={delegateUserId}
                 onChange={(e) => setDelegateUserId(e.target.value)}
               >
                 <option value="">Select delegate</option>
                 {users.map((item) => <option key={item.id} value={item.id}>{buildUserLabel(item)}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -389,3 +390,5 @@ function DelegationPage() {
 }
 
 export default DelegationPage
+
+

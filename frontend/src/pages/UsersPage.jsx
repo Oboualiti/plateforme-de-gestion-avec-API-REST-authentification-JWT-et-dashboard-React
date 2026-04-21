@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import PageHeader from '../components/layout/PageHeader'
+import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 
 const ROLE_LABELS = {
@@ -201,7 +202,7 @@ function UsersPage() {
               className="w-full rounded-md border border-input bg-background px-4 py-2 pl-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
-          <select
+          <Select
             value={role}
             onChange={(e) => setRole(e.target.value)}
             className="rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-3"
@@ -210,8 +211,8 @@ function UsersPage() {
             {roles.map((r) => (
               <option key={r} value={r}>{ROLE_LABELS[r]}</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={companyId}
             onChange={(e) => {
               setCompanyId(e.target.value)
@@ -223,8 +224,8 @@ function UsersPage() {
             {companies.map((c) => (
               <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={entityId}
             onChange={(e) => setEntityId(e.target.value)}
             className="rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
@@ -233,7 +234,7 @@ function UsersPage() {
             {entities.filter(e => !companyId || companyId === 'all' || e.company === Number(companyId)).map((e) => (
               <option key={e.id} value={e.id}>{e.name} ({e.code})</option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -308,3 +309,5 @@ function UsersPage() {
 }
 
 export default UsersPage
+
+

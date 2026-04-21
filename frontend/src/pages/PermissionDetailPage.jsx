@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
+import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -397,7 +398,7 @@ function PermissionDetailPage() {
             {canShowCompany && (
               <div className="space-y-1.5">
                 <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
-                <select
+                <Select
                   id="company_id"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={profileForm.company_id}
@@ -418,14 +419,14 @@ function PermissionDetailPage() {
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
             {canShowEntity && (
               <div className="space-y-1.5">
                 <label htmlFor="entity_id" className="text-sm font-medium text-foreground">Entity</label>
-                <select
+                <Select
                   id="entity_id"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={profileForm.entity_id}
@@ -445,14 +446,14 @@ function PermissionDetailPage() {
                       {item.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
             {canShowTeamLeader && (
               <div className="space-y-1.5">
                 <label htmlFor="team_leader_id" className="text-sm font-medium text-foreground">Team Leader</label>
-                <select
+                <Select
                   id="team_leader_id"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={profileForm.team_leader_id}
@@ -467,7 +468,7 @@ function PermissionDetailPage() {
                       {item.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
           </div>
@@ -570,3 +571,5 @@ function PermissionDetailPage() {
 }
 
 export default PermissionDetailPage
+
+

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
+import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -240,7 +241,7 @@ function CreateManagedUserPage() {
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="role_key" className="text-sm font-medium text-foreground">Role</label>
-                <select
+                <Select
                   id="role_key"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={form.role_key}
@@ -258,14 +259,14 @@ function CreateManagedUserPage() {
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
             {canShowCompany && (
               <div className="space-y-1.5">
                 <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
-                <select
+                <Select
                   id="company_id"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={form.company_id}
@@ -285,14 +286,14 @@ function CreateManagedUserPage() {
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
             {canShowEntity && (
               <div className="space-y-1.5">
                 <label htmlFor="entity_id" className="text-sm font-medium text-foreground">Entity</label>
-                <select
+                <Select
                   id="entity_id"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={form.entity_id}
@@ -311,14 +312,14 @@ function CreateManagedUserPage() {
                       {item.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
             {canShowTeamLeader && (
               <div className="space-y-1.5">
                 <label htmlFor="team_leader_id" className="text-sm font-medium text-foreground">Team leader</label>
-                <select
+                <Select
                   id="team_leader_id"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={form.team_leader_id}
@@ -332,7 +333,7 @@ function CreateManagedUserPage() {
                       {item.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
@@ -392,3 +393,5 @@ function CreateManagedUserPage() {
 }
 
 export default CreateManagedUserPage
+
+

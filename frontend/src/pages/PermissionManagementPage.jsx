@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
 import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 import { Badge } from '../components/ui/badge'
 
 function PermissionManagementPage() {
@@ -247,19 +248,19 @@ function PermissionManagementPage() {
               className="h-9"
             />
           </div>
-          <select className="app-select" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+          <Select className="app-select" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
             {roleOptions.map((role) => <option key={role.key} value={role.key}>{role.name}</option>)}
-          </select>
-          <select className="app-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          </Select>
+          <Select className="app-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="all">All status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-          </select>
+          </Select>
           {showEntityTypeFilter && (
-            <select className="app-select" value={entityTypeFilter} onChange={(event) => setEntityTypeFilter(event.target.value)}>
+            <Select className="app-select" value={entityTypeFilter} onChange={(event) => setEntityTypeFilter(event.target.value)}>
               <option value="all">All types</option>
               {['PROD', 'SUPPORT', 'TDEV'].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </Select>
           )}
         </div>
         <div className="overflow-x-auto">
@@ -325,3 +326,5 @@ function PermissionManagementPage() {
 }
 
 export default PermissionManagementPage
+
+

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { Select } from '../components/ui/select'
 
 const statusClassMap = {
   NEW: 'status-tag info',
@@ -353,7 +354,7 @@ function RequestDetailsPage() {
           {canManagerAssignTl && (
             <div className="mt-4 space-y-2">
               <label htmlFor="assign-team-leader" className="text-sm font-medium text-foreground">Assign To Team Leader</label>
-              <select
+              <Select
                 id="assign-team-leader"
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 value={assignmentForm.userId}
@@ -367,7 +368,7 @@ function RequestDetailsPage() {
                     {item.username}
                   </option>
                 ))}
-              </select>
+              </Select>
 
               <label htmlFor="assign-note" className="text-sm font-medium text-foreground">Assignment Note (Optional)</label>
               <textarea
@@ -497,3 +498,5 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
+
+

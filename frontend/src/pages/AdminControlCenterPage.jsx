@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
 
 function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
@@ -52,7 +53,7 @@ function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
 
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="edit-company-senior">Assign senior</label>
-                <select
+                <Select
                   id="edit-company-senior"
                   className="app-select w-full"
                   value={editState.form.senior_user_id}
@@ -62,13 +63,13 @@ function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
                   {editState.seniorOptions.map((item) => (
                     <option key={item.id} value={item.id}>{item.username}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="edit-company-status">Status</label>
-              <select
+              <Select
                 id="edit-company-status"
                 className="app-select w-full"
                 value={String(editState.form.is_active)}
@@ -76,7 +77,7 @@ function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
               >
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
-              </select>
+              </Select>
             </div>
           </CardContent>
           <div className="flex justify-end gap-2 p-6 pt-2 border-t mt-4">
@@ -127,7 +128,7 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="edit-entity-type">Entity type</label>
-                <select
+                <Select
                   id="edit-entity-type"
                   className="app-select w-full"
                   value={editState.form.entity_type}
@@ -136,11 +137,11 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
                   <option value="PROD">Prod</option>
                   <option value="SUPPORT">Support</option>
                   <option value="TDEV">T.Dev</option>
-                </select>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="edit-entity-company">Company</label>
-                <select
+                <Select
                   id="edit-entity-company"
                   className="app-select w-full"
                   value={editState.form.company}
@@ -151,7 +152,7 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
                   {companies.map((item) => (
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
@@ -164,7 +165,7 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="edit-entity-manager">Assign manager</label>
-                <select
+                <Select
                   id="edit-entity-manager"
                   className="app-select w-full"
                   value={editState.form.manager_user_id}
@@ -174,13 +175,13 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
                   {editState.managerOptions.map((item) => (
                     <option key={item.id} value={item.id}>{item.username}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="edit-entity-status">Status</label>
-              <select
+              <Select
                 id="edit-entity-status"
                 className="app-select w-full"
                 value={String(editState.form.is_active)}
@@ -188,7 +189,7 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
               >
                 <option value="true">Active</option>
                 <option value="false">Inactive</option>
-              </select>
+              </Select>
             </div>
           </CardContent>
           <div className="flex justify-end gap-2 p-6 pt-2 border-t mt-4">
@@ -692,10 +693,10 @@ function AdminControlCenterPage() {
                 </div>
                 <div className="space-y-1.5 w-32">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</label>
-                  <select className="app-select w-full" value={String(companyForm.is_active)} onChange={(e) => setCompanyForm({...companyForm, is_active: e.target.value === 'true'})}>
+                  <Select className="app-select w-full" value={String(companyForm.is_active)} onChange={(e) => setCompanyForm({...companyForm, is_active: e.target.value === 'true'})}>
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
-                  </select>
+                  </Select>
                 </div>
                 <Button type="submit">Create company</Button>
               </form>
@@ -817,16 +818,16 @@ function AdminControlCenterPage() {
                 </div>
                 <div className="space-y-1.5 md:col-span-1">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Type</label>
-                  <select className="app-select w-full" value={entityForm.entity_type} onChange={(e) => setEntityForm({...entityForm, entity_type: e.target.value})}>
+                  <Select className="app-select w-full" value={entityForm.entity_type} onChange={(e) => setEntityForm({...entityForm, entity_type: e.target.value})}>
                     {['PROD', 'SUPPORT', 'TDEV'].map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div className="space-y-1.5 md:col-span-1">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Company</label>
-                  <select className="app-select w-full" value={entityForm.company} onChange={(e) => setEntityForm({...entityForm, company: e.target.value})} required>
+                  <Select className="app-select w-full" value={entityForm.company} onChange={(e) => setEntityForm({...entityForm, company: e.target.value})} required>
                     <option value="">Select company</option>
                     {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <Button type="submit">Create</Button>
               </form>
@@ -840,19 +841,19 @@ function AdminControlCenterPage() {
                  <Badge variant="outline">{filteredEntities.length} results</Badge>
               </div>
               <div className="flex gap-2">
-                <select className="app-select" value={entityCompanyFilter} onChange={(e) => setEntityCompanyFilter(e.target.value)}>
+                <Select className="app-select" value={entityCompanyFilter} onChange={(e) => setEntityCompanyFilter(e.target.value)}>
                   <option value="all">All companies</option>
                   {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-                <select className="app-select" value={entityTypeFilter} onChange={(e) => setEntityTypeFilter(e.target.value)}>
+                </Select>
+                <Select className="app-select" value={entityTypeFilter} onChange={(e) => setEntityTypeFilter(e.target.value)}>
                   <option value="all">All types</option>
                   {['PROD', 'SUPPORT', 'TDEV'].map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <select className="app-select" value={entityStatusFilter} onChange={(e) => setEntityStatusFilter(e.target.value)}>
+                </Select>
+                <Select className="app-select" value={entityStatusFilter} onChange={(e) => setEntityStatusFilter(e.target.value)}>
                   <option value="all">All status</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </Select>
                 <Button variant="ghost" size="sm" onClick={() => { setEntityCompanyFilter('all'); setEntityTypeFilter('all'); setEntityStatusFilter('all'); }}>
                   Clear
                 </Button>
@@ -1010,7 +1011,7 @@ function AdminControlCenterPage() {
             <section className="panel">
               <div className="filter-bar">
                 {isSuperAdmin && (
-                  <select
+                  <Select
                     className="app-select"
                     value={roleScopeFilter.company_id}
                     onChange={(event) =>
@@ -1027,9 +1028,9 @@ function AdminControlCenterPage() {
                         {item.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 )}
-                <select
+                <Select
                   className="app-select"
                   value={roleScopeFilter.entity_type}
                   onChange={(event) =>
@@ -1044,8 +1045,8 @@ function AdminControlCenterPage() {
                   <option value="PROD">Prod</option>
                   <option value="SUPPORT">Support</option>
                   <option value="TDEV">Dev</option>
-                </select>
-                <select
+                </Select>
+                <Select
                   className="app-select"
                   value={roleScopeFilter.entity_id}
                   onChange={(event) =>
@@ -1061,7 +1062,7 @@ function AdminControlCenterPage() {
                       {item.label || item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </section>
           )}
@@ -1505,3 +1506,5 @@ function MetricCard({ title, value }) {
 }
 
 export default AdminControlCenterPage
+
+

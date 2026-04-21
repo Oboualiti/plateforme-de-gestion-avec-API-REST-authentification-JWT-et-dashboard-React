@@ -19,12 +19,14 @@ import { Input } from "./ui/input";
 
 function Brand() {
   return (
-    <div className="flex items-center">
-      <img
-        src="/logo.png"
-        alt="W-service logo"
-        className="h-10 w-auto max-w-[170px] object-contain"
-      />
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-10 w-10 items-center justify-center rounded-md border-2 border-ink bg-primary shadow-brutal">
+        <img src="/logo.png" alt="W-service logo" className="h-7 w-7 object-contain" />
+      </div>
+      <div className="leading-tight">
+        <div className="text-sm font-extrabold uppercase tracking-tight text-foreground">W-Service</div>
+        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Request Management</div>
+      </div>
     </div>
   );
 }
@@ -50,7 +52,7 @@ function SidebarContent({ onNavigate }) {
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         {groups.map((group) => (
           <div key={group.label} className="mb-5">
-            <div className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="eyebrow px-2 pb-1.5">
               {group.label}
             </div>
             <div className="space-y-0.5">
@@ -64,10 +66,10 @@ function SidebarContent({ onNavigate }) {
                     to={item.to}
                     onClick={onNavigate}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                      "group brutal-press flex items-center gap-2.5 rounded-md border-2 border-transparent px-2.5 py-2 text-sm font-bold uppercase tracking-tight transition-colors",
                       isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                        ? "border-ink bg-primary text-primary-foreground shadow-elev-sm"
+                        : "text-sidebar-foreground hover:border-ink hover:bg-primary-soft hover:text-foreground",
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
@@ -79,9 +81,9 @@ function SidebarContent({ onNavigate }) {
           </div>
         ))}
       </nav>
-      <div className="border-t border-sidebar-border p-3">
-        <div className="rounded-lg bg-surface-2 p-3">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Signed in as</div>
+      <div className="border-t-2 border-sidebar-border p-3">
+        <div className="rounded-md border-2 border-ink bg-surface-2 p-3 shadow-elev-sm">
+          <div className="eyebrow">Signed in as</div>
           {user ? (
             <div className="mt-1.5 flex items-center gap-2">
               <Avatar name={user.fullName || user.username || "User"} color={user.avatarColor} size={28} />
@@ -111,7 +113,7 @@ function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-full p-1 transition-colors hover:bg-muted">
+        <button className="flex items-center gap-2 rounded-md border-2 border-ink bg-card p-1 shadow-elev-sm transition-colors hover:bg-primary-soft">
           <Avatar name={user.fullName || user.username} color={user.avatarColor} size={32} />
         </button>
       </DropdownMenuTrigger>
@@ -179,7 +181,7 @@ function NotificationsBell() {
   return (
     <DropdownMenu onOpenChange={(open) => open && loadNotifications()}>
       <DropdownMenuTrigger asChild>
-        <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+        <button className="brutal-press relative flex h-9 w-9 items-center justify-center rounded-md border-2 border-ink bg-card text-muted-foreground shadow-elev-sm transition-colors hover:bg-primary-soft hover:text-foreground">
           <Bell className="h-4 w-4" />
           {unread > 0 && (
             <span className="absolute right-1.5 top-1.5 inline-flex h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
@@ -229,7 +231,7 @@ export function AppShell({ children }) {
   return (
     <div className="min-h-screen bg-background">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-sidebar-border lg:block">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r-2 border-sidebar-border lg:block">
         <SidebarContent />
       </aside>
 
@@ -237,7 +239,7 @@ export function AppShell({ children }) {
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-foreground/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 border-r border-sidebar-border bg-sidebar shadow-lg">
+          <aside className="absolute inset-y-0 left-0 w-72 border-r-2 border-sidebar-border bg-sidebar shadow-elev-lg">
             <button
               onClick={() => setOpen(false)}
               className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
@@ -251,7 +253,7 @@ export function AppShell({ children }) {
       )}
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b-2 border-border bg-card px-4 sm:px-6">
           <button
             onClick={() => setOpen(true)}
             className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
@@ -275,4 +277,3 @@ export function AppShell({ children }) {
     </div>
   );
 }
-

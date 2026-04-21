@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
+import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -193,7 +194,7 @@ function CreateRequestPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="type" className="text-sm font-medium text-foreground">Request type</label>
-                <select
+                <Select
                   id="type"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={form.type}
@@ -206,14 +207,14 @@ function CreateRequestPage() {
                       {option}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div className="space-y-1.5">
                 {isSuperAdmin ? (
                   <>
                     <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
-                    <select
+                    <Select
                       id="company_id"
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                       value={form.company_id}
@@ -228,7 +229,7 @@ function CreateRequestPage() {
                           {company.name}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </>
                 ) : isSenior ? (
                   <>
@@ -258,7 +259,7 @@ function CreateRequestPage() {
               {isSuperAdmin || isSenior ? (
                 <div className="space-y-1.5">
                   <label htmlFor="source_entity_id" className="text-sm font-medium text-foreground">Source prod entity</label>
-                  <select
+                  <Select
                     id="source_entity_id"
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                     value={form.source_entity_id}
@@ -273,13 +274,13 @@ function CreateRequestPage() {
                         {entity.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               ) : null}
 
               <div className="space-y-1.5">
                 <label htmlFor="target_team" className="text-sm font-medium text-foreground">Target team</label>
-                <select
+                <Select
                   id="target_team"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                   value={form.target_team}
@@ -298,7 +299,7 @@ function CreateRequestPage() {
                       {team.label || team.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
@@ -372,3 +373,5 @@ function CreateRequestPage() {
 }
 
 export default CreateRequestPage
+
+

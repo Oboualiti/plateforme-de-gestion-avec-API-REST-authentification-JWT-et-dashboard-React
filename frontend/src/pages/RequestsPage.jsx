@@ -6,6 +6,7 @@ import { Avatar } from '../components/Avatar'
 import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -230,7 +231,7 @@ function RequestsPage() {
           </div>
 
           {canShowCompanyFilter && (
-            <select
+            <Select
               className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
               value={filters.company_id}
               onChange={(event) => handleFilterChange('company_id', event.target.value)}
@@ -241,10 +242,10 @@ function RequestsPage() {
                   {item.code ? `${item.code} - ${item.name}` : item.name}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
 
-          <select
+          <Select
             className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
             value={filters.source_entity_id}
             onChange={(event) => handleFilterChange('source_entity_id', event.target.value)}
@@ -256,9 +257,9 @@ function RequestsPage() {
                 {item.code || item.name}
               </option>
             ))}
-          </select>
+          </Select>
 
-          <select
+          <Select
             className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
             value={filters.target_entity_id}
             onChange={(event) => handleFilterChange('target_entity_id', event.target.value)}
@@ -270,9 +271,9 @@ function RequestsPage() {
                 {item.code || item.name}
               </option>
             ))}
-          </select>
+          </Select>
 
-          <select
+          <Select
             className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
             value={filters.status}
             onChange={(event) => handleFilterChange('status', event.target.value)}
@@ -283,7 +284,7 @@ function RequestsPage() {
                 {label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="mt-3 flex items-center justify-between">
@@ -411,3 +412,5 @@ function RequestsPage() {
 }
 
 export default RequestsPage
+
+
