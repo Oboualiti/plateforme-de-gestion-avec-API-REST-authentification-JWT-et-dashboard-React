@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import PageHeader from '../components/layout/PageHeader'
+import { Badge } from '../components/ui/badge'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
 import { Button } from '../components/ui/button'
@@ -359,10 +360,9 @@ function UsersPage() {
                     <td className="px-4 py-3 text-muted-foreground">{(company?.name) || (company?.code) || '—'}</td>
                     <td className="px-4 py-3 text-muted-foreground">{entity?.name ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${u.is_active ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${u.is_active ? 'bg-success' : 'bg-muted-foreground'}`} />
+                      <Badge variant={u.is_active ? 'success' : 'destructive'}>
                         {u.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      </Badge>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
@@ -393,4 +393,3 @@ function UsersPage() {
 }
 
 export default UsersPage
-

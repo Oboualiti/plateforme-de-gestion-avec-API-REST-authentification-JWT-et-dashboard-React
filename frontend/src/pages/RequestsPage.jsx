@@ -79,8 +79,16 @@ function RequestsPage() {
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const isGlobalAdmin = roleKeys.includes('super_admin')
+  const isSenior = roleKeys.includes('senior')
+  const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
+  const isBasicUser = roleKeys.includes('user')
   const isIncomingQueueTeamLeader = isTeamLeader && scope === 'team'
+  const actorCompanyId = useMemo(
+    () => user?.company_id || user?.company || '',
+    [user?.company_id, user?.company],
+  )
+  const isSingleEntityRole = !isGlobalAdmin && !isSenior && (isManager || isTeamLeader || isBasicUser)
   const scopeTitle = {
     all: 'All requests',
     mine: 'My requests',
@@ -141,7 +149,27 @@ function RequestsPage() {
   }, [isGlobalAdmin])
 
   useEffect(() => {
-    const companyId = isGlobalAdmin ? filters.company_id : user?.company_id
+    if (isSingleEntityRole) {
+      const sourceEntity = user?.source_entity?.id
+        ? user.source_entity
+        : (user?.entity_id
+          ? {
+              id: user.entity_id,
+              code: user.entity_code || '',
+              name: user.entity_name || '',
+              entity_type: user.entity_type || 'PROD',
+            }
+          : null)
+      const targetEntities = Array.isArray(user?.available_target_teams) ? user.available_target_teams : []
+      setOptions((current) => ({
+        ...current,
+        sourceEntities: sourceEntity ? [sourceEntity] : [],
+        targetEntities,
+      }))
+      return
+    }
+
+    const companyId = isGlobalAdmin ? filters.company_id : actorCompanyId
     if (!companyId) {
       setOptions((current) => ({ ...current, sourceEntities: [], targetEntities: [] }))
       return
@@ -156,7 +184,7 @@ function RequestsPage() {
         const entities = Array.isArray(payload) ? payload : payload?.results || payload?.entities || []
         setOptions((current) => ({
           ...current,
-          sourceEntities: entities,
+          sourceEntities: entities.filter((item) => item.entity_type === 'PROD'),
           targetEntities: entities.filter((item) => item.entity_type !== 'PROD'),
         }))
       } catch (_err) {
@@ -168,7 +196,7 @@ function RequestsPage() {
     return () => {
       active = false
     }
-  }, [filters.company_id, isGlobalAdmin, user?.company_id])
+  }, [actorCompanyId, filters.company_id, isGlobalAdmin, isSingleEntityRole, user?.available_target_teams, user?.entity_code, user?.entity_id, user?.entity_name, user?.entity_type, user?.source_entity])
 
   async function loadRequests() {
     try {
@@ -178,7 +206,7 @@ function RequestsPage() {
         page_size: scope === 'team' ? 200 : pagination.pageSize,
         scope: scope !== 'all' ? scope : undefined,
         search: filters.search || undefined,
-        company_id: isGlobalAdmin ? filters.company_id || undefined : user?.company_id || undefined,
+        company_id: isGlobalAdmin ? filters.company_id || undefined : actorCompanyId || undefined,
         source_entity_id: filters.source_entity_id || undefined,
         target_entity_id: filters.target_entity_id || undefined,
         status: filters.status || undefined,
@@ -270,21 +298,21 @@ function RequestsPage() {
           {canShowCompanyFilter && (
             <Select
               className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
-              value={isGlobalAdmin ? filters.company_id : (user?.company_id ? String(user.company_id) : '')}
+              value={isGlobalAdmin ? filters.company_id : (actorCompanyId ? String(actorCompanyId) : '')}
               onChange={(event) => handleFilterChange('company_id', event.target.value)}
               disabled={!isGlobalAdmin}
             >
               {isGlobalAdmin ? (
-                <>
-                  <option value="">All companies</option>
-                  {options.companies.map((item) => (
+                [
+                  <option key="company-default" value="">Company</option>,
+                  ...options.companies.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.code ? `${item.code} - ${item.name}` : item.name}
                     </option>
-                  ))}
-                </>
+                  )),
+                ]
               ) : (
-                <option value={user?.company_id ? String(user.company_id) : ''}>{(user?.company_name || 'My company').toUpperCase()}</option>
+                <option value={actorCompanyId ? String(actorCompanyId) : ''}>{(user?.company_name || 'My company').toUpperCase()}</option>
               )}
             </Select>
           )}
@@ -298,7 +326,7 @@ function RequestsPage() {
             <option value="">All sources</option>
             {options.sourceEntities.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.code || item.name}
+                {item.name || item.code}
               </option>
             ))}
           </Select>
@@ -312,7 +340,7 @@ function RequestsPage() {
             <option value="">All targets</option>
             {options.targetEntities.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.code || item.name}
+                {item.name || item.code}
               </option>
             ))}
           </Select>
@@ -483,4 +511,3 @@ function RequestsPage() {
 }
 
 export default RequestsPage
-

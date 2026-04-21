@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
 
 from apps.entities.models import Entity
 from apps.permissions_app.services import get_effective_permission_keys, get_user_role_keys
@@ -92,3 +93,25 @@ class UserMeSerializer(serializers.ModelSerializer):
             and obj.entity_id
             and obj.entity.entity_type == Entity.EntityType.PROD
         )
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField()
+    new_password = serializers.CharField()
+    confirm_password = serializers.CharField()
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        current_password = attrs.get("current_password", "")
+        new_password = attrs.get("new_password", "")
+        confirm_password = attrs.get("confirm_password", "")
+
+        if not user.check_password(current_password):
+            raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+        if new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        if current_password == new_password:
+            raise serializers.ValidationError({"new_password": "New password must be different from current password."})
+
+        validate_password(new_password, user=user)
+        return attrs

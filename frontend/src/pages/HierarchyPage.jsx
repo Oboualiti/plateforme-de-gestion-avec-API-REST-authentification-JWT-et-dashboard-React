@@ -6,22 +6,11 @@ import PageHeader from '../components/layout/PageHeader'
 import { Avatar } from '../components/Avatar'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
-
-const ENTITY_TYPE_LABELS = {
-  PROD: 'PRODUCTION',
-  SUPPORT: 'SUPPORT',
-  TDEV: 'DEVELOPMENT',
-}
+import { ENTITY_TYPE_LABELS, getEntityTypeTone } from '../lib/entityTypeTheme'
 
 function EntityTypeBadge({ type }) {
-  const toneMap = {
-    PROD: 'bg-primary text-primary-foreground',
-    SUPPORT: 'bg-secondary text-secondary-foreground',
-    TDEV: 'bg-success text-success-foreground',
-  }
-
   return (
-    <span className={`inline-flex items-center rounded-md border-2 border-ink px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${toneMap[type] || 'bg-muted text-muted-foreground'}`}>
+    <span className={`inline-flex items-center rounded-md border-2 border-ink px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${getEntityTypeTone(type, 'solid')}`}>
       {ENTITY_TYPE_LABELS[type] || type || '-'}
     </span>
   )

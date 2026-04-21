@@ -12,9 +12,27 @@ function Dashboard() {
   const [stats, setStats] = useState({ loading: true, data: null, error: '' })
   
   const roleKeys = user?.role_keys || []
-  const isSuperAdmin = roleKeys.includes('super_admin')
-  const isSenior = roleKeys.includes('senior')
+  const primaryRole = roleKeys[0] || user?.role || 'user'
+  const isSuperAdmin = primaryRole === 'super_admin'
+  const isSenior = primaryRole === 'senior'
   const isAdminView = isSuperAdmin || isSenior
+  const scopeMeta = isSuperAdmin
+    ? {
+        headerCompany: '',
+        headerEntity: 'Global Platform',
+        profile: 'Global Platform',
+      }
+    : isSenior
+      ? {
+          headerCompany: user?.company_name || 'Global',
+          headerEntity: '',
+          profile: user?.company_name || 'Global',
+        }
+      : {
+          headerCompany: user?.company_name || 'Global',
+          headerEntity: user?.entity_name || 'No entity assigned',
+          profile: `${user?.company_name || 'Global'} · ${user?.entity_name || 'No entity assigned'}`,
+        }
 
   useEffect(() => {
     if (isAdminView) {
@@ -74,11 +92,13 @@ function Dashboard() {
             </span>
             {!isSuperAdmin && (
               <>
-                <span>{user?.company_name || 'Global'}</span>
-                <span className="text-muted-foreground">{user?.entity_name || 'No entity assigned'}</span>
+                <span>{scopeMeta.headerCompany}</span>
+                {scopeMeta.headerEntity ? (
+                  <span className="text-muted-foreground">{scopeMeta.headerEntity}</span>
+                ) : null}
               </>
             )}
-            {isSuperAdmin && <span className="text-muted-foreground">Global Platform</span>}
+            {isSuperAdmin && <span className="text-muted-foreground">{scopeMeta.profile}</span>}
           </>
         }
       />
@@ -253,7 +273,7 @@ function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-xs text-muted-foreground">
-                {isSuperAdmin ? 'Global Platform' : `${user?.company_name || 'Global'} · ${user?.entity_name || 'No entity assigned'}`}
+                {scopeMeta.profile}
               </div>
               <div className="pt-4 border-t border-border space-y-4">
                 <div>

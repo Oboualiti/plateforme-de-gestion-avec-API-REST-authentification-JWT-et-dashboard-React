@@ -6,13 +6,13 @@ export function Avatar({
   size = 32,
   className,
 }) {
-  const initials = name
+  const initials = (name || "")
     .split(" ")
     .map((p) => p[0])
     .filter(Boolean)
     .slice(0, 2)
     .join("")
-    .toUpperCase();
+    .toUpperCase() || "NA";
 
   return (
     <span

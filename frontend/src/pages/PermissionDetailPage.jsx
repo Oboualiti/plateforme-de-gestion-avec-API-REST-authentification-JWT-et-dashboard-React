@@ -365,116 +365,124 @@ function PermissionDetailPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div className="space-y-1.5">
-              <label htmlFor="password" className="text-sm font-medium text-foreground">New Password (Optional)</label>
-              <input
-                id="password"
-                type="password"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                value={profileForm.password}
-                onChange={(event) =>
-                  setProfileForm((current) => ({ ...current, password: event.target.value }))
-                }
-                disabled={!canEdit}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="status_select" className="text-sm font-medium text-foreground">Status</label>
-              <Select
-                id="status_select"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                value={profileForm.is_active ? 'active' : 'inactive'}
-                onChange={(event) =>
-                  setProfileForm((current) => ({ ...current, is_active: event.target.value === 'active' }))
-                }
-                disabled={!canEdit}
-              >
-                <option value="">Select status</option>
-                <option value="active">Activate</option>
-                <option value="inactive">Deactivate</option>
-              </Select>
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Security</p>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="space-y-1.5">
+                <label htmlFor="password" className="text-sm font-medium text-foreground">New Password (Optional)</label>
+                <input
+                  id="password"
+                  type="password"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                  value={profileForm.password}
+                  onChange={(event) =>
+                    setProfileForm((current) => ({ ...current, password: event.target.value }))
+                  }
+                  disabled={!canEdit}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {canShowCompany && (
-              <div className="space-y-1.5">
-                <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
-                <Select
-                  id="company_id"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                  value={profileForm.company_id}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      company_id: event.target.value,
-                      entity_id: '',
-                      team_leader_id: '',
-                    }))
-                  }
-                  disabled={!canEdit}
-                  required
-                >
-                  <option value="">Select company</option>
-                  {options.company_options.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Organization & Access</p>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {canShowCompany && (
+                <div className="space-y-1.5">
+                  <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
+                  <Select
+                    id="company_id"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                    value={profileForm.company_id}
+                    onChange={(event) =>
+                      setProfileForm((current) => ({
+                        ...current,
+                        company_id: event.target.value,
+                        entity_id: '',
+                        team_leader_id: '',
+                      }))
+                    }
+                    disabled={!canEdit}
+                    required
+                  >
+                    <option value="">Select company</option>
+                    {options.company_options.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
 
-            {canShowEntity && (
-              <div className="space-y-1.5">
-                <label htmlFor="entity_id" className="text-sm font-medium text-foreground">Entity</label>
-                <Select
-                  id="entity_id"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                  value={profileForm.entity_id}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      entity_id: event.target.value,
-                      team_leader_id: '',
-                    }))
-                  }
-                  disabled={!canEdit}
-                  required
-                >
-                  <option value="">Select entity</option>
-                  {filteredEntities.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
+              {canShowEntity && (
+                <div className="space-y-1.5">
+                  <label htmlFor="entity_id" className="text-sm font-medium text-foreground">Entity</label>
+                  <Select
+                    id="entity_id"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                    value={profileForm.entity_id}
+                    onChange={(event) =>
+                      setProfileForm((current) => ({
+                        ...current,
+                        entity_id: event.target.value,
+                        team_leader_id: '',
+                      }))
+                    }
+                    disabled={!canEdit}
+                    required
+                  >
+                    <option value="">Select entity</option>
+                    {filteredEntities.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
 
-            {canShowTeamLeader && (
               <div className="space-y-1.5">
-                <label htmlFor="team_leader_id" className="text-sm font-medium text-foreground">Team Leader</label>
+                <label htmlFor="status_select" className="text-sm font-medium text-foreground">Status</label>
                 <Select
-                  id="team_leader_id"
+                  id="status_select"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                  value={profileForm.team_leader_id}
+                  value={profileForm.is_active ? 'active' : 'inactive'}
                   onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, team_leader_id: event.target.value }))
+                    setProfileForm((current) => ({ ...current, is_active: event.target.value === 'active' }))
                   }
                   disabled={!canEdit}
                 >
-                  <option value="">Select team leader</option>
-                  {filteredTeamLeaders.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
+                  <option value="">Select status</option>
+                  <option value="active">Activate</option>
+                  <option value="inactive">Deactivate</option>
                 </Select>
               </div>
-            )}
+
+              {canShowTeamLeader && (
+                <div className="space-y-1.5">
+                  <label htmlFor="team_leader_id" className="text-sm font-medium text-foreground">Team Leader</label>
+                  <Select
+                    id="team_leader_id"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                    value={profileForm.team_leader_id}
+                    onChange={(event) =>
+                      setProfileForm((current) => ({ ...current, team_leader_id: event.target.value }))
+                    }
+                    disabled={!canEdit}
+                  >
+                    <option value="">Select team leader</option>
+                    {filteredTeamLeaders.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+            </div>
           </div>
+
 
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Roles</p>
@@ -576,5 +584,4 @@ function PermissionDetailPage() {
 }
 
 export default PermissionDetailPage
-
 
