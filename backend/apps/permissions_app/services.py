@@ -2,6 +2,7 @@ from django.utils import timezone
 
 from django.db.models import Q
 
+from apps.entities.models import Entity
 from apps.permissions_app.models import (
     AppPermission,
     PermissionDelegation,
@@ -9,21 +10,15 @@ from apps.permissions_app.models import (
     UserAccessDelegation,
     UserPermissionOverride,
 )
-
-
-ROLE_HIERARCHY = {
-    "super_admin": 6,
-    "senior": 5,
-    "manager": 4,
-    "team_leader": 3,
-    "user": 2,
-}
+from .constants import (
+    DEFAULT_ROLE_PERMISSION_MATRIX,
+    ROLE_HIERARCHY,
+)
 
 MANAGE_PERMISSION_SCOPE_ORDER = [
     "manage_users_global",
     "manage_users_company",
     "manage_users_entity",
-    "manage_users_team",
 ]
 
 
@@ -77,6 +72,20 @@ def get_effective_permission_keys(user):
     return sorted(allowed - denied)
 
 
+def has_permission(user, permission_key):
+    return permission_key in set(get_effective_permission_keys(user))
+
+
+def has_any_permission(user, permission_keys):
+    effective = set(get_effective_permission_keys(user))
+    return bool(set(permission_keys) & effective)
+
+
+def has_all_permissions(user, permission_keys):
+    effective = set(get_effective_permission_keys(user))
+    return set(permission_keys).issubset(effective)
+
+
 def get_delegatable_permission_keys(editor_user):
     role_keys = get_user_role_keys(editor_user)
     if not role_keys:
@@ -97,17 +106,13 @@ def get_manage_scope(user):
 
 
 def get_scope_filter(user):
-    role_key = get_primary_role_key(user)
-    if role_key == "super_admin":
+    effective_permissions = set(get_effective_permission_keys(user))
+    if "manage_users_global" in effective_permissions:
         return Q()
-    if role_key == "senior" and user.company_id:
+    if "manage_users_company" in effective_permissions and user.company_id:
         return Q(company_id=user.company_id)
-    if role_key == "manager" and user.entity_id:
+    if "manage_users_entity" in effective_permissions and user.entity_id:
         return Q(entity_id=user.entity_id)
-    if role_key == "team_leader":
-        return Q(entity_id=user.entity_id, team_leader_id=user.id) | Q(id=user.id)
-    if role_key == "user":
-        return Q(id=user.id)
     return None
 
 
@@ -119,14 +124,12 @@ def get_role_visibility_floor(user):
 
 
 def can_manage_any_users(user):
-    role_key = get_primary_role_key(user)
-    if role_key in {"super_admin", "senior", "manager"}:
-        if role_key == "senior":
-            return bool(user.company_id)
-        if role_key == "manager":
-            return bool(user.company_id and user.entity_id)
+    scope = get_manage_scope(user)
+    if scope == "manage_users_global":
         return True
-    if role_key == "team_leader":
+    if scope == "manage_users_company":
+        return bool(user.company_id)
+    if scope == "manage_users_entity":
         return bool(user.company_id and user.entity_id)
     return False
 
@@ -148,19 +151,17 @@ def get_visible_users_queryset(user):
     for candidate in queryset:
         candidate_level = get_user_max_role_level(candidate)
         if candidate_level <= actor_level:
-            if role_key == "team_leader":
-                if candidate_level <= ROLE_HIERARCHY["team_leader"] and (
-                    candidate.team_leader_id == user.id or candidate.id == user.id
-                ):
-                    visible_ids.append(candidate.id)
-            elif role_key == "manager":
+            if role_key == "manager":
                 if candidate_level <= ROLE_HIERARCHY["manager"]:
                     visible_ids.append(candidate.id)
             elif role_key == "senior":
                 if candidate_level <= ROLE_HIERARCHY["senior"]:
                     visible_ids.append(candidate.id)
-            else:
+            elif role_key == "super_admin":
                 visible_ids.append(candidate.id)
+            else:
+                if has_permission(user, "manage_users_entity"):
+                    visible_ids.append(candidate.id)
     return user.__class__.objects.filter(id__in=visible_ids).order_by("username")
 
 
@@ -184,26 +185,22 @@ def can_manage_target_user(actor, target):
         return False
     if actor.id == target.id:
         return False
-    actor_role = get_primary_role_key(actor)
-    target_role = get_primary_role_key(target)
-    if actor_role == "team_leader":
+    actor_scope = get_manage_scope(actor)
+    if actor_scope == "manage_users_entity":
         if target.company_id != actor.company_id or target.entity_id != actor.entity_id:
             return False
-        if target.team_leader_id not in {None, actor.id}:
-            return False
-        return target_role in {"", "user"}
     return get_user_max_role_level(target) < get_user_max_role_level(actor)
 
 
 def get_request_scope_filter(user):
-    role_key = get_primary_role_key(user)
-    if role_key == "super_admin":
+    effective_permissions = set(get_effective_permission_keys(user))
+    if "view_all_requests" in effective_permissions:
         return Q()
-    if role_key == "senior" and user.company_id:
+    if "view_company_requests" in effective_permissions and user.company_id:
         return Q(requester_user__company_id=user.company_id)
-    if role_key == "manager" and user.entity_id:
+    if "view_entity_requests" in effective_permissions and user.entity_id:
         return Q(requester_user__entity_id=user.entity_id)
-    if role_key == "team_leader":
+    if "view_team_requests" in effective_permissions:
         team_user_ids = list(
             user.__class__.objects.filter(team_leader_id=user.id).values_list("id", flat=True)
         )
@@ -213,7 +210,19 @@ def get_request_scope_filter(user):
             | Q(requester_user_id__in=team_user_ids)
             | Q(current_assignee_id__in=team_user_ids)
         )
-    return Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
+        if user.entity_id:
+            return (
+                Q(target_entity_id=user.entity_id)
+                | Q(target_entity__isnull=True, target_unit__code=user.entity.code)
+                | Q(requester_user_id=user.id)
+                | Q(current_assignee_id=user.id)
+                | Q(requester_user_id__in=team_user_ids)
+                | Q(current_assignee_id__in=team_user_ids)
+            )
+        return Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
+    if "view_own_requests" in effective_permissions:
+        return Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
+    return Q(pk__in=[])
 
 
 def get_permission_matrix_for_user(user, editor_user=None):
@@ -246,3 +255,23 @@ def get_permission_matrix_for_user(user, editor_user=None):
             }
         )
     return result
+
+
+def can_create_requests(user):
+    if not has_permission(user, "create_request"):
+        return False
+    role_keys = set(get_user_role_keys(user))
+    if "super_admin" in role_keys:
+        return True
+    if "senior" in role_keys:
+        return bool(user.company_id)
+    return bool(
+        user.company_id
+        and user.entity_id
+        and user.entity
+        and user.entity.entity_type == Entity.EntityType.PROD
+    )
+
+
+def get_default_permissions_for_role(role_key):
+    return sorted(DEFAULT_ROLE_PERMISSION_MATRIX.get(role_key, set()))

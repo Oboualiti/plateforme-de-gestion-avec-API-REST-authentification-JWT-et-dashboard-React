@@ -2,7 +2,11 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 
 from apps.entities.models import Entity
-from apps.permissions_app.services import get_effective_permission_keys, get_user_role_keys
+from apps.permissions_app.services import (
+    can_create_requests,
+    get_effective_permission_keys,
+    get_user_role_keys,
+)
 
 from .models import User
 
@@ -81,22 +85,7 @@ class UserMeSerializer(serializers.ModelSerializer):
         ]
 
     def get_request_creation_allowed(self, obj):
-        role_keys = set(get_user_role_keys(obj))
-        if "super_admin" in role_keys:
-            return True
-        if "senior" in role_keys:
-            return bool(obj.company_id)
-        if "manager" in role_keys or "team_leader" in role_keys:
-            return bool(
-                obj.company_id
-                and obj.entity_id
-                and obj.entity.entity_type == Entity.EntityType.PROD
-            )
-        return bool(
-            obj.company_id
-            and obj.entity_id
-            and obj.entity.entity_type == Entity.EntityType.PROD
-        )
+        return can_create_requests(obj)
 
 
 class ChangePasswordSerializer(serializers.Serializer):

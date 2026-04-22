@@ -34,6 +34,7 @@ from .services import (
     can_manage_any_users,
     can_manage_target_user,
     can_view_target_user,
+    has_permission,
     get_delegatable_permission_keys,
     get_effective_permission_keys,
     get_manage_scope,
@@ -83,13 +84,9 @@ class GlobalSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _scoped_entities(self, user):
-        role_key = next(
-            (key for key in ("super_admin", "senior", "manager", "team_leader", "user") if key in set(user.assigned_roles.values_list("role__key", flat=True))),
-            "",
-        )
-        if role_key == "super_admin":
+        if has_permission(user, "view_all_companies") or has_permission(user, "manage_companies"):
             return Entity.objects.filter(is_active=True).select_related("company")
-        if role_key == "senior" and user.company_id:
+        if has_permission(user, "view_company_entities") and user.company_id:
             return Entity.objects.filter(is_active=True, company_id=user.company_id).select_related("company")
         if user.entity_id:
             return Entity.objects.filter(is_active=True, id=user.entity_id).select_related("company")

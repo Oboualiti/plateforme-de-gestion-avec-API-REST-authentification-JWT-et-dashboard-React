@@ -32,7 +32,6 @@ const statusLabelMap = {
 
 const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
 const stepperStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED']
-const allStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'REJECTED', 'COMPLETED', 'CLOSED']
 
 function badgeClass(baseClass) {
   return `inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${baseClass}`
@@ -123,11 +122,23 @@ function RequestDetailsPage() {
 
   const request = state.request
   const roleKeys = user?.role_keys || []
+  const effectivePermissionKeys = useMemo(
+    () => new Set(user?.effective_permission_keys || []),
+    [user?.effective_permission_keys],
+  )
   const isManager = roleKeys.includes('manager')
   const canChangeStatus = Boolean(request?.can_update_status)
+  const allowedStatusTransitions = request?.allowed_status_transitions || []
+  const statusOptions = useMemo(() => {
+    const options = [request?.status, ...allowedStatusTransitions].filter(Boolean)
+    return [...new Set(options)]
+  }, [allowedStatusTransitions, request?.status])
   const canAssignToMe = Boolean(request?.can_assign_to_me)
   const potentialAssignees = request?.potential_assignees || []
-  const canManagerAssignTl = isManager && canChangeStatus && !request?.current_assignee && potentialAssignees.length > 0
+  const canManagerAssignTl = isManager
+    && effectivePermissionKeys.has('assign_request')
+    && !request?.current_assignee
+    && potentialAssignees.length > 0
 
   const comments = request?.comments || []
   const lastCommentId = comments.length ? comments[comments.length - 1].id : null
@@ -467,10 +478,10 @@ function RequestDetailsPage() {
                    <Select 
                       value={request.status} 
                       onChange={e => updateStatus(e.target.value)}
-                      disabled={!canChangeStatus || actionState.busy}
+                      disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
                       className="w-full"
                    >
-                      {allStatuses.map(s => (
+                      {statusOptions.map(s => (
                         <option key={s} value={s}>{statusLabelMap[s]}</option>
                       ))}
                    </Select>

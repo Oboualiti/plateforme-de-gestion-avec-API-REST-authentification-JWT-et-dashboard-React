@@ -78,6 +78,11 @@ function RequestsPage() {
   })
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
+  const effectivePermissionKeys = useMemo(
+    () => new Set(user?.effective_permission_keys || []),
+    [user?.effective_permission_keys],
+  )
+  const hasPermission = (permissionKey) => effectivePermissionKeys.has(permissionKey)
   const isGlobalAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
   const isManager = roleKeys.includes('manager')
@@ -85,7 +90,13 @@ function RequestsPage() {
   const isBasicUser = roleKeys.includes('user')
   const isIncomingQueueTeamLeader = isTeamLeader && scope === 'team'
   const isPendingScope = scope === 'pending'
-  const canDecidePending = isPendingScope && (isGlobalAdmin || isSenior || isManager || isTeamLeader)
+  const canDecidePending = isPendingScope
+    && hasPermission('approve_request')
+    && (
+      isGlobalAdmin
+      || isSenior
+      || ((isManager || isTeamLeader) && user?.entity_type === 'PROD')
+    )
   const actorCompanyId = useMemo(
     () => user?.company_id || user?.company || '',
     [user?.company_id, user?.company],
@@ -295,7 +306,7 @@ function RequestsPage() {
     setPagination((current) => ({ ...current, page: 1 }))
   }
 
-  const canShowCompanyFilter = isGlobalAdmin || isIncomingQueueTeamLeader
+  const canShowCompanyFilter = hasPermission('view_all_requests') || isIncomingQueueTeamLeader
   const totalPages = Math.max(1, Math.ceil((pagination.count || 0) / pagination.pageSize))
   const fromIndex = pagination.count ? (pagination.page - 1) * pagination.pageSize + 1 : 0
   const toIndex = Math.min(pagination.page * pagination.pageSize, pagination.count || 0)
@@ -306,7 +317,7 @@ function RequestsPage() {
         title={scopeTitle[scope] || 'Requests'}
         description="Browse, filter, and manage requests across your scope."
         actions={
-          user?.request_creation_allowed ? (
+          user?.request_creation_allowed && hasPermission('create_request') ? (
             <Button asChild>
               <Link to="/requests/create">
                 <PlusCircle className="mr-1 h-4 w-4" /> New request
@@ -440,7 +451,7 @@ function RequestsPage() {
           <div className={`${isIncomingQueueTeamLeader ? 'm-3 rounded-md border-2 border-dashed border-ink p-16 text-center' : 'py-16 text-center'}`}>
             <p className="text-sm font-medium">No requests match your filters</p>
             <p className="mt-1 text-xs text-muted-foreground">Try clearing filters or creating a new request.</p>
-            {user?.request_creation_allowed ? (
+            {user?.request_creation_allowed && hasPermission('create_request') ? (
               <div className="mt-4">
                 <Button asChild>
                   <Link to="/requests/create">

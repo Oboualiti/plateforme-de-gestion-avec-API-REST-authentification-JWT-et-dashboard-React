@@ -257,6 +257,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     role_keys = serializers.SerializerMethodField()
     can_assign_to_me = serializers.SerializerMethodField()
     can_update_status = serializers.SerializerMethodField()
+    allowed_status_transitions = serializers.SerializerMethodField()
     can_reassign_target_team = serializers.SerializerMethodField()
     available_reassignment_targets = serializers.SerializerMethodField()
     potential_assignees = serializers.SerializerMethodField()
@@ -301,6 +302,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "role_keys",
             "can_assign_to_me",
             "can_update_status",
+            "allowed_status_transitions",
             "can_reassign_target_team",
             "available_reassignment_targets",
             "potential_assignees",
@@ -337,6 +339,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_update_status(self, obj):
         return bool(self.context.get("can_manage_incoming_request"))
+
+    def get_allowed_status_transitions(self, obj):
+        return self.context.get("allowed_status_transitions") or []
 
     def get_can_reassign_target_team(self, obj):
         return bool(self.context.get("can_reassign_target_team"))
@@ -497,4 +502,3 @@ class RequestStatusUpdateSerializer(serializers.Serializer):
 class RequestAssignUserSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     note = serializers.CharField(required=False, allow_blank=True)
-

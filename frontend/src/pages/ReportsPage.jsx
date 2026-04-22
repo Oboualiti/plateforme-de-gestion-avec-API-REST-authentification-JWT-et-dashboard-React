@@ -97,11 +97,25 @@ function ReportsPage() {
   const [state, setState] = useState({ loading: true, error: '', reports: null, dashboard: null, requests: [] })
 
   const role = getPrimaryRole(user)
+  const effectivePermissionKeys = useMemo(
+    () => new Set(user?.effective_permission_keys || []),
+    [user?.effective_permission_keys],
+  )
+  const hasPermission = (permissionKey) => effectivePermissionKeys.has(permissionKey)
   const scope = getScopeForRole(role)
   const scopeLabel = getScopeLabel(role, user)
-  const isSuperAdmin = role === 'super_admin'
+  const canViewGlobalReports = hasPermission('view_global_reports')
+  const canViewCompanyReports = hasPermission('view_company_reports')
+  const canViewEntityReports = hasPermission('view_entity_reports')
+  const canExportData = hasPermission('export_data')
+  const isSuperAdmin = role === 'super_admin' && canViewGlobalReports
+  const canViewReports = canViewGlobalReports || canViewCompanyReports || canViewEntityReports
 
   useEffect(() => {
+    if (!canViewReports) {
+      setState({ loading: false, error: 'You do not have permission to view reports.', reports: null, dashboard: null, requests: [] })
+      return undefined
+    }
     let active = true
 
     async function load() {
@@ -141,7 +155,7 @@ function ReportsPage() {
     return () => {
       active = false
     }
-  }, [isSuperAdmin, scope, user])
+  }, [canViewReports, isSuperAdmin, scope, user])
 
   const parsed = useMemo(() => {
     const reports = state.reports || {}
@@ -289,7 +303,7 @@ function ReportsPage() {
         title="Reports"
         description="Unified analytics for request intake, delivery speed, workload balance, and operational pressure."
         actions={
-          <Button variant="outline" onClick={() => exportCsv('reports-summary.csv', parsed.summaryRows)}>
+          <Button variant="outline" onClick={() => exportCsv('reports-summary.csv', parsed.summaryRows)} disabled={!canExportData}>
             <Download className="mr-2 h-4 w-4" /> Export summary
           </Button>
         }
@@ -369,7 +383,7 @@ function ReportsPage() {
               <h3 className="text-4xl font-extrabold uppercase">Request Flow Over The Last 7 Days</h3>
               <p className="mt-1 text-sm text-muted-foreground">Created vs resolved volume to quickly see if backlog is growing or shrinking.</p>
             </div>
-            <Button variant="outline" onClick={() => exportCsv('request-flow-7-days.csv', parsed.trend)}>
+            <Button variant="outline" onClick={() => exportCsv('request-flow-7-days.csv', parsed.trend)} disabled={!canExportData}>
               <Download className="mr-2 h-4 w-4" /> Export CSV
             </Button>
           </CardHeader>
@@ -435,7 +449,7 @@ function ReportsPage() {
               <p className="eyebrow">Analytics</p>
               <h3 className="text-4xl font-extrabold uppercase">Status Distribution</h3>
             </div>
-            <Button variant="outline" onClick={() => exportCsv('status-distribution.csv', parsed.statusDistribution)}>
+            <Button variant="outline" onClick={() => exportCsv('status-distribution.csv', parsed.statusDistribution)} disabled={!canExportData}>
               <Download className="mr-2 h-4 w-4" /> Export CSV
             </Button>
           </CardHeader>
@@ -467,7 +481,7 @@ function ReportsPage() {
               <p className="eyebrow">Analytics</p>
               <h3 className="text-4xl font-extrabold uppercase">{isSuperAdmin ? 'Activity By Company' : 'Activity By Unit'}</h3>
             </div>
-            <Button variant="outline" onClick={() => exportCsv('activity-distribution.csv', parsed.companyRows)}>
+            <Button variant="outline" onClick={() => exportCsv('activity-distribution.csv', parsed.companyRows)} disabled={!canExportData}>
               <Download className="mr-2 h-4 w-4" /> Export CSV
             </Button>
           </CardHeader>
@@ -495,7 +509,5 @@ function ReportsPage() {
 }
 
 export default ReportsPage
-
-
 
 

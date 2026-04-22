@@ -16,10 +16,10 @@ from apps.notifications.models import NotificationPreference
 from apps.permissions_app.models import AppPermission, RolePermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import (
     ROLE_HIERARCHY,
-    can_manage_any_users,
     can_view_target_user,
     get_delegatable_permission_keys,
     get_effective_permission_keys,
+    has_any_permission,
     get_primary_role_key,
     get_visible_users_queryset,
 )
@@ -52,18 +52,18 @@ from .serializers import ManageableUserListSerializer
 
 ADMIN_MODULE_PERMISSIONS = {
     "dashboard": set(),
-    "companies": {"super_admin"},
-    "entities": {"super_admin", "senior"},
-    "hierarchy": {"super_admin", "senior", "manager", "team_leader"},
-    "users": {"super_admin", "senior", "manager", "team_leader"},
-    "roles": {"super_admin", "senior", "manager", "team_leader"},
-    "permissions": {"super_admin", "senior", "manager", "team_leader"},
-    "requests": {"super_admin", "senior", "manager", "team_leader"},
-    "assignments": {"super_admin", "senior", "manager", "team_leader"},
-    "status_tracking": {"super_admin", "senior", "manager", "team_leader"},
-    "audit_logs": {"super_admin", "senior", "manager", "team_leader"},
-    "notifications": {"super_admin", "senior"},
-    "reports": {"super_admin", "senior", "manager"},
+    "companies": {"manage_companies", "view_all_companies"},
+    "entities": {"manage_entities", "view_company_entities"},
+    "hierarchy": {"view_company_entities", "manage_users_entity", "manage_users_company"},
+    "users": {"manage_users_global", "manage_users_company", "manage_users_entity"},
+    "roles": {"manage_users_global", "manage_users_company", "manage_users_entity"},
+    "permissions": {"manage_users_global", "manage_users_company", "manage_users_entity"},
+    "requests": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
+    "assignments": {"assign_request"},
+    "status_tracking": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
+    "audit_logs": {"manage_users_global", "manage_users_company", "manage_users_entity", "view_all_requests"},
+    "notifications": {"view_company_requests", "view_entity_requests", "view_team_requests", "view_own_requests"},
+    "reports": {"view_global_reports", "view_company_reports", "view_entity_reports"},
 }
 
 ROLE_DEFAULT_PERMISSION_KEYS = {
@@ -78,10 +78,8 @@ class AdminBaseView(APIView):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if not can_manage_any_users(request.user):
-            self.permission_denied(request, message="You do not have access to the custom admin.")
-        allowed_roles = ADMIN_MODULE_PERMISSIONS.get(self.module_key, set())
-        if allowed_roles and get_primary_role_key(request.user) not in allowed_roles:
+        allowed_permissions = ADMIN_MODULE_PERMISSIONS.get(self.module_key, set())
+        if allowed_permissions and not has_any_permission(request.user, allowed_permissions):
             self.permission_denied(request, message="You do not have access to this admin section.")
 
     def role_key(self, user):
