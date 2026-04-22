@@ -38,7 +38,7 @@ function Avatar({ name, size = 32 }) {
   const color = getAvatarColor(name)
   return (
     <div
-      className="flex items-center justify-center rounded-sm border-2 border-ink font-black text-foreground"
+      className="flex items-center justify-center rounded-sm border border-ink/10 font-bold text-foreground"
       style={{ width: size, height: size, fontSize: size * 0.36, backgroundColor: color }}
     >
       {initials}
@@ -48,13 +48,13 @@ function Avatar({ name, size = 32 }) {
 
 function roleBadgeClass(roleKey) {
   const toneByRole = {
-    super_admin: 'bg-rose-600 text-white',
-    senior: 'bg-amber-500 text-foreground',
-    manager: 'bg-violet-600 text-white',
-    team_leader: 'bg-indigo-600 text-white',
-    user: 'bg-blue-600 text-white',
+    super_admin: 'bg-slate-900 text-slate-50',
+    senior: 'bg-slate-700 text-slate-50',
+    manager: 'bg-slate-200 text-slate-800 border-slate-300',
+    team_leader: 'bg-slate-100 text-slate-600 border-slate-200',
+    user: 'bg-muted/30 text-muted-foreground border-transparent',
   }
-  return toneByRole[roleKey] || 'bg-slate-600 text-white'
+  return toneByRole[roleKey] || 'bg-slate-500 text-white'
 }
 
 function UsersPage() {
@@ -326,7 +326,7 @@ function UsersPage() {
                       <td onClick={() => navigate(`/admin/users/${item.id}`)} className="cursor-pointer">
                         <div className="text-xs">
                           <div className="mb-1">
-                            <span className="inline-flex items-center rounded-sm bg-[#4338CA] px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-white">
+                            <span className="inline-flex items-center rounded-sm bg-slate-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white">
                               {item.company_name || '-'}
                             </span>
                           </div>

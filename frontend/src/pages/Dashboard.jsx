@@ -1,20 +1,12 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  ArrowRight,
-  ArrowUpRight,
-  Building2,
-  CheckCheck,
-  ClipboardList,
-  PlusCircle,
-  UserRound,
-  Users,
-} from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Building2, CheckCheck, ClipboardList, PlusCircle, UserRound, Users } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
 import PageHeader from '../components/layout/PageHeader'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader } from '../components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 import { ROLE_LABELS } from '../lib/constants'
@@ -216,11 +208,15 @@ function Dashboard() {
     items
       .filter((item) => !RESOLVED_SET.has(item.status) && item.status !== 'REJECTED')
       .forEach((item) => {
-        const owner = item.assignee_name || item.current_assignee__username
-        if (!owner) return
-        const current = byOwner.get(owner) || { name: owner, role: 'User', count: 0 }
+        const name = item.assignee_name || item.current_assignee__username
+        if (!name) return
+        const current = byOwner.get(name) || {
+          name,
+          role: ROLE_LABELS[item.assignee_role] || 'User',
+          count: 0,
+        }
         current.count += 1
-        byOwner.set(owner, current)
+        byOwner.set(name, current)
       })
 
     const ownership = [...byOwner.values()].sort((a, b) => b.count - a.count).slice(0, 3)
@@ -272,195 +268,168 @@ function Dashboard() {
 
   if (primaryRole === 'user') {
     return (
-      <main className="space-y-6">
-        <div className="grid gap-4">
-          <Card className="lg:col-span-2">
-            <CardContent className="grid gap-6 p-5 lg:grid-cols-[1fr_240px]">
-              <div>
-                <p className="eyebrow">Workspace Overview</p>
-                <h2 className="mt-2 text-4xl font-extrabold uppercase leading-tight text-foreground">Stay On Top Of Requests Without The Clutter</h2>
-                <p className="mt-4 text-sm text-muted-foreground">
-                  Track your active work, spot blockers early, and move from queue review to action faster.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div className="rounded-sm border-2 border-ink bg-secondary p-4 text-secondary-foreground shadow-elev-sm">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-secondary-foreground/80">Scope</p>
-                  <p className="mt-1 text-4xl font-bold leading-tight">{scopeLabel}</p>
-                  <p className="text-sm text-secondary-foreground/85">{roleLabel}</p>
-                </div>
-                <div className="rounded-sm border-2 border-dashed border-ink bg-card p-4">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Active workload</p>
-                  <p className="mt-1 text-4xl font-bold text-foreground">{metrics.openRequests} items</p>
-                  <p className="text-sm text-muted-foreground">{metrics.unassigned} upcoming deadlines need monitoring</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+      <main className="space-y-8">
+        <PageHeader
+          title={`Dashboard`}
+          description={`${roleLabel} · ${scopeLabel} — personal operational overview.`}
+          actions={
+            <Button asChild>
+              <Link to="/requests/create">
+                <PlusCircle className="mr-1 h-4 w-4" /> New request
+              </Link>
+            </Button>
+          }
+        />
+
+        {/* Compact Operational Summary */}
+        <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
+          <div>
+            <p className="eyebrow">Active Scope</p>
+            <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
+          </div>
+          <div className="h-10 w-px bg-ink/10" />
+          <div>
+            <p className="eyebrow">Open Queue</p>
+            <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
+          </div>
+          <div>
+            <p className="eyebrow text-warning">Attention</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.attentionCount}</p>
+          </div>
+          <div>
+            <p className="eyebrow text-success">Resolved</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-success">{metrics.resolved}</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
+            <CheckCheck className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Operational Health Stable</span>
+          </div>
         </div>
 
+        {/* Standardized KPI System */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="bg-primary text-primary-foreground">
+          <Card className="border-ink/10 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-primary-foreground/80">My requests</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.openRequests}</p>
-                  <p className="mt-2 text-sm text-primary-foreground/80">Open items still in motion</p>
+                  <p className="eyebrow">Total requests</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.totalRequests}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Recorded demand in scope</p>
                 </div>
-                <ClipboardList className="h-5 w-5" />
+                <div className="rounded-sm bg-muted/10 p-2">
+                  <Building2 className="h-5 w-5 text-muted-foreground/50" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-ink/10 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Need attention</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{metrics.overdue} overdue · {metrics.unassigned} unassigned</p>
+                  <p className="eyebrow">Status Overview</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.attentionCount}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Items needing attention</p>
                 </div>
-                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+                <div className="rounded-sm bg-muted/10 p-2">
+                  <Users className="h-5 w-5 text-muted-foreground/50" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-warning/30 bg-warning/5 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Submitted by me</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums text-foreground">{metrics.submittedByMe}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Useful for follow-up and prioritization</p>
+                  <p className="eyebrow text-foreground">Open requests</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{metrics.unassigned} pending assignment</p>
                 </div>
-                <Building2 className="h-5 w-5 text-muted-foreground" />
+                <div className="rounded-sm bg-warning/10 p-2">
+                  <ClipboardList className="h-5 w-5 text-warning" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-success text-success-foreground">
+          <Card className="border-success/30 bg-success/5 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-success-foreground/80">Resolved for me</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.resolved}</p>
-                  <p className="mt-2 text-sm text-success-foreground/85">Finished requests already delivered</p>
+                  <p className="eyebrow text-foreground">Resolution rate</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{metrics.resolved} closed items</p>
                 </div>
-                <CheckCheck className="h-5 w-5" />
+                <div className="rounded-sm bg-success/10 p-2">
+                  <CheckCheck className="h-5 w-5 text-success" />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Analytical Drilldown: Lifecycle */}
+          <Card className="border-ink/10 shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-ink/5 pb-4">
               <div>
-                <p className="eyebrow">Progress Snapshot</p>
-                <h3 className="text-4xl font-extrabold uppercase">Work Status Breakdown</h3>
+                <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Request Life Cycle</CardTitle>
+                <CardDescription>Current status distribution across scope.</CardDescription>
               </div>
-              <Button variant="ghost" asChild>
-                <Link to="/requests">View requests</Link>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/requests" className="text-xs">View all</Link>
               </Button>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
+            <CardContent className="space-y-3 pt-6">
               {STATUS_ORDER.map((status) => {
                 const count = metrics.statusCount[status] || 0
                 const pct = metrics.totalRequests ? Math.round((count / metrics.totalRequests) * 100) : 0
                 return (
-                  <div key={status} className="rounded-sm border border-ink/30 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className={statusPillClass(status)}>{STATUS_META[status].label}</span>
-                        <span className="text-sm text-muted-foreground">{STATUS_META[status].label}</span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-3xl font-bold tabular-nums text-foreground">{count}</div>
-                        <div className="text-xs text-muted-foreground">{pct}% of scope</div>
-                      </div>
+                  <div key={status} className="flex items-center gap-4">
+                    <div className="w-24 text-xs font-bold uppercase tracking-wider text-muted-foreground">{STATUS_META[status].label}</div>
+                    <div className="relative h-4 flex-1 overflow-hidden rounded-sm bg-muted/30">
+                      <div
+                        className={`absolute inset-y-0 left-0 ${STATUS_META[status].bar} opacity-80`}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full border border-ink/40 bg-muted">
-                      <div className={`h-full ${STATUS_META[status].bar}`} style={{ width: `${pct}%` }} />
-                    </div>
+                    <div className="w-12 text-right text-sm font-bold tabular-nums">{count}</div>
                   </div>
                 )
               })}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Manage your profile</p>
-              <h3 className="text-4xl font-extrabold uppercase">Profile details</h3>
+          {/* Recent Activity */}
+          <Card className="border-ink/10 shadow-none">
+            <CardHeader className="border-b border-ink/5 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Recent Activity</CardTitle>
+              <CardDescription>Latest changes to your requests.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
-              <div className="rounded-sm border border-ink/40 p-4">
-                <p className="eyebrow">Assigned workspace</p>
-                <p className="mt-1 text-4xl font-bold text-foreground">{user?.entity_code || user?.entity_name || user?.company_code || 'N/A'}</p>
-                <p className="text-lg text-muted-foreground">{user?.entity_name || user?.company_name || 'No workspace assigned'}</p>
-              </div>
-              <div className="rounded-sm border border-ink/40 p-4">
-                <p className="eyebrow">Primary role</p>
-                <p className="mt-1 text-4xl font-bold text-foreground">{roleLabel}</p>
-                <p className="text-lg text-muted-foreground">Submit, follow, and close requests with clear visibility.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Activity</p>
-              <h3 className="text-4xl font-extrabold uppercase">Recent Activity</h3>
-            </CardHeader>
-            <CardContent className="space-y-3 p-5">
+            <CardContent className="space-y-4 pt-6">
               {metrics.recentCompact.length ? (
                 metrics.recentCompact.map((item) => (
-                  <Link key={item.id} to={`/requests/${item.id}`} className="group block rounded-sm border border-ink/40 p-3 hover:bg-muted/20">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar name={item.created_by_name || item.creator_name || user?.username || 'U'} size={36} />
-                        <span className="font-mono text-xs text-muted-foreground">{item.reference_code || item.request_number || '-'}</span>
-                        <span className={statusPillClass(item.status)}>{STATUS_META[item.status]?.label || item.status}</span>
-                        <span className={typePillClass(item.type)}>{(item.type || 'INFO').replace('_', ' / ')}</span>
+                  <Link
+                    key={item.id}
+                    to={`/requests/${item.id}`}
+                    className="flex items-center justify-between rounded-sm border border-ink/5 p-3 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`h-2 w-2 rounded-full ${STATUS_META[item.status]?.bar || 'bg-muted'}`} />
+                      <div>
+                        <p className="text-sm font-bold">{item.title || 'Untitled Request'}</p>
+                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                          {item.reference_code || item.request_number} · {formatRelative(item.updated_at || item.created_at)}
+                        </p>
                       </div>
-                      <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                     </div>
-                    <p className="text-xl font-bold text-foreground">{item.title || 'Untitled request'}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {(item.created_by_name || item.creator_name || 'Unknown user')}{' -> '}{(item.target_entity_code || item.target_entity_name || 'N/A')} · {formatRelative(item.updated_at || item.created_at)}
-                    </p>
+                    <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-30" />
                   </Link>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No recent activity yet.</p>
+                <div className="py-8 text-center text-xs text-muted-foreground italic">No recent activity detected.</div>
               )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Support</p>
-              <h3 className="text-4xl font-extrabold uppercase">Helpful Shortcuts</h3>
-            </CardHeader>
-            <CardContent className="space-y-2 p-5">
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link to="/requests/create">
-                  <PlusCircle className="mr-2 h-4 w-4" /> Create a new request
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link to="/requests">
-                  <ClipboardList className="mr-2 h-4 w-4" /> Browse the queue
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link to="/profile">
-                  <UserRound className="mr-2 h-4 w-4" /> Manage your profile
-                </Link>
-              </Button>
             </CardContent>
           </Card>
         </div>
@@ -476,221 +445,223 @@ function Dashboard() {
 
 
   if (primaryRole === 'manager' || primaryRole === 'team_leader') {
-    const showTeamLeaderHeader = primaryRole === 'team_leader'
-    const greetingName = String(user?.first_name || user?.full_name?.split(' ')?.[0] || user?.username || 'User').toUpperCase()
-    const teamLeaderScope = user?.entity_name || scopeLabel
-
     return (
-      <main className="space-y-6">
-        {showTeamLeaderHeader && (
-          <PageHeader
-            title={`Welcome, ${greetingName}`}
-            description={`${roleLabel} · ${teamLeaderScope} — a focused workspace for today's priorities.`}
-            actions={
-              <>
-                <Button asChild>
-                  <Link to="/requests/create">
-                    <PlusCircle className="mr-1 h-4 w-4" /> Create request
-                  </Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/requests">
-                    Open requests <ArrowRight className="ml-1 h-4 w-4" />
-                  </Link>
-                </Button>
-              </>
-            }
-          />
-        )}
+      <main className="space-y-8">
+        <PageHeader
+          title={`Dashboard`}
+          description={`${roleLabel} · ${scopeLabel} — team operational workspace.`}
+          actions={
+            <Button asChild>
+              <Link to="/requests/create">
+                <PlusCircle className="mr-1 h-4 w-4" /> New request
+              </Link>
+            </Button>
+          }
+        />
 
-        <div className="grid gap-4">
-          <Card className="lg:col-span-2">
-            <CardContent className="grid gap-6 p-5 lg:grid-cols-[1fr_240px]">
-              <div>
-                <p className="eyebrow">Workspace Overview</p>
-                <h2 className="mt-2 text-4xl font-extrabold uppercase leading-tight text-foreground">Stay On Top Of Requests Without The Clutter</h2>
-                <p className="mt-4 text-sm text-muted-foreground">
-                  Track your active work, spot blockers early, and move from queue review to action faster.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div className="rounded-sm border-2 border-ink bg-secondary p-4 text-secondary-foreground shadow-elev-sm">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-secondary-foreground/80">Scope</p>
-                  <p className="mt-1 text-4xl font-bold leading-tight">{scopeLabel}</p>
-                  <p className="text-sm text-secondary-foreground/85">{roleLabel}</p>
-                </div>
-                <div className="rounded-sm border-2 border-dashed border-ink bg-card p-4">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Active workload</p>
-                  <p className="mt-1 text-4xl font-bold text-foreground">{metrics.openRequests} items</p>
-                  <p className="text-sm text-muted-foreground">{metrics.unassigned} upcoming deadlines need monitoring</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Compact Operational Summary */}
+        <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
+          <div>
+            <p className="eyebrow">Active Scope</p>
+            <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
+          </div>
+          <div className="h-10 w-px bg-ink/10" />
+          <div>
+            <p className="eyebrow">Open Queue</p>
+            <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
+          </div>
+          <div>
+            <p className="eyebrow text-warning">Unassigned</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.unassigned}</p>
+          </div>
+          <div>
+            <p className="eyebrow text-destructive">Overdue</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-destructive">{metrics.overdue}</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
+            <CheckCheck className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Operational Health Stable</span>
+          </div>
         </div>
 
+        {/* Standardized KPI System */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="bg-primary text-primary-foreground">
+          <Card className="border-ink/10 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-primary-foreground/80">Team queue</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.openRequests}</p>
-                  <p className="mt-2 text-sm text-primary-foreground/80">Requests currently needing team coordination</p>
+                  <p className="eyebrow">Team queue</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.openRequests}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Requests needing coordination</p>
                 </div>
-                <ClipboardList className="h-5 w-5" />
+                <div className="rounded-sm bg-muted/10 p-2">
+                  <ClipboardList className="h-5 w-5 text-muted-foreground/50" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-ink/10 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Need attention</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{metrics.overdue} overdue · {metrics.unassigned} unassigned</p>
+                  <p className="eyebrow">Units in focus</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.concentration.length}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Active platform entities</p>
                 </div>
-                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+                <div className="rounded-sm bg-muted/10 p-2">
+                  <Building2 className="h-5 w-5 text-muted-foreground/50" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-warning/30 bg-warning/5 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Created by team</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums text-foreground">{metrics.createdByTeam}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Useful for follow-up and prioritization</p>
+                  <p className="eyebrow text-foreground">Need attention</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{metrics.overdue} overdue items</p>
                 </div>
-                <Building2 className="h-5 w-5 text-muted-foreground" />
+                <div className="rounded-sm bg-warning/10 p-2">
+                  <ArrowRight className="h-5 w-5 text-warning" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-success text-success-foreground">
+          <Card className="border-success/30 bg-success/5 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-success-foreground/80">Resolved in scope</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.resolved}</p>
-                  <p className="mt-2 text-sm text-success-foreground/85">Closed or completed work</p>
+                  <p className="eyebrow text-foreground">Resolved in scope</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolved}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Closed or completed work</p>
                 </div>
-                <CheckCheck className="h-5 w-5" />
+                <div className="rounded-sm bg-success/10 p-2">
+                  <CheckCheck className="h-5 w-5 text-success" />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
+        {/* Analytical Drilldowns */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Life Cycle */}
+          <Card className="border-ink/10 shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-ink/5 pb-4">
               <div>
-                <p className="eyebrow">Progress Snapshot</p>
-                <h3 className="text-4xl font-extrabold uppercase">Work Status Breakdown</h3>
+                <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Request Life Cycle</CardTitle>
+                <CardDescription>Current status distribution across team scope.</CardDescription>
               </div>
-              <Button variant="ghost" asChild>
-                <Link to="/requests">View requests</Link>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/requests" className="text-xs">View all</Link>
               </Button>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
+            <CardContent className="space-y-3 pt-6">
               {STATUS_ORDER.map((status) => {
                 const count = metrics.statusCount[status] || 0
                 const pct = metrics.totalRequests ? Math.round((count / metrics.totalRequests) * 100) : 0
                 return (
-                  <div key={status} className="rounded-sm border border-ink/30 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className={statusPillClass(status)}>{STATUS_META[status].label}</span>
-                        <span className="text-sm text-muted-foreground">{STATUS_META[status].label}</span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-3xl font-bold tabular-nums text-foreground">{count}</div>
-                        <div className="text-xs text-muted-foreground">{pct}% of scope</div>
-                      </div>
+                  <div key={status} className="flex items-center gap-4">
+                    <div className="w-24 text-xs font-bold uppercase tracking-wider text-muted-foreground">{STATUS_META[status].label}</div>
+                    <div className="relative h-4 flex-1 overflow-hidden rounded-sm bg-muted/30">
+                      <div
+                        className={`absolute inset-y-0 left-0 ${STATUS_META[status].bar} opacity-80`}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full border border-ink/40 bg-muted">
-                      <div className={`h-full ${STATUS_META[status].bar}`} style={{ width: `${pct}%` }} />
-                    </div>
+                    <div className="w-12 text-right text-sm font-bold tabular-nums">{count}</div>
                   </div>
                 )
               })}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Your Profile</p>
-              <h3 className="text-4xl font-extrabold uppercase">Account Context</h3>
+          {/* Workload Concentration */}
+          <Card className="border-ink/10 shadow-none">
+            <CardHeader className="border-b border-ink/5 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Workload Concentration</CardTitle>
+              <CardDescription>Pressure points by operating entity.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
-              <div className="rounded-sm border border-ink/40 p-4">
-                <p className="eyebrow">Assigned workspace</p>
-                <p className="mt-1 text-4xl font-bold text-foreground">{user?.entity_code || user?.entity_name || user?.company_code || 'N/A'}</p>
-                <p className="text-lg text-muted-foreground">{user?.entity_name || user?.company_name || 'No workspace assigned'}</p>
-              </div>
-              <div className="rounded-sm border border-ink/40 p-4">
-                <p className="eyebrow">Primary role</p>
-                <p className="mt-1 text-4xl font-bold text-foreground">{roleLabel}</p>
-                <p className="text-lg text-muted-foreground">Coordinate execution, remove blockers, and keep delivery moving.</p>
-              </div>
+            <CardContent className="space-y-4 pt-6">
+              {metrics.concentration.slice(0, 5).map((item) => (
+                <div key={item.entity} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold">{item.entity}</p>
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{item.company}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-lg font-bold tabular-nums">{item.count}</div>
+                    <Badge variant={item.count > 5 ? 'warning' : 'outline'} className="h-5 px-1.5 text-[10px]">
+                      {item.count > 5 ? 'High Volume' : 'Stable'}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
-        </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Activity</p>
-              <h3 className="text-4xl font-extrabold uppercase">Recent Activity</h3>
+          {/* Recent Activity */}
+          <Card className="border-ink/10 shadow-none">
+            <CardHeader className="border-b border-ink/5 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Recent Activity</CardTitle>
+              <CardDescription>Latest changes in team workspace.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
+            <CardContent className="space-y-4 pt-6">
               {metrics.recent.length ? (
-                metrics.recent.slice(0, 3).map((item) => (
-                  <Link key={item.id} to={`/requests/${item.id}`} className="group block rounded-sm border border-ink/40 p-3 hover:bg-muted/20">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar name={item.created_by_name || item.creator_name || user?.username || 'U'} size={36} />
-                        <span className="font-mono text-xs text-muted-foreground">{item.reference_code || item.request_number || '-'}</span>
-                        <span className={statusPillClass(item.status)}>{STATUS_META[item.status]?.label || item.status}</span>
-                        <span className={typePillClass(item.type)}>{(item.type || 'INFO').replace('_', ' / ')}</span>
+                metrics.recent.slice(0, 5).map((item) => (
+                  <Link
+                    key={item.id}
+                    to={`/requests/${item.id}`}
+                    className="flex items-center justify-between rounded-sm border border-ink/5 p-3 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`h-2 w-2 rounded-full ${STATUS_META[item.status]?.bar || 'bg-muted'}`} />
+                      <div>
+                        <p className="text-sm font-bold">{item.title || 'Untitled Request'}</p>
+                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                          {item.assignee_name || 'Unassigned'} · {formatRelative(item.updated_at || item.created_at)}
+                        </p>
                       </div>
-                      <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                     </div>
-                    <p className="text-xl font-bold text-foreground">{item.title || 'Untitled request'}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {(item.created_by_name || item.creator_name || 'Unknown user')}{' -> '}{(item.target_entity_code || item.target_entity_name || 'N/A')} · {formatRelative(item.updated_at || item.created_at)}
-                    </p>
+                    <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-30" />
                   </Link>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No recent activity yet.</p>
+                <div className="py-8 text-center text-xs text-muted-foreground italic">No recent activity.</div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Support</p>
-              <h3 className="text-4xl font-extrabold uppercase">Helpful Shortcuts</h3>
+          {/* Ownership Distribution */}
+          <Card className="border-ink/10 shadow-none">
+            <CardHeader className="border-b border-ink/5 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Ownership Distribution</CardTitle>
+              <CardDescription>Request load by team member.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 p-5">
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link to="/requests/create">
-                  <PlusCircle className="mr-2 h-4 w-4" /> Create a new request
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link to="/requests">
-                  <ClipboardList className="mr-2 h-4 w-4" /> Browse the queue
-                </Link>
-              </Button>
-              <Button variant="outline" className="w-full justify-start" asChild>
-                <Link to="/profile">
-                  <UserRound className="mr-2 h-4 w-4" /> Manage your profile
-                </Link>
-              </Button>
+            <CardContent className="space-y-4 pt-6">
+              {metrics.ownership.length ? (
+                metrics.ownership.slice(0, 5).map((owner) => (
+                  <div key={owner.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={owner.name} size={32} />
+                      <div>
+                        <p className="text-sm font-bold">{owner.name}</p>
+                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{owner.role}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold tabular-nums">{owner.count}</div>
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Active Items</div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-xs text-muted-foreground italic">No active assignments.</div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -703,222 +674,254 @@ function Dashboard() {
   }
   if (primaryRole === 'senior' || primaryRole === 'super_admin') {
     return (
-      <main className="space-y-6">
-        <PageHeader
-          title="Platform Administration"
-          description={`${roleLabel} · ${scopeLabel} — operational health, workload clarity, and flow performance in one place.`}
-          actions={
-            <>
-              <Button variant="outline" asChild>
-                <Link to="/requests">
-                  Open requests <ArrowRight className="ml-1 h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild>
-                <Link to="/admin/reports">Platform reports</Link>
-              </Button>
-            </>
-          }
-        />
+      <main className="space-y-8">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-extrabold tracking-tight">Platform Overview</h1>
+          <p className="text-sm text-muted-foreground">{roleLabel} · {scopeLabel}</p>
+        </div>
 
-        <div className="grid gap-4">
-          <Card className="lg:col-span-2">
-            <CardContent className="grid gap-6 p-5 lg:grid-cols-[1fr_240px]">
-              <div>
-                <p className="eyebrow">Control Room</p>
-                <h2 className="mt-2 text-4xl font-extrabold uppercase leading-tight text-foreground">Keep Operations Visible And Decisive</h2>
-                <p className="mt-4 text-sm text-muted-foreground">
-                  See where demand is building, which teams need support, and how quickly work is getting closed.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div className="rounded-sm border-2 border-ink bg-secondary p-4 text-secondary-foreground shadow-elev-sm">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-secondary-foreground/80">Scope</p>
-                  <p className="mt-1 text-4xl font-bold leading-tight">{scopeLabel}</p>
-                  <p className="text-sm text-secondary-foreground/85">{roleLabel}</p>
-                </div>
-                <div className="rounded-sm border-2 border-dashed border-ink bg-card p-4">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Active workload</p>
-                  <p className="mt-1 text-4xl font-bold text-foreground">{metrics.openRequests} items</p>
-                  <p className="text-sm text-muted-foreground">{metrics.unassigned} upcoming deadlines need monitoring</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
+          <div>
+            <p className="eyebrow">Active Scope</p>
+            <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
+          </div>
+          <div className="h-10 w-px bg-ink/10" />
+          <div>
+            <p className="eyebrow">Open Queue</p>
+            <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
+          </div>
+          <div>
+            <p className="eyebrow">Unassigned</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.unassigned}</p>
+          </div>
+          <div>
+            <p className="eyebrow">Overdue</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-destructive">{metrics.overdue}</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
+            <CheckCheck className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Stable Workflow</span>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="bg-warning text-warning-foreground">
+          <Card className="border-ink/10 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-warning-foreground/80">Active entities</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.activeEntities}</p>
-                  <p className="mt-2 text-sm text-warning-foreground/85">{scopeLabel} footprint currently online</p>
+                  <p className="eyebrow">Active entities</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.activeEntities}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Online scope footprint</p>
                 </div>
-                <Building2 className="h-5 w-5" />
+                <Building2 className="h-5 w-5 text-muted-foreground/50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-ink/10 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Company members</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums text-foreground">{metrics.companyMembers}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Currently active accounts in scope</p>
+                  <p className="eyebrow">Company members</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.companyMembers}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Active platform accounts</p>
                 </div>
-                <Users className="h-5 w-5 text-muted-foreground" />
+                <Users className="h-5 w-5 text-muted-foreground/50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-primary text-primary-foreground">
+          <Card className="border-warning/30 bg-warning/5 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-primary-foreground/80">Open requests</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.openRequests}</p>
-                  <p className="mt-2 text-sm text-primary-foreground/80">{metrics.unassigned} waiting for an owner</p>
+                  <p className="eyebrow text-warning">Open requests</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{metrics.unassigned} pending assignment</p>
                 </div>
-                <ClipboardList className="h-5 w-5" />
+                <div className="rounded-sm bg-warning/10 p-2">
+                  <ClipboardList className="h-5 w-5 text-warning" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-success text-success-foreground">
+          <Card className="border-success/30 bg-success/5 shadow-none">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-success-foreground/80">Resolution rate</p>
-                  <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.resolutionRate}%</p>
-                  <p className="mt-2 text-sm text-success-foreground/85">{metrics.resolved} resolved across current scope</p>
+                  <p className="eyebrow text-success">Resolution rate</p>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{metrics.resolved} closed in scope</p>
                 </div>
-                <CheckCheck className="h-5 w-5" />
+                <div className="rounded-sm bg-success/10 p-2">
+                  <CheckCheck className="h-5 w-5 text-success" />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="border-ink/5 shadow-none">
+            <CardHeader className="flex-row items-center justify-between pb-2">
               <div>
-                <p className="eyebrow">Flow Summary</p>
-                <h3 className="text-4xl font-extrabold uppercase">Request Lifecycle</h3>
+                <p className="eyebrow">Flow Analysis</p>
+                <h3 className="text-lg font-bold">Request Lifecycle</h3>
               </div>
-              <Button variant="ghost" asChild>
-                <Link to="/requests">View requests</Link>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/requests">Full queue</Link>
               </Button>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
-              {STATUS_ORDER.map((status) => {
-                const count = metrics.statusCount[status] || 0
-                const pct = metrics.totalRequests ? Math.round((count / metrics.totalRequests) * 100) : 0
-                return (
-                  <div key={status} className="rounded-sm border border-ink/30 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className={statusPillClass(status)}>{STATUS_META[status].label}</span>
-                        <span className="text-sm text-muted-foreground">{STATUS_META[status].label}</span>
+            <CardContent className="p-5 pt-0">
+              <div className="space-y-1">
+                {STATUS_ORDER.map((status) => {
+                  const count = metrics.statusCount[status] || 0
+                  const pct = metrics.totalRequests ? Math.round((count / metrics.totalRequests) * 100) : 0
+                  return (
+                    <div key={status} className="group relative flex items-center gap-4 py-2">
+                      <div className="flex w-24 flex-shrink-0 items-center gap-2">
+                        <div className={`h-2 w-2 rounded-full ${STATUS_META[status].bar}`} />
+                        <span className="text-xs font-bold uppercase tracking-tight text-muted-foreground">{STATUS_META[status].label}</span>
                       </div>
-                      <div className="text-right">
-                        <div className="text-3xl font-bold tabular-nums text-foreground">{count}</div>
-                        <div className="text-xs text-muted-foreground">{pct}% of scope</div>
+                      <div className="relative h-2 flex-grow overflow-hidden rounded-full bg-muted/30">
+                        <div className={`h-full opacity-70 ${STATUS_META[status].bar}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex w-20 flex-shrink-0 items-center justify-end gap-3 text-right">
+                        <span className="text-sm font-bold tabular-nums">{count}</span>
+                        <span className="w-8 text-[10px] font-medium text-muted-foreground">{pct}%</span>
                       </div>
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full border border-ink/40 bg-muted">
-                      <div className={`h-full ${STATUS_META[status].bar}`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Coverage</p>
-              <h3 className="text-4xl font-extrabold uppercase">Where Workload Is Concentrating</h3>
+          <Card className="border-ink/5 shadow-none">
+            <CardHeader className="pb-2">
+              <p className="eyebrow">Operational Pressure</p>
+              <h3 className="text-lg font-bold">Workload Concentration</h3>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
-              {metrics.concentration.length ? (
-                metrics.concentration.map((entity) => (
-                  <div key={entity.code} className="flex items-center justify-between rounded-sm border border-ink/40 p-3">
-                    <div>
-                      <p className="text-sm font-extrabold uppercase text-foreground">{entity.code}</p>
-                      <p className="text-lg text-muted-foreground">{entity.name}</p>
+            <CardContent className="p-5 pt-0">
+              <div className="divide-y divide-ink/5">
+                {metrics.concentration.length ? (
+                  metrics.concentration.map((entity) => (
+                    <div key={entity.code} className="flex items-center justify-between py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold uppercase tracking-tight text-foreground">{entity.code}</p>
+                        <p className="truncate text-xs text-muted-foreground">{entity.name}</p>
+                      </div>
+                      <div className="flex items-center gap-6 text-right">
+                        <div>
+                          <p className="text-lg font-bold tabular-nums">{entity.count}</p>
+                          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Volume</p>
+                        </div>
+                        <div className="h-8 w-1 rounded-full bg-ink/10">
+                          <div
+                            className="w-full rounded-full bg-warning"
+                            style={{ height: `${Math.min(100, (entity.count / (metrics.totalRequests || 1)) * 300)}%` }}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-3xl font-bold tabular-nums text-foreground">{entity.count}</p>
-                      <p className="text-sm text-muted-foreground">incoming requests</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No concentration data yet.</p>
-              )}
+                  ))
+                ) : (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No distribution data recorded.</p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Activity</p>
-              <h3 className="text-4xl font-extrabold uppercase">Operational Focus Areas</h3>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="border-ink/5 shadow-none">
+            <CardHeader className="pb-2">
+              <p className="eyebrow">Operational Feed</p>
+              <h3 className="text-lg font-bold">Recent Activity</h3>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
-              {metrics.recent.length ? (
-                metrics.recent.slice(0, 4).map((item) => (
-                  <Link key={item.id} to={`/requests/${item.id}`} className="group block rounded-sm border border-ink/40 p-3 hover:bg-muted/20">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar name={item.created_by_name || item.creator_name || 'U'} size={36} />
-                        <span className="font-mono text-xs text-muted-foreground">{item.reference_code || item.request_number || '-'}</span>
-                        <span className={statusPillClass(item.status)}>{STATUS_META[item.status]?.label || item.status}</span>
-                        <span className={typePillClass(item.type)}>{(item.type || 'INFO').replace('_', ' / ')}</span>
+            <CardContent className="p-0">
+              <div className="divide-y divide-ink/5">
+                {metrics.recent.length ? (
+                  metrics.recent.slice(0, 6).map((item) => (
+                    <Link
+                      key={item.id}
+                      to={`/requests/${item.id}`}
+                      className="group flex items-center justify-between px-5 py-3 transition-colors hover:bg-muted/30"
+                    >
+                      <div className="min-w-0 flex-grow">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-bold text-foreground group-hover:text-primary">
+                            {item.title || 'Untitled request'}
+                          </span>
+                          <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                            {item.reference_code || item.request_number || '-'}
+                          </span>
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.created_by_name || item.creator_name || 'System'} · {item.target_entity_code || 'N/A'}
+                        </p>
                       </div>
-                      <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-                    </div>
-                    <p className="text-xl font-bold text-foreground">{item.title || 'Untitled request'}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {(item.created_by_name || item.creator_name || 'Unknown user')}{' -> '}{(item.target_entity_code || item.target_entity_name || 'N/A')} · {formatRelative(item.updated_at || item.created_at)}
-                    </p>
-                  </Link>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No operational highlights yet.</p>
-              )}
+                      <div className="flex flex-shrink-0 items-center gap-4 text-right">
+                        <div className="hidden sm:block">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            {formatRelative(item.updated_at || item.created_at)}
+                          </p>
+                          <span className={`text-[10px] font-bold ${(item.status === 'CLOSED' || item.status === 'REJECTED') ? 'text-muted-foreground' : 'text-primary'}`}>
+                            {STATUS_META[item.status]?.label || item.status}
+                          </span>
+                        </div>
+                        <ArrowUpRight className="h-4 w-4 text-muted-foreground/30 transition-colors group-hover:text-primary" />
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="px-5 py-8 text-center text-xs text-muted-foreground">No recent activity detected.</p>
+                )}
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Support</p>
-              <h3 className="text-4xl font-extrabold uppercase">Ownership And Coverage</h3>
+          <Card className="border-ink/5 shadow-none">
+            <CardHeader className="pb-2">
+              <p className="eyebrow">Workforce Coverage</p>
+              <h3 className="text-lg font-bold">Ownership Distribution</h3>
             </CardHeader>
-            <CardContent className="space-y-3 p-5">
-              {metrics.ownership.length ? (
-                metrics.ownership.slice(0, 2).map((owner) => (
-                  <div key={owner.name} className="flex items-center justify-between rounded-sm border border-ink/40 p-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={owner.name} size={34} />
-                      <div>
-                        <p className="text-xl font-bold text-foreground">{owner.name}</p>
-                        <p className="text-sm text-muted-foreground">{owner.role}</p>
+            <CardContent className="p-5 pt-0">
+              <div className="space-y-4">
+                {metrics.ownership.length ? (
+                  metrics.ownership.slice(0, 3).map((owner) => (
+                    <div key={owner.name} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
+                          {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-foreground">{owner.name}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{owner.role}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold tabular-nums">{owner.count}</p>
+                        <p className="text-[10px] font-medium text-muted-foreground">Assigned items</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-3xl font-bold tabular-nums text-foreground">{owner.count}</p>
-                      <p className="text-sm text-muted-foreground">open items</p>
+                  ))
+                ) : (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No active assignments in this scope.</p>
+                )}
+                {metrics.unassigned > 0 && (
+                  <div className="mt-6 flex items-center justify-between border-t border-ink/5 pt-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-warning animate-pulse" />
+                      <p className="text-xs font-bold uppercase tracking-tight text-warning">Coverage Risk</p>
                     </div>
+                    <p className="text-sm font-bold tabular-nums text-warning">{metrics.unassigned} items unassigned</p>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No ownership data yet.</p>
-              )}
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -930,101 +933,89 @@ function Dashboard() {
     )
   }
   return (
-    <main className="space-y-6">
-      <PageHeader
-        title="Platform Administration"
-        description={`${roleLabel} - operational health, workload clarity, and flow performance in your scope.`}
-        actions={
-          <>
-            <Button variant="outline" asChild>
-              <Link to="/requests">
-                Open requests <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
-            {canAccessReports && (
-              <Button asChild>
-                <Link to="/admin/reports">Platform reports</Link>
-              </Button>
-            )}
-          </>
-        }
-      />
+    <main className="space-y-8">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-extrabold tracking-tight">Platform Overview</h1>
+        <p className="text-sm text-muted-foreground">{roleLabel} · {scopeLabel}</p>
+      </div>
 
-      <div className="grid gap-4">
-        <Card className="lg:col-span-2">
-          <CardContent className="grid gap-6 p-5 lg:grid-cols-[1fr_240px]">
-            <div>
-              <p className="eyebrow">Control Room</p>
-              <h2 className="mt-2 text-4xl font-extrabold uppercase leading-tight text-foreground">Keep Operations Visible And Decisive</h2>
-              <p className="mt-4 text-sm text-muted-foreground">
-                See where demand is building, which teams need support, and how quickly work is getting closed.
-              </p>
-            </div>
-            <div className="space-y-3">
-              <div className="rounded-sm border-2 border-ink bg-secondary p-4 text-secondary-foreground shadow-elev-sm">
-                <p className="text-xs font-extrabold uppercase tracking-wider text-secondary-foreground/80">Scope</p>
-                <p className="mt-1 text-4xl font-bold leading-tight">{scopeLabel}</p>
-                <p className="text-sm text-secondary-foreground/85">{roleLabel}</p>
-              </div>
-              <div className="rounded-sm border-2 border-dashed border-ink bg-card p-4">
-                <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Active workload</p>
-                <p className="mt-1 text-4xl font-bold text-foreground">{metrics.openRequests} items</p>
-                <p className="text-sm text-muted-foreground">{metrics.unassigned} upcoming deadlines need monitoring</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
+        <div>
+          <p className="eyebrow">Active Scope</p>
+          <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
         </div>
+        <div className="h-10 w-px bg-ink/10" />
+        <div>
+          <p className="eyebrow">Open Queue</p>
+          <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
+        </div>
+        <div>
+          <p className="eyebrow">Unassigned</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.unassigned}</p>
+        </div>
+        <div>
+          <p className="eyebrow">Overdue</p>
+          <p className="mt-1 text-xl font-bold tabular-nums text-destructive">{metrics.overdue}</p>
+        </div>
+        <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
+          <CheckCheck className="h-4 w-4" />
+          <span className="text-xs font-bold uppercase tracking-wider">Operational Health Stable</span>
+        </div>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="bg-warning text-warning-foreground">
+        <Card className="border-ink/10 shadow-none">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-extrabold uppercase tracking-wider text-warning-foreground/80">Total requests</p>
-                <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.totalRequests}</p>
-                <p className="mt-2 text-sm text-warning-foreground/85">All recorded demand in scope</p>
+                <p className="eyebrow">Total requests</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.totalRequests}</p>
+                <p className="mt-1 text-sm text-muted-foreground">Recorded demand in scope</p>
               </div>
-              <Building2 className="h-5 w-5" />
+              <Building2 className="h-5 w-5 text-muted-foreground/50" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-ink/10 shadow-none">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">{canReadGlobalDashboard ? 'Global users' : 'Teams in scope'}</p>
-                <p className="mt-2 text-5xl font-bold tabular-nums text-foreground">{canReadGlobalDashboard ? dashboardState.data?.totals?.users || 0 : metrics.concentration.length}</p>
-                <p className="mt-2 text-sm text-muted-foreground">{canReadGlobalDashboard ? 'Active accounts on platform' : 'Active destination units'}</p>
+                <p className="eyebrow">{canReadGlobalDashboard ? 'Global users' : 'Units in scope'}</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{canReadGlobalDashboard ? dashboardState.data?.totals?.users || 0 : metrics.concentration.length}</p>
+                <p className="mt-1 text-sm text-muted-foreground">Active platform entities</p>
               </div>
-              <Users className="h-5 w-5 text-muted-foreground" />
+              <Users className="h-5 w-5 text-muted-foreground/50" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-primary text-primary-foreground">
+        <Card className="border-warning/30 bg-warning/5 shadow-none">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-extrabold uppercase tracking-wider text-primary-foreground/80">Open requests</p>
-                <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.openRequests}</p>
-                <p className="mt-2 text-sm text-primary-foreground/80">{metrics.unassigned} waiting for an owner</p>
+                <p className="eyebrow text-warning">Open requests</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{metrics.unassigned} pending assignment</p>
               </div>
-              <ClipboardList className="h-5 w-5" />
+              <div className="rounded-sm bg-warning/10 p-2">
+                <ClipboardList className="h-5 w-5 text-warning" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-success text-success-foreground">
+        <Card className="border-success/30 bg-success/5 shadow-none">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs font-extrabold uppercase tracking-wider text-success-foreground/80">Resolution rate</p>
-                <p className="mt-2 text-5xl font-bold tabular-nums">{metrics.resolutionRate}%</p>
-                <p className="mt-2 text-sm text-success-foreground/85">{metrics.resolved} resolved across current scope</p>
+                <p className="eyebrow text-success">Resolution rate</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
+                <p className="mt-1 text-sm text-muted-foreground">{metrics.resolved} closed items</p>
               </div>
-              <CheckCheck className="h-5 w-5" />
+              <div className="rounded-sm bg-success/10 p-2">
+                <CheckCheck className="h-5 w-5 text-success" />
+              </div>
             </div>
           </CardContent>
         </Card>

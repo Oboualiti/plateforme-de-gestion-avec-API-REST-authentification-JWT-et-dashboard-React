@@ -10,7 +10,7 @@ import { ENTITY_TYPE_LABELS, getEntityTypeTone } from '../lib/entityTypeTheme'
 
 function EntityTypeBadge({ type }) {
   return (
-    <span className={`inline-flex items-center rounded-md border-2 border-ink px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${getEntityTypeTone(type, 'solid')}`}>
+    <span className={`inline-flex items-center rounded-sm border border-ink/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${getEntityTypeTone(type, 'solid')}`}>
       {ENTITY_TYPE_LABELS[type] || type || '-'}
     </span>
   )

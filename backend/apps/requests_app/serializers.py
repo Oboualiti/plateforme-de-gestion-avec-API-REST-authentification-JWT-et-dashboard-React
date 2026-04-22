@@ -1,5 +1,5 @@
-﻿from rest_framework import serializers
-from apps.permissions_app.services import get_user_role_keys
+from rest_framework import serializers
+from apps.permissions_app.services import get_user_role_keys, get_primary_role_key
 
 from .models import (
     MainBranch,
@@ -73,6 +73,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     )
     company_name = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
+    assignee_role = serializers.SerializerMethodField()
     is_submitted_to_target = serializers.BooleanField(read_only=True)
     is_pending_approval = serializers.SerializerMethodField()
 
@@ -93,6 +94,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "target_entity_name",
             "creator_name",
             "assignee_name",
+            "assignee_role",
             "target_unit",
             "is_stuck",
             "is_submitted_to_target",
@@ -104,6 +106,11 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
     def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
+
+    def get_assignee_role(self, obj):
+        if not obj.current_assignee_id:
+            return ""
+        return get_primary_role_key(obj.current_assignee)
 
     def get_company_name(self, obj):
         if obj.company_id:

@@ -298,7 +298,7 @@ function ReportsPage() {
   }
 
   return (
-    <main className="space-y-6">
+    <main className="space-y-5">
       <PageHeader
         title="Reports"
         description="Unified analytics for request intake, delivery speed, workload balance, and operational pressure."
@@ -309,68 +309,55 @@ function ReportsPage() {
         }
       />
 
-      <Card>
-        <CardContent className="grid gap-6 p-5 lg:grid-cols-[1fr_410px]">
-          <div>
-            <p className="eyebrow">Performance Center</p>
-            <h2 className="mt-2 text-4xl font-extrabold uppercase leading-tight">Make Platform Activity Easy To Read At A Glance</h2>
-            <p className="mt-4 text-sm text-muted-foreground">
-              These reports highlight demand, delivery speed, ownership gaps, and workload concentration so the next action is obvious.
-            </p>
-          </div>
-          <div className="space-y-3">
-            <div className="rounded-sm border-2 border-ink bg-secondary p-4 text-secondary-foreground shadow-elev-sm">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-secondary-foreground/80">Current Scope</p>
-              <p className="mt-1 text-4xl font-bold leading-tight">{scopeLabel}</p>
-              <p className="text-sm text-secondary-foreground/85">Role-scoped reporting</p>
-            </div>
-            <div className="rounded-sm border-2 border-dashed border-ink p-4">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Primary Issue</p>
-              <p className="mt-1 text-4xl font-bold text-foreground">{parsed.unassigned} requests need an owner</p>
-              <p className="text-sm text-muted-foreground">Use this page to spot what needs follow-up first.</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardContent className="p-5">
-            <p className="eyebrow">Total requests</p>
-            <p className="mt-2 text-5xl font-bold tabular-nums">{parsed.totalRequests}</p>
-            <p className="mt-2 text-sm text-muted-foreground">All recorded demand</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-primary text-primary-foreground">
-          <CardContent className="p-5">
-            <p className="text-xs font-extrabold uppercase tracking-wider text-primary-foreground/80">Open queue</p>
-            <p className="mt-2 text-5xl font-bold tabular-nums">{parsed.openQueue}</p>
-            <p className="mt-2 text-sm text-primary-foreground/80">{parsed.unassigned} still unassigned</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-success text-success-foreground">
-          <CardContent className="p-5">
-            <p className="text-xs font-extrabold uppercase tracking-wider text-success-foreground/80">Resolved</p>
-            <p className="mt-2 text-5xl font-bold tabular-nums">{parsed.resolved}</p>
-            <p className="mt-2 text-sm text-success-foreground/85">Completed or closed work items</p>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Total Requests</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.totalRequests}</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-5">
-            <p className="eyebrow">Avg turnaround</p>
-            <p className="mt-2 text-5xl font-bold tabular-nums">{parsed.avgTurnaround}</p>
-            <p className="mt-2 text-sm text-muted-foreground">Average time from creation to resolution</p>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Open Queue</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.openQueue}</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-5">
-            <p className="eyebrow">Overdue</p>
-            <p className="mt-2 text-5xl font-bold tabular-nums">{parsed.overdue}</p>
-            <p className="mt-2 text-sm text-muted-foreground">Open items beyond due date</p>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Resolved</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.resolved}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Avg Turnaround</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.avgTurnaround}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className={parsed.unassigned > 0 ? 'border-warning/50' : ''}>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Unassigned</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{parsed.unassigned}</p>
+          </CardContent>
+        </Card>
+
+        <Card className={parsed.overdue > 0 ? 'border-destructive/50' : ''}>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Overdue</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{parsed.overdue}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Resolution Rate</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{parsed.resolutionRate}%</p>
           </CardContent>
         </Card>
       </div>

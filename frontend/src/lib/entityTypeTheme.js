@@ -6,16 +6,16 @@ export const ENTITY_TYPE_LABELS = {
 
 const ENTITY_TYPE_TONES = {
   PROD: {
-    solid: 'bg-primary text-primary-foreground',
-    soft: 'bg-amber-100 text-amber-800',
+    solid: 'bg-slate-700 text-slate-50',
+    soft: 'bg-slate-100 text-slate-700',
   },
   SUPPORT: {
-    solid: 'bg-secondary text-secondary-foreground',
-    soft: 'bg-indigo-100 text-indigo-800',
+    solid: 'bg-slate-200 text-slate-800',
+    soft: 'bg-slate-50 text-slate-600',
   },
   TDEV: {
-    solid: 'bg-cyan-700 text-cyan-50',
-    soft: 'bg-cyan-100 text-cyan-800',
+    solid: 'bg-slate-500 text-slate-50',
+    soft: 'bg-slate-100 text-slate-600',
   },
 }
 
