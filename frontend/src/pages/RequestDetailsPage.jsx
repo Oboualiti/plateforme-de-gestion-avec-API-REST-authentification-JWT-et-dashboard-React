@@ -14,7 +14,6 @@ import {
 } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
-import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
@@ -264,16 +263,37 @@ function RequestDetailsPage() {
 
   return (
     <main className="page-content pb-12 space-y-6">
-      <PageHeader
-        eyebrow={request.reference_code || `#${request.request_number}`}
-        title={request.title || 'Untitled Request'}
-        description={request.description?.slice(0, 100) + (request.description?.length > 100 ? '...' : '')}
-        meta={
-            <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-3 text-muted-foreground hover:text-foreground">
+      <section className="surface-card min-h-[210px] bg-gradient-to-r from-[#fcfcfb] via-[#fcfcfb] to-[#f7f0cf] p-8">
+        <div className="flex min-h-[170px] flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="-ml-3 w-fit px-2 text-[12px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+            >
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
             </Button>
-        }
-      />
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">
+              {request.reference_code || `#${request.request_number}`}
+            </p>
+            <h1 className="text-6xl font-black uppercase tracking-[-0.02em] leading-none text-foreground">
+              {request.title || 'Untitled Request'}
+            </h1>
+            <p className="pt-1 text-xl font-medium leading-none text-foreground/85">
+              {request.description || 'No detailed description provided.'}
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-3 pb-1 lg:items-end">
+            <span className="inline-flex items-center rounded-md border-2 border-ink bg-slate-900 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-white">
+              {statusLabelMap[request.status]}
+            </span>
+            <span className="flex items-center text-xs font-extrabold uppercase tracking-[0.16em] text-muted-foreground">
+              <Calendar className="mr-1.5 h-3.5 w-3.5" /> {formatDateTime(request.created_at)}
+            </span>
+          </div>
+        </div>
+      </section>
 
       {/* Process Stepper */}
       <section className="animate-fade-in">
@@ -291,9 +311,6 @@ function RequestDetailsPage() {
           <article className="surface-card p-8">
              <div className="mb-6 flex flex-wrap gap-3">
                <span className={badgeClass("bg-slate-100 text-slate-700")}>{request.type || 'Standard'}</span>
-               <span className={badgeClass(request.priority === 'HIGH' ? "bg-red-50 text-red-600 border-red-100" : "bg-emerald-50 text-emerald-600 border-emerald-100")}>
-                 {request.priority} PRIORITY
-               </span>
                <span className="flex items-center text-[10px] font-bold text-muted-foreground uppercase ml-auto">
                  <Calendar className="mr-1.5 h-3 w-3" /> Opened {formatDateTime(request.created_at)}
                </span>

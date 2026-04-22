@@ -374,6 +374,7 @@ class RequestListCreateView(APIView):
 
     def get(self, request):
         queryset = get_visible_requests_queryset(request.user)
+        queryset = apply_scope_filters(queryset, request.user, request.query_params.get("scope"))
         queryset = apply_request_filters(queryset, request.query_params)
 
         paginator = StandardResultsSetPagination()
@@ -458,15 +459,9 @@ class RequestListCreateView(APIView):
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            can_send_from_non_prod = (
-                bool({"manager", "team_leader"} & role_keys) or request.user.is_staff
-            )
-            if (
-                request.user.entity.entity_type != Entity.EntityType.PROD
-                and not can_send_from_non_prod
-            ):
+            if request.user.entity.entity_type != Entity.EntityType.PROD:
                 return Response(
-                    {"detail": "Only users from production entities can create requests."},
+                    {"detail": "Requests can only be created from production entities."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
@@ -499,20 +494,10 @@ class RequestListCreateView(APIView):
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            # For non-production manager/team_leader users, keep target restricted to own entity.
-            if (
-                request.user.entity.entity_type != Entity.EntityType.PROD
-                and target_entity.id != request.user.entity_id
-            ):
-                return Response(
-                    {
-                        "detail": "Managers and team leaders outside production can target only their own entity."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
         requester_unit = get_or_create_unit_for_entity(selected_source_entity)
         target_unit = get_or_create_unit_for_entity(target_entity)
+        requester_primary_role = get_primary_role_key(request.user)
+        submit_to_target_now = requester_primary_role != "user"
 
         service_request = ServiceRequest.objects.create(
             request_number=f"REQ-{timezone.now():%Y%m%d%H%M%S%f}",
@@ -526,23 +511,25 @@ class RequestListCreateView(APIView):
             target_entity=target_entity,
             requester_unit=requester_unit,
             target_unit=target_unit,
+            is_submitted_to_target=submit_to_target_now,
         )
-        recipients = resolve_request_notification_recipients(service_request)
-        recipients = filter_recipients_by_request_visibility(service_request, recipients)
-        create_bulk_notifications(
-            users=recipients,
-            event_type=UserNotification.EventType.REQUEST_CREATED,
-            title=f"New request {service_request.request_number}",
-            message=(
-                f"{request.user.username} created a new request: "
-                f"{service_request.title}"
-            ),
-            link=f"/requests/{service_request.id}",
-            metadata={
-                "request_id": service_request.id,
-                "request_number": service_request.request_number,
-            },
-        )
+        if submit_to_target_now:
+            recipients = resolve_request_notification_recipients(service_request)
+            recipients = filter_recipients_by_request_visibility(service_request, recipients)
+            create_bulk_notifications(
+                users=recipients,
+                event_type=UserNotification.EventType.REQUEST_CREATED,
+                title=f"New request {service_request.request_number}",
+                message=(
+                    f"{request.user.username} created a new request: "
+                    f"{service_request.title}"
+                ),
+                link=f"/requests/{service_request.id}",
+                metadata={
+                    "request_id": service_request.id,
+                    "request_number": service_request.request_number,
+                },
+            )
         return Response(
             RequestDetailSerializer(
                 load_request(service_request.id),
@@ -654,25 +641,83 @@ class RequestStatusUpdateView(APIView):
         serializer = RequestStatusUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         old_status = service_request.status
-        new_status = serializer.validated_data["status"]
+        requested_status = serializer.validated_data["status"]
         note = serializer.validated_data.get("note", "")
-        service_request.status = new_status
+
+        # For requests created by base users, the first decision (while NEW)
+        # must come from their own hierarchy: TL, Manager, Senior, or Super Admin.
+        if (
+            old_status == ServiceRequest.Status.NEW
+            and not service_request.is_submitted_to_target
+            and get_primary_role_key(service_request.requester_user) == "user"
+            and not can_approve_request_from_requester_hierarchy(
+                request.user,
+                service_request,
+            )
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "This request must be approved by the requester's own Team Leader, "
+                        "Manager, Senior, or Super Admin."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if (
+            old_status == ServiceRequest.Status.NEW
+            and not service_request.is_submitted_to_target
+            and get_primary_role_key(service_request.requester_user) == "user"
+            and requested_status
+            not in {ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.REJECTED}
+        ):
+            return Response(
+                {"detail": "Pending requests can only be approved or rejected."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        submit_to_target_on_approve = (
+            old_status == ServiceRequest.Status.NEW
+            and not service_request.is_submitted_to_target
+            and requested_status == ServiceRequest.Status.ACCEPTED
+        )
+        was_pending_request = (
+            old_status == ServiceRequest.Status.NEW and not service_request.is_submitted_to_target
+        )
+        # Approving a pending requester-side request should submit it to the
+        # target queue while keeping lifecycle status NEW.
+        effective_new_status = (
+            ServiceRequest.Status.NEW if submit_to_target_on_approve else requested_status
+        )
+        service_request.status = effective_new_status
         update_fields = ["status"]
-        if service_request.current_assignee_id is None:
+        if submit_to_target_on_approve:
+            service_request.is_submitted_to_target = True
+            update_fields.append("is_submitted_to_target")
+        # Pending-approval decisions must not auto-assign. Requests should reach
+        # the target queue unassigned so support/dev managers and TLs can assign.
+        if was_pending_request:
+            if service_request.current_assignee_id is not None:
+                service_request.current_assignee = None
+                update_fields.append("current_assignee")
+        elif service_request.current_assignee_id is None:
             service_request.current_assignee = request.user
             update_fields.append("current_assignee")
-        if new_status == ServiceRequest.Status.ACCEPTED and service_request.accepted_at is None:
+        if (
+            effective_new_status == ServiceRequest.Status.ACCEPTED
+            and service_request.accepted_at is None
+        ):
             service_request.accepted_at = timezone.now()
             update_fields.append("accepted_at")
-        if new_status == ServiceRequest.Status.COMPLETED:
+        if effective_new_status == ServiceRequest.Status.COMPLETED:
             service_request.completed_at = timezone.now()
             service_request.resolution_note = note
             update_fields.extend(["completed_at", "resolution_note"])
-        if new_status == ServiceRequest.Status.CLOSED:
+        if effective_new_status == ServiceRequest.Status.CLOSED:
             service_request.closed_at = timezone.now()
             service_request.resolution_note = note
             update_fields.extend(["closed_at", "resolution_note"])
-        if new_status == ServiceRequest.Status.REJECTED:
+        if effective_new_status == ServiceRequest.Status.REJECTED:
             service_request.rejection_reason = note
             service_request.resolution_note = note
             update_fields.extend(["rejection_reason", "resolution_note"])
@@ -680,15 +725,21 @@ class RequestStatusUpdateView(APIView):
         RequestStatusHistory.objects.create(
             request=service_request,
             old_status=old_status,
-            new_status=new_status,
+            new_status=effective_new_status,
             changed_by=request.user,
             note=note,
         )
         status_labels = dict(ServiceRequest.Status.choices)
-        progress_message = (
-            f"Progress updated: {status_labels.get(old_status, old_status)}"
-            f" -> {status_labels.get(new_status, new_status)}"
-        )
+        if submit_to_target_on_approve:
+            progress_message = (
+                "Approval decision: Approved and sent to target queue. "
+                "Status remains NEW."
+            )
+        else:
+            progress_message = (
+                f"Progress updated: {status_labels.get(old_status, old_status)}"
+                f" -> {status_labels.get(effective_new_status, effective_new_status)}"
+            )
         if note.strip():
             progress_message = f"{progress_message}\nNote: {note.strip()}"
         request_message = RequestMessage.objects.create(
@@ -710,6 +761,23 @@ class RequestStatusUpdateView(APIView):
                 "message_id": request_message.id,
             },
         )
+        if submit_to_target_on_approve:
+            recipients = resolve_request_notification_recipients(service_request)
+            recipients = filter_recipients_by_request_visibility(service_request, recipients)
+            create_bulk_notifications(
+                users=recipients,
+                event_type=UserNotification.EventType.REQUEST_CREATED,
+                title=f"Approved and sent {service_request.request_number}",
+                message=(
+                    f"{request.user.username} approved and sent request: "
+                    f"{service_request.title}"
+                ),
+                link=f"/requests/{service_request.id}",
+                metadata={
+                    "request_id": service_request.id,
+                    "request_number": service_request.request_number,
+                },
+            )
         mirror_request_message_to_telegram(service_request, request_message)
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
@@ -736,6 +804,23 @@ class RequestAssignToMeView(APIView):
         if not can_update_request_status(request.user, service_request):
             return Response(
                 {"detail": "You do not have permission to assign this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not service_request.is_submitted_to_target:
+            return Response(
+                {"detail": "Pending requests cannot be assigned before approval."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        actor_role = get_primary_role_key(request.user)
+        if (
+            actor_role in {"manager", "team_leader"}
+            and request.user.entity_id
+            and request.user.entity.entity_type == Entity.EntityType.PROD
+        ):
+            return Response(
+                {
+                    "detail": "Assignment is only allowed for support/dev manager and team leader flows."
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -781,6 +866,11 @@ class RequestAssignUserView(APIView):
                 {"detail": "You do not have permission to assign this request."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        if not service_request.is_submitted_to_target:
+            return Response(
+                {"detail": "Pending requests cannot be assigned before approval."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = RequestAssignUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -798,6 +888,17 @@ class RequestAssignUserView(APIView):
             )
 
         actor_role = get_primary_role_key(request.user)
+        if (
+            actor_role in {"manager", "team_leader"}
+            and request.user.entity_id
+            and request.user.entity.entity_type == Entity.EntityType.PROD
+        ):
+            return Response(
+                {
+                    "detail": "Assignment is only allowed for support/dev manager and team leader flows."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         target_entity_id = get_request_target_entity_id(service_request)
         if actor_role == "manager":
             is_team_leader = UserRole.objects.filter(
@@ -977,9 +1078,11 @@ def get_visible_requests_queryset(user):
     if is_global_requests_manager(user):
         return base_queryset
     if is_company_scoped_manager(user):
+        pending_visibility = get_pending_approval_visibility_filter(user)
         return base_queryset.filter(
             Q(company_id=user.company_id)
-            | Q(company__isnull=True, requester_user__company_id=user.company_id)
+            | Q(company__isnull=True, requester_user__company_id=user.company_id),
+            Q(is_submitted_to_target=True) | pending_visibility,
         )
 
     if not user.company_id or not user.entity_id:
@@ -997,6 +1100,7 @@ def get_visible_requests_queryset(user):
         )
     )
     if "manager" in role_keys:
+        pending_visibility = get_pending_approval_visibility_filter(user)
         return base_queryset.filter(
             Q(company_id=user.company_id)
             | Q(company__isnull=True, requester_user__company_id=user.company_id),
@@ -1004,6 +1108,7 @@ def get_visible_requests_queryset(user):
             | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
             | Q(target_entity_id=user.entity_id)
             | Q(target_entity__isnull=True, target_unit__code=user.entity.code),
+            Q(is_submitted_to_target=True) | pending_visibility,
         )
 
     if "team_leader" in role_keys:
@@ -1013,6 +1118,7 @@ def get_visible_requests_queryset(user):
         # Team leaders must see incoming requests for their entity (including unassigned),
         # plus requests created/handled by themselves or their direct team members,
         # and requests created from their source entity.
+        pending_visibility = get_pending_approval_visibility_filter(user)
         return base_queryset.filter(
             Q(company_id=user.company_id)
             | Q(company__isnull=True, requester_user__company_id=user.company_id),
@@ -1025,19 +1131,23 @@ def get_visible_requests_queryset(user):
             | Q(current_assignee_id=user.id)
             | Q(requester_user_id__in=team_user_ids)
             | Q(current_assignee_id__in=team_user_ids),
+            Q(is_submitted_to_target=True) | pending_visibility,
         )
 
     if user.entity.entity_type == Entity.EntityType.PROD:
         # Production users can always see their own requests.
         # They also need visibility on manager-created requests from the same source entity,
         # and all requests created from their source entity.
+        pending_visibility = get_pending_approval_visibility_filter(user)
         return base_queryset.filter(
             Q(requester_user_id=user.id)
             | manager_origin_same_entity_filter
             | Q(source_entity_id=user.entity_id)
-            | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
+            | Q(source_entity__isnull=True, requester_unit__code=user.entity.code),
+            Q(is_submitted_to_target=True) | pending_visibility,
         )
 
+    pending_visibility = get_pending_approval_visibility_filter(user)
     return base_queryset.filter(
         Q(company_id=user.company_id)
         | Q(company__isnull=True, requester_user__company_id=user.company_id),
@@ -1046,6 +1156,7 @@ def get_visible_requests_queryset(user):
         | Q(source_entity_id=user.entity_id)
         | Q(source_entity__isnull=True, requester_unit__code=user.entity.code)
         | manager_origin_same_entity_filter,
+        Q(is_submitted_to_target=True) | pending_visibility,
     )
 
 
@@ -1082,11 +1193,58 @@ def is_company_scoped_manager(user):
 
 
 def can_update_request_status(user, service_request):
+    if (
+        service_request.status == ServiceRequest.Status.NEW
+        and not service_request.is_submitted_to_target
+        and get_primary_role_key(service_request.requester_user) == "user"
+        and can_approve_request_from_requester_hierarchy(user, service_request)
+    ):
+        return True
     if is_global_requests_manager(user):
         return True
     if is_company_scoped_manager(user):
         return get_request_company_id(service_request) == user.company_id
     return can_manage_incoming_request(user, service_request)
+
+
+def can_approve_request_from_requester_hierarchy(actor, service_request):
+    actor_role = get_primary_role_key(actor)
+    requester = service_request.requester_user
+
+    if actor_role == "super_admin":
+        return True
+    if actor_role == "senior":
+        return bool(actor.company_id) and actor.company_id == requester.company_id
+    if actor_role == "manager":
+        return (
+            bool(actor.company_id)
+            and bool(actor.entity_id)
+            and actor.company_id == requester.company_id
+            and actor.entity_id == requester.entity_id
+        )
+    if actor_role == "team_leader":
+        return requester.team_leader_id == actor.id
+    return False
+
+
+def get_pending_approval_visibility_filter(user):
+    role_key = get_primary_role_key(user)
+    if role_key == "super_admin":
+        return Q()
+    if role_key == "senior":
+        if not user.company_id:
+            return Q(requester_user_id=user.id)
+        return Q(requester_user__company_id=user.company_id)
+    if role_key == "manager":
+        if not user.company_id or not user.entity_id:
+            return Q(requester_user_id=user.id)
+        return Q(
+            requester_user__company_id=user.company_id,
+            requester_user__entity_id=user.entity_id,
+        )
+    if role_key == "team_leader":
+        return Q(requester_user__team_leader_id=user.id) | Q(requester_user_id=user.id)
+    return Q(requester_user_id=user.id)
 
 
 def can_reassign_target_team(user, service_request):
@@ -1101,6 +1259,7 @@ def build_request_detail_context(request, service_request):
     return {
         "request": request,
         "can_manage_incoming_request": can_update_request_status(request.user, service_request),
+        "can_assign_request": can_assign_request(request.user, service_request),
         "can_reassign_target_team": can_reassign_target_team(request.user, service_request),
         "available_reassignment_targets": get_available_reassignment_targets(
             request.user, service_request
@@ -1110,6 +1269,8 @@ def build_request_detail_context(request, service_request):
 
 
 def get_potential_assignees(user, service_request):
+    if not can_assign_request(user, service_request):
+        return []
     target_entity_id = get_request_target_entity_id(service_request)
     if not target_entity_id:
         return []
@@ -1226,6 +1387,60 @@ def apply_request_filters(queryset, params):
         )
 
     return queryset
+
+
+def apply_scope_filters(queryset, user, scope):
+    normalized_scope = (scope or "").strip().lower()
+    if normalized_scope == "mine":
+        return queryset.filter(requester_user_id=user.id)
+    if normalized_scope == "pending":
+        role_key = get_primary_role_key(user)
+        if role_key == "user":
+            # Base users can track their own approval-state requests here
+            # (waiting / rejected before submission to target queue).
+            return queryset.filter(
+                requester_user_id=user.id,
+                is_submitted_to_target=False,
+            )
+        if not can_access_pending_scope(user):
+            return queryset.none()
+        return queryset.filter(
+            is_submitted_to_target=False,
+            status=ServiceRequest.Status.NEW,
+        )
+    # Operational/request-list scopes should only contain requests that were
+    # submitted to target teams. This also covers the default "/requests"
+    # case where scope is empty.
+    if normalized_scope in {"", "team", "entity", "company", "team-all", "all"}:
+        return queryset.filter(is_submitted_to_target=True)
+    return queryset
+
+
+def can_access_pending_scope(user):
+    role_key = get_primary_role_key(user)
+    if role_key in {"super_admin", "senior"}:
+        return True
+    if role_key in {"manager", "team_leader"}:
+        return bool(
+            user.entity_id and user.entity and user.entity.entity_type == Entity.EntityType.PROD
+        )
+    if role_key == "user":
+        return bool(
+            user.entity_id and user.entity and user.entity.entity_type == Entity.EntityType.PROD
+        )
+    return False
+
+
+def can_assign_request(user, service_request):
+    if not service_request.is_submitted_to_target:
+        return False
+    if not can_update_request_status(user, service_request):
+        return False
+    actor_role = get_primary_role_key(user)
+    if actor_role in {"manager", "team_leader"}:
+        if not user.entity_id or user.entity.entity_type == Entity.EntityType.PROD:
+            return False
+    return True
 
 
 def filter_recipients_by_request_visibility(service_request, recipients_queryset):

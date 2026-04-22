@@ -128,6 +128,7 @@ class ServiceRequest(models.Model):
         related_name="service_requests_received",
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
+    is_submitted_to_target = models.BooleanField(default=True)
     current_assignee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

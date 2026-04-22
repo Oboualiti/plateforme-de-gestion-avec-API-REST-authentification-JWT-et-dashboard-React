@@ -20,7 +20,11 @@ const dashboard = { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard 
 const adminDashboard = { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard };
 const profile = { label: "Profile", to: "/profile", icon: UserCircle };
 
-export function getNavForRole(role) {
+export function getNavForRole(role, user = null) {
+  const canCreateRequests = Boolean(user?.request_creation_allowed);
+  const canAccessPending = role === "super_admin"
+    || role === "senior"
+    || ((role === "manager" || role === "team_leader") && user?.entity_type === "PROD");
   switch (role) {
     case "user":
       return [
@@ -28,7 +32,12 @@ export function getNavForRole(role) {
           label: "Workspace",
           items: [
             dashboard,
-            { label: "Create Request", to: "/requests/create", icon: PlusCircle },
+            ...(canCreateRequests
+              ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
+              : []),
+            ...(canCreateRequests
+              ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
+              : []),
             { label: "My Requests", to: "/requests?scope=mine", icon: ListChecks },
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
@@ -42,7 +51,12 @@ export function getNavForRole(role) {
           items: [
             dashboard,
             { label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox },
-            { label: "Create Request", to: "/requests/create", icon: PlusCircle },
+            ...(canCreateRequests
+              ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
+              : []),
+            ...(canAccessPending
+              ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
+              : []),
             { label: "Team Members", to: "/team", icon: UsersRound },
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
@@ -72,9 +86,11 @@ export function getNavForRole(role) {
           items: [
             dashboard,
             { label: "Entity Requests", to: "/requests?scope=entity", icon: ListChecks },
-            { label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox },
-            { label: "Team Members", to: "/team", icon: UsersRound },
+            ...(canAccessPending
+              ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
+              : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
+            { label: "Reports", to: "/admin/reports", icon: BarChart3 },
           ],
         },
         {
@@ -103,6 +119,7 @@ export function getNavForRole(role) {
           items: [
             dashboard,
             { label: "Company Requests", to: "/requests?scope=company", icon: ListChecks },
+            { label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox },
             { label: "Notifications", to: "/notifications", icon: Bell },
             { label: "Reports", to: "/admin/reports", icon: BarChart3 },
           ],
@@ -150,6 +167,7 @@ export function getNavForRole(role) {
           label: "Operations",
           items: [
             { label: "Requests", to: "/requests", icon: Briefcase },
+            { label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox },
             { label: "Notifications", to: "/notifications", icon: Bell },
             { label: "Reports", to: "/admin/reports", icon: BarChart3 },
           ],

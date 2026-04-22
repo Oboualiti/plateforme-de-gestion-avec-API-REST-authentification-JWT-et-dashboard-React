@@ -84,6 +84,8 @@ function RequestsPage() {
   const isTeamLeader = roleKeys.includes('team_leader')
   const isBasicUser = roleKeys.includes('user')
   const isIncomingQueueTeamLeader = isTeamLeader && scope === 'team'
+  const isPendingScope = scope === 'pending'
+  const canDecidePending = isPendingScope && (isGlobalAdmin || isSenior || isManager || isTeamLeader)
   const actorCompanyId = useMemo(
     () => user?.company_id || user?.company || '',
     [user?.company_id, user?.company],
@@ -92,6 +94,7 @@ function RequestsPage() {
   const scopeTitle = {
     all: 'All requests',
     mine: 'My requests',
+    pending: 'Pending requests',
     team: 'Incoming queue',
     'team-all': 'Team requests',
     entity: 'Entity requests',
@@ -232,10 +235,42 @@ function RequestsPage() {
     }
   }
 
+  async function handlePendingDecision(requestId, nextStatus) {
+    let note = ''
+    if (nextStatus === 'REJECTED') {
+      note = window.prompt('Rejection reason (required):')?.trim() || ''
+      if (!note) return
+    }
+    try {
+      await api.post(`/requests/${requestId}/status/`, { status: nextStatus, note })
+      await loadRequests()
+    } catch (error) {
+      window.alert(error.response?.data?.detail || 'Could not update pending request.')
+    }
+  }
+
   useEffect(() => {
     setState((current) => ({ ...current, loading: true, error: '' }))
     loadRequests()
-  }, [filters, pagination.page, refreshUser])
+  }, [filters, pagination.page, scope, refreshUser])
+
+  useEffect(() => {
+    if (scope !== 'pending') return undefined
+
+    const refreshPending = () => {
+      loadRequests()
+    }
+
+    const timer = window.setInterval(refreshPending, 8000)
+    window.addEventListener('focus', refreshPending)
+    document.addEventListener('visibilitychange', refreshPending)
+
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshPending)
+      document.removeEventListener('visibilitychange', refreshPending)
+    }
+  }, [scope, filters, pagination.page, refreshUser])
 
   function handleFilterChange(key, value) {
     setFilters((current) => {
@@ -425,8 +460,9 @@ function RequestsPage() {
                   <th className="px-4 py-3 text-left font-medium">Source - Target</th>
                   <th className="px-4 py-3 text-left font-medium">Type</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Assignee</th>
+                  {(!isPendingScope || !canDecidePending) && <th className="px-4 py-3 text-left font-medium">Assignee</th>}
                   <th className="px-4 py-3 text-left font-medium">Updated</th>
+                  {canDecidePending && <th className="px-4 py-3 text-right font-medium">Decision</th>}
                 </tr>
               </thead>
               <tbody>
@@ -457,19 +493,42 @@ function RequestsPage() {
                         {statusLabelMap[item.status] || item.status || '-'}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      {item.assignee_name ? (
-                        <div className="flex items-center gap-2">
-                          <Avatar name={item.assignee_name} size={24} />
-                          <span className="text-xs">{item.assignee_name}</span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Unassigned</span>
-                      )}
-                    </td>
+                    {(!isPendingScope || !canDecidePending) && (
+                      <td className="px-4 py-3">
+                        {item.assignee_name ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar name={item.assignee_name} size={24} />
+                            <span className="text-xs">{item.assignee_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Unassigned</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {formatUpdated(item.updated_at || item.created_at)}
                     </td>
+                    {canDecidePending && (
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handlePendingDecision(item.id, 'ACCEPTED')}
+                            disabled={item.status !== 'NEW'}
+                          >
+                            Accept
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handlePendingDecision(item.id, 'REJECTED')}
+                            disabled={item.status !== 'NEW'}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

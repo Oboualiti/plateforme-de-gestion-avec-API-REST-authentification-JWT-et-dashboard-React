@@ -34,6 +34,7 @@ function CreateRequestPage() {
   const roleKeys = user?.role_keys || []
   const isSuperAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
+  const isNormalUser = roleKeys.includes('user')
 
   useEffect(() => {
     refreshUser().catch(() => {})
@@ -198,7 +199,7 @@ function CreateRequestPage() {
         payload.append('source_entity_id', String(Number(form.source_entity_id)))
       }
       await api.post('/requests/', payload)
-      navigate('/requests', { replace: true })
+      navigate(isNormalUser ? '/requests?scope=pending' : '/requests', { replace: true })
     } catch (nextError) {
       setError(nextError.response?.data?.detail || 'Could not create request.')
     } finally {

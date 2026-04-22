@@ -87,7 +87,11 @@ class UserMeSerializer(serializers.ModelSerializer):
         if "senior" in role_keys:
             return bool(obj.company_id)
         if "manager" in role_keys or "team_leader" in role_keys:
-            return bool(obj.company_id and obj.entity_id)
+            return bool(
+                obj.company_id
+                and obj.entity_id
+                and obj.entity.entity_type == Entity.EntityType.PROD
+            )
         return bool(
             obj.company_id
             and obj.entity_id

@@ -73,6 +73,8 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     )
     company_name = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
+    is_submitted_to_target = serializers.BooleanField(read_only=True)
+    is_pending_approval = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -91,6 +93,8 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "assignee_name",
             "target_unit",
             "is_stuck",
+            "is_submitted_to_target",
+            "is_pending_approval",
         ]
 
     def get_source_entity_name(self, obj):
@@ -108,6 +112,9 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
     def get_is_stuck(self, obj):
         return bool(getattr(obj, "is_stuck", False))
+
+    def get_is_pending_approval(self, obj):
+        return (not obj.is_submitted_to_target) and obj.status == ServiceRequest.Status.NEW
 
 
 class RequestCommentSerializer(serializers.ModelSerializer):
@@ -252,6 +259,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     available_reassignment_targets = serializers.SerializerMethodField()
     potential_assignees = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
+    is_submitted_to_target = serializers.BooleanField(read_only=True)
+    is_pending_approval = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
 
     class Meta:
@@ -294,6 +303,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "available_reassignment_targets",
             "potential_assignees",
             "is_stuck",
+            "is_submitted_to_target",
+            "is_pending_approval",
         ]
 
     def get_role_keys(self, obj):
@@ -317,8 +328,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_assign_to_me(self, obj):
         request = self.context.get("request")
-        can_manage = self.context.get("can_manage_incoming_request")
-        if not request or not can_manage:
+        can_assign_request = self.context.get("can_assign_request")
+        if not request or not can_assign_request:
             return False
         return obj.current_assignee_id is None
 
@@ -338,6 +349,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     def get_is_stuck(self, obj):
         return bool(getattr(obj, "is_stuck", False))
 
+    def get_is_pending_approval(self, obj):
+        return (not obj.is_submitted_to_target) and obj.status == ServiceRequest.Status.NEW
+
     def get_attachment_url(self, obj):
         if not obj.attachment:
             return ""
@@ -353,14 +367,18 @@ class RequestDetailSerializer(serializers.ModelSerializer):
                 "timestamp": obj.created_at,
                 "title": "Request created",
                 "description": f"{obj.requester_user.username} created {obj.request_number}.",
-            },
-            {
-                "kind": "sent",
-                "timestamp": obj.created_at,
-                "title": "Sent to target team",
-                "description": f"Sent from {self.get_source_entity_name(obj)} to {self.get_target_entity_name(obj)}.",
-            },
+            }
         ]
+
+        if obj.is_submitted_to_target:
+            events.append(
+                {
+                    "kind": "sent",
+                    "timestamp": obj.created_at,
+                    "title": "Sent to target team",
+                    "description": f"Sent from {self.get_source_entity_name(obj)} to {self.get_target_entity_name(obj)}.",
+                }
+            )
 
         for item in obj.assignment_history.all():
             events.append(

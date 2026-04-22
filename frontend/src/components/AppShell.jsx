@@ -37,7 +37,7 @@ function Brand() {
 function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth();
   const role = user?.role_keys?.[0] || user?.role || "super_admin";
-  const groups = getNavForRole(role);
+  const groups = getNavForRole(role, user);
   const location = useLocation();
   const roleKeys = user?.role_keys || [];
   const primaryRoleKey = roleKeys.length
