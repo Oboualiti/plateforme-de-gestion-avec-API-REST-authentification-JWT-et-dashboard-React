@@ -20,6 +20,7 @@ from apps.permissions_app.services import (
     get_delegatable_permission_keys,
     get_effective_permission_keys,
     has_any_permission,
+    has_permission,
     get_primary_role_key,
     get_visible_users_queryset,
 )
@@ -86,17 +87,18 @@ class AdminBaseView(APIView):
         return get_primary_role_key(user)
 
     def scoped_companies(self, user):
-        if self.role_key(user) == "super_admin":
+        if has_any_permission(user, {"manage_companies", "view_all_companies"}):
             return Company.objects.all()
+        if has_permission(user, "view_company_entities") and user.company_id:
+            return Company.objects.filter(id=user.company_id)
         if user.company_id:
             return Company.objects.filter(id=user.company_id)
         return Company.objects.none()
 
     def scoped_entities(self, user):
-        role_key = self.role_key(user)
-        if role_key == "super_admin":
+        if has_permission(user, "manage_entities"):
             return Entity.objects.select_related("company").all()
-        if role_key == "senior" and user.company_id:
+        if has_permission(user, "view_company_entities") and user.company_id:
             return Entity.objects.select_related("company").filter(company_id=user.company_id)
         if user.entity_id:
             return Entity.objects.select_related("company").filter(id=user.entity_id)
@@ -109,16 +111,14 @@ class AdminBaseView(APIView):
         )
 
     def scoped_requests(self, user):
-        if self.role_key(user) == "super_admin":
-            return ServiceRequest.objects.select_related(
-                "company", "source_entity", "target_entity", "requester_user", "current_assignee"
-            ).order_by("-created_at")
         return get_visible_requests_queryset(user)
 
     def scoped_audit_logs(self, user):
         queryset = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
-        if self.role_key(user) == "super_admin":
+        if has_permission(user, "view_all_requests"):
             return queryset
+        if has_permission(user, "view_company_requests") and user.company_id:
+            return queryset.filter(Q(actor__company_id=user.company_id) | Q(actor_id=user.id))
         visible_actor_ids = list(self.scoped_users(user).values_list("id", flat=True))
         return queryset.filter(actor_id__in=visible_actor_ids)
 
@@ -191,6 +191,8 @@ class AdminCompaniesView(AdminBaseView):
         )
 
     def post(self, request):
+        if not has_permission(request.user, "manage_companies"):
+            return Response({"detail": "You do not have permission to manage companies."}, status=status.HTTP_403_FORBIDDEN)
         serializer = CompanyWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         company = serializer.save()
@@ -202,6 +204,8 @@ class AdminCompanyDetailView(AdminBaseView):
     module_key = "companies"
 
     def patch(self, request, company_id):
+        if not has_permission(request.user, "manage_companies"):
+            return Response({"detail": "You do not have permission to manage companies."}, status=status.HTTP_403_FORBIDDEN)
         company = self.scoped_companies(request.user).filter(id=company_id).first()
         if company is None:
             return Response({"detail": "Company not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -269,6 +273,8 @@ class AdminEntitiesView(AdminBaseView):
         )
 
     def post(self, request):
+        if not has_permission(request.user, "manage_entities"):
+            return Response({"detail": "You do not have permission to manage entities."}, status=status.HTTP_403_FORBIDDEN)
         serializer = EntityWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         entity = serializer.save()
@@ -280,6 +286,8 @@ class AdminEntityDetailView(AdminBaseView):
     module_key = "entities"
 
     def patch(self, request, entity_id):
+        if not has_permission(request.user, "manage_entities"):
+            return Response({"detail": "You do not have permission to manage entities."}, status=status.HTTP_403_FORBIDDEN)
         entity = self.scoped_entities(request.user).filter(id=entity_id).first()
         if entity is None:
             return Response({"detail": "Entity not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -374,6 +382,8 @@ class AdminHierarchyCompanyAssignView(AdminBaseView):
     module_key = "hierarchy"
 
     def patch(self, request, company_id):
+        if not has_any_permission(request.user, {"manage_users_global", "manage_users_company"}):
+            return Response({"detail": "You do not have permission to update company hierarchy."}, status=status.HTTP_403_FORBIDDEN)
         company = self.scoped_companies(request.user).filter(id=company_id).first()
         if company is None:
             return Response({"detail": "Company not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -396,6 +406,8 @@ class AdminHierarchyEntityAssignView(AdminBaseView):
     module_key = "hierarchy"
 
     def patch(self, request, entity_id):
+        if not has_any_permission(request.user, {"manage_users_global", "manage_users_company", "manage_users_entity"}):
+            return Response({"detail": "You do not have permission to update entity hierarchy."}, status=status.HTTP_403_FORBIDDEN)
         entity = self.scoped_entities(request.user).filter(id=entity_id).first()
         if entity is None:
             return Response({"detail": "Entity not found."}, status=status.HTTP_404_NOT_FOUND)

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { Skeleton } from '../components/ui/skeleton'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
 
-function ProtectedRoute({ allowedRoles, requireRequestCreate = false, redirectTo = '/requests' }) {
+function ProtectedRoute({ allowedRoles, requireAnyPermission, requireRequestCreate = false, redirectTo = '/requests' }) {
   const { isAuthenticated, loading, user } = useAuth()
   const location = useLocation()
 
@@ -25,6 +25,28 @@ function ProtectedRoute({ allowedRoles, requireRequestCreate = false, redirectTo
   if (allowedRoles?.length) {
     const roleKeys = user?.role_keys || []
     const allowed = allowedRoles.some((role) => roleKeys.includes(role))
+    if (!allowed) {
+      return (
+        <main className="min-h-svh flex items-center justify-center p-8 text-center">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle className="text-destructive font-bold">Access denied</CardTitle>
+              <CardDescription>You do not have access to this operational workspace.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Please contact your supervisor or platform administrator if you believe this is an error.
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      )
+    }
+  }
+
+  if (requireAnyPermission?.length) {
+    const permissionKeys = new Set(user?.effective_permission_keys || [])
+    const allowed = requireAnyPermission.some((permissionKey) => permissionKeys.has(permissionKey))
     if (!allowed) {
       return (
         <main className="min-h-svh flex items-center justify-center p-8 text-center">

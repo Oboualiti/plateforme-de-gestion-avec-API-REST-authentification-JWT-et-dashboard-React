@@ -24,6 +24,8 @@ export function getNavForRole(role, user = null) {
   const permissionKeys = new Set(user?.effective_permission_keys || []);
   const has = (permissionKey) => permissionKeys.has(permissionKey);
   const hasAny = (permissionList) => permissionList.some((permissionKey) => has(permissionKey));
+  const canAccessCompanies = hasAny(["manage_companies", "view_all_companies"]);
+  const canAccessEntities = hasAny(["manage_entities", "view_company_entities"]);
   const canCreateRequests = Boolean(user?.request_creation_allowed) && has("create_request");
   const canApprovePending = has("approve_request")
     && (
@@ -68,6 +70,29 @@ export function getNavForRole(role, user = null) {
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
         },
+        ...(canAccessCompanies || canAccessEntities || canAccessUsers || canAccessHierarchy ? [{
+          label: "Admin",
+          items: [
+            ...(canAccessCompanies ? [{ label: "Companies", to: "/admin/companies", icon: Building2 }] : []),
+            ...(canAccessEntities ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }] : []),
+            ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
+            ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
+            ...(canAccessUsers ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
+          ],
+        }] : []),
+        ...(canAccessAuditLogs ? [{
+          label: "Audit Logs",
+          items: [
+            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
+            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
+            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
+            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
+          ],
+        }] : []),
+        ...(canAccessReports ? [{
+          label: "Monitoring",
+          items: [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }],
+        }] : []),
         { label: "Account", items: [profile] },
       ];
     case "team_leader":
@@ -94,6 +119,8 @@ export function getNavForRole(role, user = null) {
         {
           label: "Admin",
           items: [
+            ...(canAccessCompanies ? [{ label: "Companies", to: "/admin/companies", icon: Building2 }] : []),
+            ...(canAccessEntities ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }] : []),
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
           ],
@@ -128,6 +155,8 @@ export function getNavForRole(role, user = null) {
         {
           label: "Admin",
           items: [
+            ...(canAccessCompanies ? [{ label: "Companies", to: "/admin/companies", icon: Building2 }] : []),
+            ...(canAccessEntities ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }] : []),
             ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
@@ -161,6 +190,7 @@ export function getNavForRole(role, user = null) {
         {
           label: "Organization",
           items: [
+            ...(canAccessCompanies ? [{ label: "Companies", to: "/admin/companies", icon: Building2 }] : []),
             ...(has("manage_entities") || has("view_company_entities")
               ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }]
               : []),

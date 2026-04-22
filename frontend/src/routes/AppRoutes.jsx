@@ -147,7 +147,24 @@ function AppRoutes() {
 
       <Route
         element={
-          <ProtectedRoute allowedRoles={['super_admin', 'senior', 'manager', 'team_leader']} />
+          <ProtectedRoute
+            requireAnyPermission={[
+              'manage_companies',
+              'view_all_companies',
+              'manage_entities',
+              'view_company_entities',
+              'manage_users_global',
+              'manage_users_company',
+              'manage_users_entity',
+              'view_all_requests',
+              'view_company_requests',
+              'view_entity_requests',
+              'view_team_requests',
+              'view_global_reports',
+              'view_company_reports',
+              'view_entity_reports',
+            ]}
+          />
         }
       >
 <Route element={<MainLayout />}>
@@ -174,7 +191,6 @@ function AppRoutes() {
 }
 
 export default AppRoutes
-
 
 
 

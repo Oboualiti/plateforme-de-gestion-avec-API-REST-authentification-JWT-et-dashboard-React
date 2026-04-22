@@ -290,10 +290,13 @@ function AdminControlCenterPage() {
   const [entityStatusFilter, setEntityStatusFilter] = useState('all')
   const [roleScopeFilter, setRoleScopeFilter] = useState({ company_id: '', entity_id: '', entity_type: '' })
   const roleKeys = user?.role_keys || []
+  const effectivePermissionKeys = new Set(user?.effective_permission_keys || [])
   const isSuperAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
   const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
+  const canManageCompanies = effectivePermissionKeys.has('manage_companies')
+  const canManageEntities = effectivePermissionKeys.has('manage_entities')
   const actorCompanyId = Number(user?.company_id ?? user?.company ?? 0) || null
   const [companyEditState, setCompanyEditState] = useState({
     open: false,
@@ -683,32 +686,34 @@ function AdminControlCenterPage() {
       const seniorOptions = data.senior_options || []
       return (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Add company</CardTitle>
-              <CardDescription>Register a new legal entity in the platform.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="flex flex-wrap items-end gap-3" onSubmit={submitCompany}>
-                <div className="space-y-1.5 flex-1 min-w-[200px]">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Name</label>
-                  <Input value={companyForm.name} onChange={(e) => setCompanyForm({...companyForm, name: e.target.value})} placeholder="e.g. Acme Corp" required />
-                </div>
-                <div className="space-y-1.5 w-32">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Code</label>
-                  <Input value={companyForm.code} onChange={(e) => setCompanyForm({...companyForm, code: e.target.value})} placeholder="ACM" required />
-                </div>
-                <div className="space-y-1.5 w-32">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</label>
-                  <Select className="app-select w-full" value={String(companyForm.is_active)} onChange={(e) => setCompanyForm({...companyForm, is_active: e.target.value === 'true'})}>
-                    <option value="true">Active</option>
-                    <option value="false">Inactive</option>
-                  </Select>
-                </div>
-                <Button type="submit">Create company</Button>
-              </form>
-            </CardContent>
-          </Card>
+          {canManageCompanies && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Add company</CardTitle>
+                <CardDescription>Register a new legal entity in the platform.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="flex flex-wrap items-end gap-3" onSubmit={submitCompany}>
+                  <div className="space-y-1.5 flex-1 min-w-[200px]">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Name</label>
+                    <Input value={companyForm.name} onChange={(e) => setCompanyForm({...companyForm, name: e.target.value})} placeholder="e.g. Acme Corp" required />
+                  </div>
+                  <div className="space-y-1.5 w-32">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Code</label>
+                    <Input value={companyForm.code} onChange={(e) => setCompanyForm({...companyForm, code: e.target.value})} placeholder="ACM" required />
+                  </div>
+                  <div className="space-y-1.5 w-32">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</label>
+                    <Select className="app-select w-full" value={String(companyForm.is_active)} onChange={(e) => setCompanyForm({...companyForm, is_active: e.target.value === 'true'})}>
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </Select>
+                  </div>
+                  <Button type="submit">Create company</Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="surface-card">
             <div className="overflow-x-auto">
@@ -721,12 +726,12 @@ function AdminControlCenterPage() {
                     <th className="text-center">Entities</th>
                     <th className="text-center">Users</th>
                     <th>Status</th>
-                    <th className="text-right">Actions</th>
+                    {canManageCompanies && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {companies.map((item) => {
-                    const canEditCompany = isSuperAdmin || (isSenior && actorCompanyId === Number(item.id))
+                    const canEditCompany = canManageCompanies
                     const companySeniors = seniorOptions.filter((opt) => opt.company_id === item.id)
                     return (
                       <tr key={item.id}>
@@ -749,40 +754,42 @@ function AdminControlCenterPage() {
                             {item.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </td>
-                        <td className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!canEditCompany}
-                              onClick={() => {
-                                setCompanyEditState({
-                                  open: true,
-                                  saving: false,
-                                  companyId: item.id,
-                                  currentSeniorName: item.senior_name || '',
-                                  seniorOptions: companySeniors,
-                                  form: {
-                                    name: item.name || '',
-                                    code: item.code || '',
-                                    senior_user_id: '',
-                                    is_active: Boolean(item.is_active),
-                                  },
-                                })
-                              }}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!canEditCompany}
-                              onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}
-                            >
-                              {item.is_active ? 'Deactivate' : 'Activate'}
-                            </Button>
-                          </div>
-                        </td>
+                        {canManageCompanies && (
+                          <td className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canEditCompany}
+                                onClick={() => {
+                                  setCompanyEditState({
+                                    open: true,
+                                    saving: false,
+                                    companyId: item.id,
+                                    currentSeniorName: item.senior_name || '',
+                                    seniorOptions: companySeniors,
+                                    form: {
+                                      name: item.name || '',
+                                      code: item.code || '',
+                                      senior_user_id: '',
+                                      is_active: Boolean(item.is_active),
+                                    },
+                                  })
+                                }}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canEditCompany}
+                                onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}
+                              >
+                                {item.is_active ? 'Deactivate' : 'Activate'}
+                              </Button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -808,13 +815,14 @@ function AdminControlCenterPage() {
 
       return (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Add entity</CardTitle>
-              <CardDescription>Assign and configure a new operating entity within a company.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="grid grid-cols-1 md:grid-cols-5 items-end gap-3" onSubmit={submitEntity}>
+          {canManageEntities && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Add entity</CardTitle>
+                <CardDescription>Assign and configure a new operating entity within a company.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="grid grid-cols-1 md:grid-cols-5 items-end gap-3" onSubmit={submitEntity}>
                 <div className="space-y-1.5 md:col-span-1">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Name</label>
                   <Input value={entityForm.name} onChange={(e) => setEntityForm({...entityForm, name: e.target.value})} placeholder="e.g. London Office" required />
@@ -836,10 +844,11 @@ function AdminControlCenterPage() {
                     {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </Select>
                 </div>
-                <Button type="submit">Create</Button>
-              </form>
-            </CardContent>
-          </Card>
+                  <Button type="submit">Create</Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="surface-card">
             <div className="filter-bar">
@@ -876,12 +885,12 @@ function AdminControlCenterPage() {
                     <th>Manager</th>
                     <th className="text-center">Users</th>
                     <th>Status</th>
-                    <th className="text-right">Actions</th>
+                    {canManageEntities && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEntities.map((item) => {
-                    const canEditEntity = isSuperAdmin || (isSenior && actorCompanyId && Number(item.company) === actorCompanyId)
+                    const canEditEntity = canManageEntities
                     const entityManagers = managerOptions.filter((opt) => Number(opt.company_id) === Number(item.company))
                     return (
                       <tr key={item.id}>
@@ -904,42 +913,44 @@ function AdminControlCenterPage() {
                             {item.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </td>
-                        <td className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!canEditEntity}
-                              onClick={() => {
-                                setEntityEditState({
-                                  open: true,
-                                  saving: false,
-                                  entityId: item.id,
-                                  currentManagerName: item.manager_name || '',
-                                  managerOptions: entityManagers,
-                                  form: {
-                                    name: item.name || '',
-                                    code: item.code || '',
-                                    entity_type: item.entity_type || 'PROD',
-                                    company: String(item.company || ''),
-                                    manager_user_id: '',
-                                    is_active: Boolean(item.is_active),
-                                  },
-                                })
-                              }}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!canEditEntity}
-                              onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}
-                            >
-                              {item.is_active ? 'Deactivate' : 'Activate'}
-                            </Button>
-                          </div>
-                        </td>
+                        {canManageEntities && (
+                          <td className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canEditEntity}
+                                onClick={() => {
+                                  setEntityEditState({
+                                    open: true,
+                                    saving: false,
+                                    entityId: item.id,
+                                    currentManagerName: item.manager_name || '',
+                                    managerOptions: entityManagers,
+                                    form: {
+                                      name: item.name || '',
+                                      code: item.code || '',
+                                      entity_type: item.entity_type || 'PROD',
+                                      company: String(item.company || ''),
+                                      manager_user_id: '',
+                                      is_active: Boolean(item.is_active),
+                                    },
+                                  })
+                                }}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canEditEntity}
+                                onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}
+                              >
+                                {item.is_active ? 'Deactivate' : 'Activate'}
+                              </Button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -1334,6 +1345,8 @@ function AdminControlCenterPage() {
     isSenior,
     isManager,
     isTeamLeader,
+    canManageCompanies,
+    canManageEntities,
     actorCompanyId,
     navigate,
   ])
