@@ -1,4 +1,4 @@
-from rest_framework import serializers
+﻿from rest_framework import serializers
 from apps.permissions_app.services import get_user_role_keys
 
 from .models import (
@@ -86,6 +86,8 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "type",
             "status",
             "created_at",
+            "completed_at",
+            "closed_at",
             "company_name",
             "source_entity_name",
             "target_entity_name",
@@ -495,3 +497,4 @@ class RequestStatusUpdateSerializer(serializers.Serializer):
 class RequestAssignUserSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     note = serializers.CharField(required=False, allow_blank=True)
+

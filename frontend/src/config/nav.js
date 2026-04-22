@@ -1,4 +1,4 @@
-import {
+﻿import {
   LayoutDashboard,
   Inbox,
   PlusCircle,
@@ -28,6 +28,7 @@ export function getNavForRole(role, user = null) {
   switch (role) {
     case "user":
       return [
+        { label: "Platform", items: [dashboard] },
         {
           label: "Workspace",
           items: [
@@ -46,10 +47,10 @@ export function getNavForRole(role, user = null) {
       ];
     case "team_leader":
       return [
+        { label: "Platform", items: [dashboard] },
         {
           label: "Workspace",
           items: [
-            dashboard,
             { label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox },
             ...(canCreateRequests
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
@@ -81,10 +82,10 @@ export function getNavForRole(role, user = null) {
       ];
     case "manager":
       return [
+        { label: "Platform", items: [dashboard] },
         {
           label: "Workspace",
           items: [
-            dashboard,
             { label: "Entity Requests", to: "/requests?scope=entity", icon: ListChecks },
             ...(canAccessPending
               ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
@@ -114,10 +115,10 @@ export function getNavForRole(role, user = null) {
       ];
     case "senior":
       return [
+        { label: "Platform", items: [dashboard] },
         {
           label: "Operations",
           items: [
-            dashboard,
             { label: "Company Requests", to: "/requests?scope=company", icon: ListChecks },
             { label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox },
             { label: "Notifications", to: "/notifications", icon: Bell },

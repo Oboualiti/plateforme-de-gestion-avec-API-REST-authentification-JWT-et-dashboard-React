@@ -1,4 +1,4 @@
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+﻿import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { Bell, Building2, FileText, LogOut, Menu, Search, Settings, UserRound, X } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -16,23 +16,25 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
-import { Logo, LogoIcon } from "./Logo";
+import wServiceLogo from "../assets/logo.png";
 
 function Brand() {
   return (
-    <div className="flex items-center gap-3">
-      <LogoIcon className="h-10 w-10 shrink-0" />
-      <div className="flex flex-col justify-center leading-none">
-        <span className="text-sm font-black uppercase tracking-tighter text-foreground">
-          W-Service
-        </span>
-        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-          Mgt Platform
-        </span>
-      </div>
+    <div className="flex flex-col items-start justify-center gap-0">
+      <img
+        src={wServiceLogo}
+        alt="W-Service logo"
+        className="h-9 w-auto max-w-[155px] object-contain"
+        loading="lazy"
+        width={1080}
+        height={458}
+      />
+      <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Requests Mgmt</div>
     </div>
   );
 }
+
+
 
 function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth();
@@ -49,7 +51,7 @@ function SidebarContent({ onNavigate }) {
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex h-16 items-center border-b border-sidebar-border px-5">
+      <div className="flex h-16 items-center border-b border-sidebar-border px-6">
         <Brand />
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-4">
@@ -127,8 +129,8 @@ function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-md border-2 border-ink bg-card p-1 shadow-elev-sm transition-colors hover:bg-primary-soft">
-          <Avatar name={user.fullName || user.username} color={user.avatarColor} size={32} />
+        <button className="flex items-center gap-2 rounded-md bg-transparent p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+          <Avatar name={user.fullName || user.username} color={user.avatarColor} size={32} className="rounded-sm border-2 border-ink" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -151,6 +153,29 @@ function UserMenu() {
   );
 }
 
+function getNotificationTitle(item) {
+  const rawTitle = String(item?.title || '').trim();
+  const rawMessage = String(item?.message || '').trim();
+  const haystack = `${rawTitle} ${rawMessage}`.toLowerCase();
+
+  if (haystack.includes('accepted')) return 'Request accepted';
+  if (haystack.includes('comment')) return 'New comment';
+  if (haystack.includes('progress updated') || haystack.includes('status')) return 'Status update';
+  if (haystack.includes('assigned')) return 'Request assigned';
+
+  const compact = rawTitle.replace(/\s+on\s+REQ-.*/i, '').trim();
+  return compact || 'Notification';
+}
+
+function getNotificationSubtitle(item) {
+  let text = String(item?.message || '').trim();
+  text = text.replace(/^\w+:\s*/i, '');
+  text = text.replace(/\bNote:\s*.*$/i, '').trim();
+  text = text.replace(/^Progress updated:\s*/i, '').trim();
+  if (!text) return 'Tap to view details.';
+  if (text.length > 80) return `${text.slice(0, 77)}...`;
+  return text;
+}
 function NotificationsBell() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
@@ -195,7 +220,7 @@ function NotificationsBell() {
   return (
     <DropdownMenu onOpenChange={(open) => open && loadNotifications()}>
       <DropdownMenuTrigger asChild>
-        <button className="brutal-press relative flex h-9 w-9 items-center justify-center rounded-md border-2 border-ink bg-card text-muted-foreground shadow-elev-sm transition-colors hover:bg-primary-soft hover:text-foreground">
+        <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
           <Bell className="h-4 w-4" />
           {unread > 0 && (
             <span className="absolute right-1.5 top-1.5 inline-flex h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
@@ -218,13 +243,13 @@ function NotificationsBell() {
                 event.preventDefault();
                 void openNotification(n);
               }}
-              className="flex flex-col items-start gap-0.5"
+              className="flex flex-col items-start justify-center gap-0"
             >
                 <div className="flex w-full items-center gap-2">
                   {!n.is_read && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                  <span className="text-sm font-medium">{n.title}</span>
+                  <span className="text-sm font-medium">{getNotificationTitle(n)}</span>
                 </div>
-                <span className="text-xs text-muted-foreground">{n.message}</span>
+                <span className="text-xs text-muted-foreground">{getNotificationSubtitle(n)}</span>
             </DropdownMenuItem>
           ))
         )}
@@ -454,3 +479,16 @@ export function AppShell({ children }) {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

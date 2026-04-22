@@ -18,7 +18,7 @@ import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
 import ProtectedRoute from './ProtectedRoute'
 
-import { Logo } from '../components/Logo'
+import wServiceLogo from '../assets/logo.png'
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -48,8 +48,17 @@ function LoginPage() {
   return (
     <main className="min-h-svh flex items-center justify-center bg-background p-4 sm:p-8">
       <section className="flex w-full max-w-4xl flex-col gap-12 lg:flex-row lg:items-center">
-        <div className="flex-1 space-y-8">
-          <Logo className="h-16" />
+        <div className="flex-1 space-y-6">
+          <div className="flex items-center gap-4">
+            <img
+              src={wServiceLogo}
+              alt="W-Service logo"
+              className="h-20 w-auto object-contain sm:h-24"
+              loading="lazy"
+              width={1080}
+              height={458}
+            />
+          </div>
           <div>
             <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
               Enterprise request operations
@@ -59,8 +68,8 @@ function LoginPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">Secure access</span>
-            <span className="rounded-full bg-success/10 px-3 py-1 text-xs font-semibold text-success">Role-based</span>
+            <span className="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-sm font-bold leading-none text-primary">Secure access</span>
+            <span className="inline-flex items-center rounded-full border border-success/25 bg-success/10 px-3 py-1 text-sm font-bold leading-none text-success">Role-based</span>
           </div>
         </div>
 
@@ -165,3 +174,7 @@ function AppRoutes() {
 }
 
 export default AppRoutes
+
+
+
+
