@@ -31,6 +31,21 @@ class RolePermission(models.Model):
         return f"{self.role.key} -> {self.permission.key}"
 
 
+
+class RoleDefaultPermission(models.Model):
+    role = models.ForeignKey(
+        "roles.Role", on_delete=models.CASCADE, related_name="default_permissions"
+    )
+    permission = models.ForeignKey(
+        AppPermission, on_delete=models.CASCADE, related_name="role_default_permissions"
+    )
+
+    class Meta:
+        unique_together = ("role", "permission")
+
+    def __str__(self):
+        return f"default {self.role.key} -> {self.permission.key}"
+
 class PermissionDelegation(models.Model):
     role = models.ForeignKey(
         "roles.Role", on_delete=models.CASCADE, related_name="delegatable_permissions"

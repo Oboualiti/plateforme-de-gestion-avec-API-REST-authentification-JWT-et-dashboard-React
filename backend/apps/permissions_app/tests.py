@@ -520,25 +520,27 @@ class RolePagePermissionTests(APITestCase):
                 expected_status,
                 msg=f"{actor.username} restore role {target_role.key} expected {expected_status} got {response.status_code}",
             )
-
-
     def test_restore_uses_latest_saved_role_defaults(self):
-        manage_companies = AppPermission.objects.get(key="manage_companies")
-
         self.client.force_authenticate(user=self.super_admin)
-        update_response = self.client.patch(
-            reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),
+
+        save_defaults_response = self.client.patch(
+            reverse("admin-role-default-detail", kwargs={"role_id": self.role_user.id}),
             {"permission_keys": ["manage_companies", "view_own_requests"]},
             format="json",
         )
-        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(save_defaults_response.status_code, status.HTTP_200_OK)
 
-        UserPermissionOverride.objects.update_or_create(
-            user=self.user,
-            permission=manage_companies,
-            defaults={"is_allowed": False, "reason": "temporary deny for test"},
+        live_update_response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),
+            {"permission_keys": ["view_own_requests"]},
+            format="json",
         )
-        self.assertNotIn("manage_companies", set(get_effective_permission_keys(self.user)))
+        self.assertEqual(live_update_response.status_code, status.HTTP_200_OK)
+
+        role_keys_after_live_update = set(
+            AppPermission.objects.filter(permission_roles__role=self.role_user).values_list("key", flat=True)
+        )
+        self.assertNotIn("manage_companies", role_keys_after_live_update)
 
         restore_response = self.client.post(
             reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),

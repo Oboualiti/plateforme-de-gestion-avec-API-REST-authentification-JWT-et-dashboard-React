@@ -13,7 +13,7 @@ from apps.audit_logs.services import log_admin_action
 from apps.companies.models import Company
 from apps.entities.models import Entity
 from apps.notifications.models import NotificationPreference
-from apps.permissions_app.models import AppPermission, RolePermission, UserPermissionOverride, UserRole
+from apps.permissions_app.models import AppPermission, RoleDefaultPermission, RolePermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import (
     ROLE_HIERARCHY,
     ROLE_PERMISSION_HIERARCHY_ERROR,
@@ -90,6 +90,21 @@ ROLE_DEFAULT_PERMISSION_KEYS = {
     role_key: {permission_key for permission_key, allowed_roles in PERMISSION_MATRIX.items() if role_key in allowed_roles}
     for role_key in ROLE_HIERARCHY.keys()
 }
+
+def get_saved_default_permission_keys(role):
+    custom_keys = set(
+        RoleDefaultPermission.objects.filter(role=role).values_list("permission__key", flat=True)
+    )
+    if custom_keys:
+        return custom_keys
+
+    role_keys = set(
+        RolePermission.objects.filter(role=role).values_list("permission__key", flat=True)
+    )
+    if role_keys:
+        return role_keys
+
+    return set(ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set()))
 
 
 class AdminBaseView(APIView):
@@ -169,6 +184,12 @@ class AdminBaseView(APIView):
         return queryset.filter(visibility_filter).distinct()
 
     def scoped_audit_logs(self, user):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"scoped_audit_logs called for user {user.username}")
+        logger.info(f"Permissions: {get_effective_permission_keys(user)}")
+        logger.info(f"Has view_audit_logs: {has_permission(user, 'view_audit_logs')}")
+        
         queryset = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
         if has_permission(user, "view_audit_logs"):
             return queryset
@@ -195,9 +216,7 @@ class AdminDashboardView(AdminBaseView):
         user_qs = self.scoped_users(request.user)
         open_statuses = [ServiceRequest.Status.NEW, ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.IN_PROGRESS]
         stale_cutoff = timezone.now() - timedelta(days=7)
-        recent_logs = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
-        if self.role_key(request.user) != "super_admin":
-            recent_logs = recent_logs.filter(Q(actor=request.user) | Q(actor__company_id=request.user.company_id))
+        recent_logs = self.scoped_audit_logs(request.user)
 
         return Response(
             {
@@ -620,6 +639,16 @@ class AdminRolesView(AdminBaseView):
             queryset = Role.objects.annotate(user_count=Count("user_assignments")).order_by("name")
 
         roles_payload = RoleAdminSerializer(queryset, many=True).data
+        role_id_to_saved_defaults = {}
+        custom_defaults = RoleDefaultPermission.objects.filter(role_id__in=queryset.values_list("id", flat=True)).values_list(
+            "role_id", "permission__key"
+        )
+        for role_id, permission_key in custom_defaults:
+            role_id_to_saved_defaults.setdefault(role_id, set()).add(permission_key)
+
+        for role_row in roles_payload:
+            saved_keys = role_id_to_saved_defaults.get(role_row.get("id"))
+            role_row["custom_default_permissions"] = sorted(saved_keys) if saved_keys is not None else list(role_row.get("default_permissions", []))
         if actor_role == "super_admin" and (company_id or entity_id or entity_type):
             policy_by_role = {}
             for role_key in ROLE_HIERARCHY.keys():
@@ -1076,14 +1105,8 @@ class AdminRoleDetailView(AdminBaseView):
         can_manage_target_role, hierarchy_error = can_manage_role_permissions(request.user, role.key)
         if not can_manage_target_role:
             return Response({"detail": hierarchy_error or ROLE_PERMISSION_HIERARCHY_ERROR}, status=status.HTTP_403_FORBIDDEN)
-
-        # Restore should use the current persisted role defaults so newly saved defaults
-        # from Customize Default Permissions become the restore baseline.
-        default_permission_keys = set(
-            RolePermission.objects.filter(role=role).values_list("permission__key", flat=True)
-        )
-        if not default_permission_keys:
-            default_permission_keys = ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())
+        # Restore must use saved custom defaults (if provided) as the baseline.
+        default_permission_keys = get_saved_default_permission_keys(role)
 
         # Super Admin restores global role defaults.
         if actor_role == "super_admin":
@@ -1316,6 +1339,64 @@ class AdminRoleDetailView(AdminBaseView):
 
         return Response({"detail": "You do not have permission to restore role defaults."}, status=status.HTTP_403_FORBIDDEN)
 
+
+class AdminRoleDefaultDetailView(AdminBaseView):
+    module_key = "roles"
+
+    def patch(self, request, role_id):
+        role = Role.objects.filter(id=role_id).first()
+        if role is None:
+            return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        can_manage_target_role, hierarchy_error = can_manage_role_permissions(request.user, role.key)
+        if not can_manage_target_role:
+            return Response({"detail": hierarchy_error or ROLE_PERMISSION_HIERARCHY_ERROR}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = RolePermissionMappingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        permission_keys = serializer.validated_data["permission_keys"]
+
+        known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
+        unknown_permission_keys = sorted(set(permission_keys) - known_permission_keys)
+        if unknown_permission_keys:
+            return Response(
+                {"detail": f"Unknown permission keys: {', '.join(unknown_permission_keys)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        allowed_permission_keys = get_manageable_permission_keys_for_actor(request.user)
+        disallowed_permission_keys = sorted(set(permission_keys) - allowed_permission_keys)
+        if disallowed_permission_keys:
+            return Response(
+                {
+                    "detail": f"{ROLE_PERMISSION_OWNERSHIP_ERROR} Disallowed: {', '.join(disallowed_permission_keys)}"
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        requested_keys = list(dict.fromkeys(permission_keys))
+        permissions = list(AppPermission.objects.filter(key__in=requested_keys))
+        RoleDefaultPermission.objects.filter(role=role).exclude(permission__in=permissions).delete()
+        existing_ids = set(RoleDefaultPermission.objects.filter(role=role).values_list("permission_id", flat=True))
+        for permission in permissions:
+            if permission.id not in existing_ids:
+                RoleDefaultPermission.objects.create(role=role, permission=permission)
+
+        log_admin_action(
+            actor=request.user,
+            module="roles",
+            action="update_saved_default_permissions",
+            target_model="Role",
+            target_id=role.id,
+            target_label=role.name,
+            metadata={"permission_keys": sorted(requested_keys)},
+        )
+        return Response(
+            {
+                "detail": "Saved default permissions updated.",
+                "custom_default_permissions": sorted(requested_keys),
+            }
+        )
 
 class AdminPermissionsView(AdminBaseView):
     module_key = "permissions"

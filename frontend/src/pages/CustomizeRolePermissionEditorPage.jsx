@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -122,7 +122,7 @@ function CustomizeRolePermissionEditorPage() {
         const payload = response.data || {}
         const roles = payload.roles || []
         const selected = roles.find((item) => item.id === numericRoleId)
-        const selectedKeys = selected?.default_permissions || []
+        const selectedKeys = selected?.custom_default_permissions || selected?.default_permissions || []
         setState({ loading: false, error: '', roles, allPermissionKeys: payload.all_permission_keys || [] })
         setDraft([...selectedKeys])
         setSaved([...selectedKeys])
@@ -173,18 +173,13 @@ function CustomizeRolePermissionEditorPage() {
     return ''
   }
 
-function togglePermission(permissionKey) {
+  function togglePermission(permissionKey) {
     const blockReason = getBlockReason(permissionKey)
     if (blockReason || saving) return
     setDraft((current) => {
       if (current.includes(permissionKey)) return current.filter((item) => item !== permissionKey)
       return current.concat(permissionKey)
     })
-  }
-
-  function restoreDefaults() {
-    setDraft([...saved])
-    setMessage('Restored to last saved permissions.')
   }
 
   async function saveChanges() {
@@ -194,18 +189,16 @@ function togglePermission(permissionKey) {
     try {
       const selected = draft.filter((key) => allowedPermissionSet.has(key))
       const safeSelection = isSuperAdmin ? selected : selected.filter((key) => effectivePermissionKeys.has(key))
-      await api.patch(`/admin/roles/${selectedRole.id}/`, { permission_keys: safeSelection, ...scopePayload })
+      await api.patch(`/admin/roles/${selectedRole.id}/defaults/`, { permission_keys: safeSelection })
       setSaved(safeSelection)
       setDraft(safeSelection)
-      setMessage(`${selectedRole.name} permissions updated.`)
-      setTimeout(() => navigate(-1), 1500)
+      navigate(`/admin/roles/customize${backQuery ? `?${backQuery}` : ''}`)
     } catch (error) {
       setMessage(error.response?.data?.detail || 'Could not update role permissions.')
     } finally {
       setSaving(false)
     }
   }
-
 
   function cancelChanges() {
     navigate(`/admin/roles/customize${backQuery ? `?${backQuery}` : ''}`)
@@ -252,7 +245,7 @@ function togglePermission(permissionKey) {
       <PageHeader
         eyebrow="Administration"
         title={`Edit ${selectedRole.name} Permissions`}
-        description="Simple editor for default role permissions."
+        description="Simple editor for saved default role permissions."
         actions={(
           <Link to={`/admin/roles/customize${backQuery ? `?${backQuery}` : ''}`}>
             <Button variant="outline">Back</Button>
@@ -315,9 +308,8 @@ function togglePermission(permissionKey) {
             )
           })}
 
-<div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+          <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
             <Button type="button" variant="ghost" onClick={cancelChanges} disabled={saving}>Cancel</Button>
-            <Button type="button" variant="outline" onClick={restoreDefaults} disabled={saving}>Restore defaults</Button>
             <Button type="button" onClick={saveChanges} disabled={!canEditRole || saving}>{saving ? 'Saving...' : 'Save changes'}</Button>
           </div>
         </CardContent>
