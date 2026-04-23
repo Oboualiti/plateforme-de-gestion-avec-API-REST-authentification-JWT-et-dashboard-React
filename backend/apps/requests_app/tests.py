@@ -64,6 +64,16 @@ class RequestPermissionWorkflowTests(APITestCase):
             "manager",
             entity=self.other_prod_entity,
         )
+        self.senior_user = self._create_user_with_role(
+            "senior1",
+            "senior",
+            entity=self.prod_entity,
+        )
+        self.support_team_leader = self._create_user_with_role(
+            "tl_support",
+            "team_leader",
+            entity=self.support_entity,
+        )
 
         self.pending_request = ServiceRequest.objects.create(
             request_number="REQ-UNIT-0001",
@@ -78,6 +88,20 @@ class RequestPermissionWorkflowTests(APITestCase):
             target_unit=self.support_unit,
             status=ServiceRequest.Status.NEW,
             is_submitted_to_target=False,
+        )
+        self.submitted_request = ServiceRequest.objects.create(
+            request_number="REQ-UNIT-0002",
+            title="Submitted request",
+            description="Ready for target assignment",
+            category="INFO",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.NEW,
+            is_submitted_to_target=True,
         )
 
     def _create_user_with_role(self, username, role_key, entity):
@@ -106,3 +130,32 @@ class RequestPermissionWorkflowTests(APITestCase):
         url = reverse("requests-status", kwargs={"request_id": self.pending_request.id})
         response = self.client.post(url, {"status": ServiceRequest.Status.ACCEPTED, "note": "Try approve"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_senior_cannot_assign_to_self(self):
+        self.client.force_authenticate(user=self.senior_user)
+        url = reverse("requests-assign", kwargs={"request_id": self.submitted_request.id})
+        response = self.client.post(url, {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_senior_status_update_does_not_auto_assign_self(self):
+        self.client.force_authenticate(user=self.senior_user)
+        url = reverse("requests-status", kwargs={"request_id": self.submitted_request.id})
+        response = self.client.post(
+            url,
+            {"status": ServiceRequest.Status.ACCEPTED, "note": "Accepted by senior"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.submitted_request.refresh_from_db()
+        self.assertIsNone(self.submitted_request.current_assignee_id)
+
+    def test_senior_detail_hides_assign_to_me_and_lists_target_tl(self):
+        self.client.force_authenticate(user=self.senior_user)
+        url = reverse("requests-detail", kwargs={"request_id": self.submitted_request.id})
+        response = self.client.get(url, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data.get("can_assign_to_me"))
+        assignee_ids = {item["id"] for item in response.data.get("potential_assignees", [])}
+        self.assertNotIn(self.senior_user.id, assignee_ids)
+        self.assertIn(self.support_team_leader.id, assignee_ids)

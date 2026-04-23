@@ -194,7 +194,7 @@ class UserRoleUpdateSerializer(serializers.Serializer):
                 "Senior must belong to a single company."
             )
 
-        if role_key in {"manager", "team_leader", "handler", "user"}:
+        if role_key in {"manager", "team_leader", "user"}:
             if not target_user.company_id:
                 raise serializers.ValidationError(
                     f"{role_key.replace('_', ' ').title()} must belong to a company."
@@ -494,7 +494,7 @@ class ManagedUserCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"company_id": "Invalid company."})
 
             entity_id = attrs.get("entity_id")
-            if role_key in {"manager", "team_leader", "handler", "user"} and not entity_id:
+            if role_key in {"manager", "team_leader", "user"} and not entity_id:
                 raise serializers.ValidationError({"entity_id": "Entity is required for this role."})
             if entity_id:
                 entity = Entity.objects.filter(
@@ -508,7 +508,7 @@ class ManagedUserCreateSerializer(serializers.Serializer):
         if actor_role == "senior":
             if not company:
                 raise serializers.ValidationError("Senior must belong to a company.")
-            if role_key in {"manager", "team_leader", "handler", "user"}:
+            if role_key in {"manager", "team_leader", "user"}:
                 entity_id = attrs.get("entity_id")
                 if not entity_id:
                     raise serializers.ValidationError({"entity_id": "Entity is required."})
@@ -521,7 +521,7 @@ class ManagedUserCreateSerializer(serializers.Serializer):
                     )
 
         if actor_role in {"manager", "team_leader"}:
-            if role_key not in {"team_leader", "handler", "user"}:
+            if role_key not in {"team_leader", "user"}:
                 raise serializers.ValidationError(
                     {"role_key": "You can only create Team Leaders or Users."}
                 )
@@ -532,7 +532,7 @@ class ManagedUserCreateSerializer(serializers.Serializer):
             company = actor.company
             entity = actor.entity
 
-        if role_key in {"manager", "team_leader", "handler", "user"} and entity is None:
+        if role_key in {"manager", "team_leader", "user"} and entity is None:
             raise serializers.ValidationError({"entity_id": "Entity is required for this role."})
 
         team_leader = None
@@ -660,7 +660,7 @@ class ManagedUserUpdateSerializer(serializers.Serializer):
             company = actor.company
             entity = actor.entity
 
-        if target_role in {"manager", "team_leader", "handler", "user"} and entity is None:
+        if target_role in {"manager", "team_leader", "user"} and entity is None:
             raise serializers.ValidationError(
                 {"entity_id": "Entity is required for this role."}
             )

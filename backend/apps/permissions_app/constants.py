@@ -3,7 +3,6 @@ ROLE_HIERARCHY = {
     "senior": 6,
     "manager": 5,
     "team_leader": 4,
-    "handler": 3,
     "user": 2,
 }
 
@@ -96,7 +95,7 @@ PERMISSION_DEFINITIONS = [
     {
         "key": "assign_request",
         "name": "Assign Request",
-        "description": "Assign requests to a handler or team.",
+        "description": "Assign requests to a user or team.",
         "category": "actions",
     },
     {
@@ -183,12 +182,6 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_own_requests",
         "close_request",
     },
-    "handler": {
-        "create_request",
-        "view_own_requests",
-        "assign_request",
-        "resolve_request",
-    },
 }
 
 
@@ -197,7 +190,6 @@ ROLE_DEFINITIONS = [
     ("senior", "Senior"),
     ("manager", "Manager"),
     ("team_leader", "Team Leader"),
-    ("handler", "Handler"),
     ("user", "User"),
 ]
 

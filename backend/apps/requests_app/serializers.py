@@ -342,6 +342,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
         can_assign_request = self.context.get("can_assign_request")
         if not request or not can_assign_request:
             return False
+        if get_primary_role_key(request.user) == "senior":
+            return False
         return obj.current_assignee_id is None
 
     def get_can_update_status(self, obj):

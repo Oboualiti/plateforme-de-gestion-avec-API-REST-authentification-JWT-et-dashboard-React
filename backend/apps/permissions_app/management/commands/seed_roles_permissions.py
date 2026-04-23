@@ -14,6 +14,7 @@ from apps.permissions_app.models import (
     RolePermission,
     UserAccessDelegation,
     UserPermissionOverride,
+    UserRole,
 )
 from apps.roles.models import Role
 
@@ -33,6 +34,13 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        handler_role = Role.objects.filter(key="handler").first()
+        user_role = Role.objects.filter(key="user").first()
+        if handler_role and user_role:
+            UserRole.objects.filter(role=handler_role).update(role=user_role)
+        if handler_role:
+            handler_role.delete()
+
         roles = {}
         for key, name in ROLE_DEFINITIONS:
             role, _ = Role.objects.get_or_create(

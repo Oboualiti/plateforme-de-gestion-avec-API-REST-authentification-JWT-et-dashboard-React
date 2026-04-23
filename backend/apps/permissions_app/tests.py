@@ -90,7 +90,6 @@ class RolePagePermissionTests(APITestCase):
         self.senior = self._create_user("senior_test", "senior", self.company, self.prod_entity)
         self.manager = self._create_user("manager_test", "manager", self.company, self.prod_entity)
         self.team_leader = self._create_user("tl_test", "team_leader", self.company, self.prod_entity)
-        self.handler = self._create_user("handler_test", "handler", self.company, self.prod_entity)
         self.user = self._create_user("user_test", "user", self.company, self.prod_entity)
         self.user_other_entity = self._create_user("user_other_entity", "user", self.company, self.prod_entity_other)
         self.user_other_company = self._create_user(
@@ -130,7 +129,7 @@ class RolePagePermissionTests(APITestCase):
     def test_roles_page_access_matrix_by_role(self):
         url = reverse("admin-roles")
         allowed = [self.super_admin, self.senior, self.manager]
-        denied = [self.team_leader, self.handler, self.user]
+        denied = [self.team_leader, self.user]
 
         for actor in allowed:
             self.client.force_authenticate(user=actor)
@@ -264,7 +263,6 @@ class RolePagePermissionTests(APITestCase):
             (self.manager, self.role_user, status.HTTP_200_OK),
             (self.manager, self.role_manager, status.HTTP_403_FORBIDDEN),
             (self.team_leader, self.role_user, status.HTTP_403_FORBIDDEN),
-            (self.handler, self.role_user, status.HTTP_403_FORBIDDEN),
             (self.user, self.role_user, status.HTTP_403_FORBIDDEN),
             (self.super_admin, self.role_senior, status.HTTP_200_OK),
         ]
@@ -282,6 +280,33 @@ class RolePagePermissionTests(APITestCase):
                 msg=f"{actor.username} patch role {target_role.key} expected {expected_status} got {response.status_code}",
             )
 
+    def test_super_admin_global_role_update_clears_stale_user_overrides(self):
+        permission = AppPermission.objects.get(key="manage_entities")
+        UserPermissionOverride.objects.create(
+            user=self.team_leader,
+            permission=permission,
+            is_allowed=False,
+            reason="stale deny",
+        )
+        self.assertNotIn("manage_entities", set(get_effective_permission_keys(self.team_leader)))
+
+        self.client.force_authenticate(user=self.super_admin)
+        response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_team_leader.id}),
+            {"permission_keys": ["manage_entities"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.team_leader.refresh_from_db()
+        self.assertIn("manage_entities", set(get_effective_permission_keys(self.team_leader)))
+        self.assertFalse(
+            UserPermissionOverride.objects.filter(
+                user=self.team_leader,
+                permission=permission,
+            ).exists()
+        )
+
     def test_role_restore_matrix_post_for_all_roles(self):
         url = lambda role_id: reverse("admin-role-detail", kwargs={"role_id": role_id})
         cases = [
@@ -294,7 +319,6 @@ class RolePagePermissionTests(APITestCase):
             (self.manager, self.role_user, status.HTTP_200_OK),
             (self.manager, self.role_manager, status.HTTP_403_FORBIDDEN),
             (self.team_leader, self.role_user, status.HTTP_403_FORBIDDEN),
-            (self.handler, self.role_user, status.HTTP_403_FORBIDDEN),
             (self.user, self.role_user, status.HTTP_403_FORBIDDEN),
         ]
 

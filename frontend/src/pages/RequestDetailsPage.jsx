@@ -122,11 +122,8 @@ function RequestDetailsPage() {
 
   const request = state.request
   const roleKeys = user?.role_keys || []
-  const effectivePermissionKeys = useMemo(
-    () => new Set(user?.effective_permission_keys || []),
-    [user?.effective_permission_keys],
-  )
   const isManager = roleKeys.includes('manager')
+  const isSenior = roleKeys.includes('senior')
   const canChangeStatus = Boolean(request?.can_update_status)
   const allowedStatusTransitions = request?.allowed_status_transitions || []
   const statusOptions = useMemo(() => {
@@ -135,8 +132,7 @@ function RequestDetailsPage() {
   }, [allowedStatusTransitions, request?.status])
   const canAssignToMe = Boolean(request?.can_assign_to_me)
   const potentialAssignees = request?.potential_assignees || []
-  const canManagerAssignTl = isManager
-    && effectivePermissionKeys.has('assign_request')
+  const canManagerAssignTl = (isManager || isSenior)
     && !request?.current_assignee
     && potentialAssignees.length > 0
 
@@ -232,7 +228,7 @@ function RequestDetailsPage() {
     if (!assignmentForm.userId) return
     await handleAction(api.post(`/requests/${requestId}/assign_user/`, {
       user_id: Number(assignmentForm.userId),
-      note: assignmentForm.note || 'Assigned via Manager Portal'
+      note: assignmentForm.note || 'Assigned via delegation'
     }))
     setAssignmentForm({ userId: '', note: '' })
   }

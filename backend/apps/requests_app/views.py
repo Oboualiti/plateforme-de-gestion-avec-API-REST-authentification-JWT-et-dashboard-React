@@ -690,8 +690,10 @@ class RequestStatusUpdateView(APIView):
                 service_request.current_assignee = None
                 update_fields.append("current_assignee")
         elif service_request.current_assignee_id is None:
-            service_request.current_assignee = request.user
-            update_fields.append("current_assignee")
+            # Seniors must delegate to a TL in the target entity instead of self-assigning.
+            if get_primary_role_key(request.user) != "senior":
+                service_request.current_assignee = request.user
+                update_fields.append("current_assignee")
         if (
             effective_new_status == ServiceRequest.Status.ACCEPTED
             and service_request.accepted_at is None
@@ -801,6 +803,13 @@ class RequestAssignToMeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         actor_role = get_primary_role_key(request.user)
+        if actor_role == "senior":
+            return Response(
+                {
+                    "detail": "Senior users cannot assign a request to themselves. Please assign it to a Team Leader in the target entity."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if (
             actor_role in {"manager", "team_leader"}
             and request.user.entity_id
@@ -889,13 +898,20 @@ class RequestAssignUserView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         target_entity_id = get_request_target_entity_id(service_request)
-        if actor_role == "manager":
+        if actor_role in {"manager", "senior"}:
             is_team_leader = UserRole.objects.filter(
                 user_id=assignee.id, role__key="team_leader"
             ).exists()
             if not is_team_leader:
                 return Response(
-                    {"detail": "Manager can assign requests only to Team Leaders."},
+                    {"detail": "Only Team Leaders can be assigned from this flow."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if actor_role == "senior" and assignee.id == request.user.id:
+                return Response(
+                    {
+                        "detail": "Senior users cannot assign a request to themselves. Please choose a Team Leader from the target entity."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if (
@@ -904,7 +920,7 @@ class RequestAssignUserView(APIView):
             ):
                 return Response(
                     {
-                        "detail": "Selected Team Leader must be in the same company and target entity."
+                        "detail": "Selected Team Leader must be in your company and in the request target entity."
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
@@ -913,12 +929,6 @@ class RequestAssignUserView(APIView):
                 {"detail": "Team Leader can only take request for self."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        elif actor_role == "handler" and assignee.id != request.user.id:
-            return Response(
-                {"detail": "Handler can only assign request to self."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         service_request.current_assignee = assignee
         service_request.save(update_fields=["current_assignee"])
 
@@ -1199,7 +1209,7 @@ def can_approve_request_from_requester_hierarchy(actor, service_request):
         return True
     if actor_role == "senior":
         return bool(actor.company_id) and actor.company_id == requester.company_id
-    if actor_role == "manager":
+    if actor_role in {"manager", "senior"}:
         return (
             bool(actor.company_id)
             and bool(actor.entity_id)
@@ -1271,12 +1281,14 @@ def get_potential_assignees(user, service_request):
         "username"
     )
     actor_role = get_primary_role_key(user)
-    if actor_role == "manager":
+    if actor_role in {"manager", "senior"}:
         queryset = queryset.filter(
             id__in=UserRole.objects.filter(role__key="team_leader").values_list(
                 "user_id", flat=True
             )
         )
+        if actor_role == "senior":
+            queryset = queryset.exclude(id=user.id)
     elif actor_role == "team_leader":
         queryset = queryset.filter(id=user.id)
 
@@ -1496,3 +1508,4 @@ def get_or_create_unit_for_entity(entity):
     if changed:
         unit.save()
     return unit
+

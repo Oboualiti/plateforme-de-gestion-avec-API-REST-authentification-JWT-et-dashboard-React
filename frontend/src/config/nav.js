@@ -51,7 +51,6 @@ export function getNavForRole(role, user = null) {
   ]);
   switch (role) {
     case "user":
-    case "handler":
       return [
         { label: "Platform", items: [dashboard] },
         {

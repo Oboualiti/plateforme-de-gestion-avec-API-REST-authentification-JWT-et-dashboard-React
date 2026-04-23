@@ -790,6 +790,13 @@ class AdminRoleDetailView(AdminBaseView):
             for permission in permissions:
                 if permission.id not in existing_ids:
                     RolePermission.objects.create(role=role, permission=permission)
+            # Keep role matrix and user detail matrix in sync by removing stale
+            # user-level overrides for users assigned to this role. Otherwise a
+            # previous deny override can mask newly enabled role permissions.
+            UserPermissionOverride.objects.filter(
+                user__assigned_roles__role=role,
+                permission__key__in=known_permission_keys,
+            ).delete()
             log_admin_action(
                 actor=request.user,
                 module="roles",
