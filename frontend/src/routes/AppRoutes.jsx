@@ -10,6 +10,8 @@ import AdminControlCenterPage from '../pages/AdminControlCenterPage'
 import HierarchyPage from '../pages/HierarchyPage'
 import UsersPage from '../pages/UsersPage'
 import ReportsPage from '../pages/ReportsPage'
+import CustomizeRoleDefaultsPage from '../pages/CustomizeRoleDefaultsPage'
+import CustomizeRolePermissionEditorPage from '../pages/CustomizeRolePermissionEditorPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
 import NotificationsPage from '../pages/NotificationsPage'
@@ -160,6 +162,7 @@ function AppRoutes() {
               'view_company_requests',
               'view_entity_requests',
               'view_team_requests',
+              'view_own_requests',
               'view_global_reports',
               'view_company_reports',
               'view_entity_reports',
@@ -180,6 +183,8 @@ function AppRoutes() {
           <Route path="/admin/dashboard" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/monitoring" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/reports" element={<ReportsPage />} />
+          <Route path="/admin/roles/customize" element={<CustomizeRoleDefaultsPage />} />
+          <Route path="/admin/roles/customize/:roleId" element={<CustomizeRolePermissionEditorPage />} />
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />
         </Route>
       </Route>
@@ -191,6 +196,4 @@ function AppRoutes() {
 }
 
 export default AppRoutes
-
-
 

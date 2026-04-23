@@ -16,9 +16,13 @@ from apps.notifications.models import NotificationPreference
 from apps.permissions_app.models import AppPermission, RolePermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import (
     ROLE_HIERARCHY,
+    ROLE_PERMISSION_HIERARCHY_ERROR,
+    ROLE_PERMISSION_OWNERSHIP_ERROR,
+    can_manage_role_permissions,
     can_view_target_user,
     get_delegatable_permission_keys,
     get_effective_permission_keys,
+    get_manageable_permission_keys_for_actor,
     has_any_permission,
     has_permission,
     get_primary_role_key,
@@ -57,7 +61,7 @@ ADMIN_MODULE_PERMISSIONS = {
     "entities": {"manage_entities", "view_company_entities"},
     "hierarchy": {"view_company_entities", "manage_users_entity", "manage_users_company"},
     "users": {"manage_users_global", "manage_users_company", "manage_users_entity"},
-    "roles": {"manage_users_global", "manage_users_company", "manage_users_entity"},
+    "roles": {"manage_users_global", "manage_users_company", "manage_users_entity", "view_own_requests"},
     "permissions": {"manage_users_global", "manage_users_company", "manage_users_entity"},
     "requests": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
     "assignments": {"assign_request"},
@@ -505,7 +509,7 @@ class AdminRolesView(AdminBaseView):
                 user_count=Count("user_assignments", filter=senior_filter, distinct=True)
             ).order_by("name")
         elif actor_role == "manager" and request.user.entity_id:
-            queryset = Role.objects.filter(key__in={"team_leader", "user"}).annotate(
+            queryset = Role.objects.filter(key__in={"manager", "team_leader", "user"}).annotate(
                 user_count=Count(
                     "user_assignments",
                     filter=Q(user_assignments__user__entity_id=request.user.entity_id),
@@ -513,12 +517,16 @@ class AdminRolesView(AdminBaseView):
                 )
             ).order_by("name")
         elif actor_role == "team_leader":
-            queryset = Role.objects.filter(key="user").annotate(
+            queryset = Role.objects.filter(key__in={"team_leader", "user"}).annotate(
                 user_count=Count(
                     "user_assignments",
                     filter=Q(user_assignments__user__team_leader_id=request.user.id),
                     distinct=True,
                 )
+            ).order_by("name")
+        elif actor_role in {"user", "handler"}:
+            queryset = Role.objects.filter(key=actor_role).annotate(
+                user_count=Count("user_assignments", filter=Q(user_assignments__user_id=request.user.id), distinct=True)
             ).order_by("name")
         else:
             queryset = Role.objects.annotate(user_count=Count("user_assignments")).order_by("name")
@@ -568,7 +576,7 @@ class AdminRolesView(AdminBaseView):
                     role_row["default_permissions"] = policy_by_role[role_key]
         elif actor_role == "manager" and request.user.entity_id:
             scoped_policy_role_keys = {"team_leader", "user"}
-            policy_by_role = {}
+            policy_by_role = {"manager": get_effective_permission_keys(request.user)}
             for role_key in scoped_policy_role_keys:
                 sample_user = (
                     User.objects.filter(
@@ -587,6 +595,7 @@ class AdminRolesView(AdminBaseView):
                 if role_key in policy_by_role:
                     role_row["default_permissions"] = policy_by_role[role_key]
         elif actor_role == "team_leader":
+            policy_by_role = {"team_leader": get_effective_permission_keys(request.user)}
             sample_user = (
                 User.objects.filter(
                     team_leader_id=request.user.id,
@@ -597,10 +606,16 @@ class AdminRolesView(AdminBaseView):
                 .first()
             )
             if sample_user is not None:
-                effective_keys = get_effective_permission_keys(sample_user)
-                for role_row in roles_payload:
-                    if role_row.get("key") == "user":
-                        role_row["default_permissions"] = effective_keys
+                policy_by_role["user"] = get_effective_permission_keys(sample_user)
+            for role_row in roles_payload:
+                role_key = role_row.get("key")
+                if role_key in policy_by_role:
+                    role_row["default_permissions"] = policy_by_role[role_key]
+        elif actor_role in {"user", "handler"}:
+            effective_keys = get_effective_permission_keys(request.user)
+            for role_row in roles_payload:
+                if role_row.get("key") == actor_role:
+                    role_row["default_permissions"] = effective_keys
 
         company_options = []
         entity_options = []
@@ -650,15 +665,7 @@ class AdminRolesView(AdminBaseView):
         return Response(
             {
                 "roles": roles_payload,
-                "all_permission_keys": (
-                    list(AppPermission.objects.values_list("key", flat=True).order_by("key"))
-                    if actor_role == "super_admin"
-                    else sorted(
-                        set(get_delegatable_permission_keys(request.user)).intersection(
-                            set(get_effective_permission_keys(request.user))
-                        )
-                    )
-                ),
+                "all_permission_keys": list(AppPermission.objects.values_list("key", flat=True).order_by("key")),
                 "company_options": company_options,
                 "entity_options": entity_options,
                 "applied_scope": {"company_id": company_id, "entity_id": entity_id, "entity_type": entity_type},
@@ -679,21 +686,9 @@ class AdminRoleDetailView(AdminBaseView):
         if role is None:
             return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
         actor_role = self.role_key(request.user)
-        if actor_role == "senior" and role.key not in {"manager", "team_leader", "user"}:
-            return Response(
-                {"detail": "Senior can only edit Manager, Team Leader, and User role permissions."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        if actor_role == "manager" and role.key not in {"team_leader", "user"}:
-            return Response(
-                {"detail": "Manager can only edit Team Leader and User role permissions."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        if actor_role == "team_leader" and role.key != "user":
-            return Response(
-                {"detail": "Team Leader can only edit User role permissions."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        can_manage_target_role, hierarchy_error = can_manage_role_permissions(request.user, role.key)
+        if not can_manage_target_role:
+            return Response({"detail": hierarchy_error or ROLE_PERMISSION_HIERARCHY_ERROR}, status=status.HTTP_403_FORBIDDEN)
         serializer = RolePermissionMappingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         permission_keys = serializer.validated_data["permission_keys"]
@@ -701,13 +696,7 @@ class AdminRoleDetailView(AdminBaseView):
         entity_id = serializer.validated_data.get("entity_id")
         entity_type = serializer.validated_data.get("entity_type")
         known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
-        delegatable_permission_keys = set(get_delegatable_permission_keys(request.user))
-        effective_permission_keys = set(get_effective_permission_keys(request.user))
-        allowed_permission_keys = (
-            known_permission_keys
-            if actor_role == "super_admin"
-            else delegatable_permission_keys.intersection(effective_permission_keys)
-        )
+        allowed_permission_keys = get_manageable_permission_keys_for_actor(request.user)
         unknown_permission_keys = sorted(set(permission_keys) - known_permission_keys)
         if unknown_permission_keys:
             return Response(
@@ -717,7 +706,9 @@ class AdminRoleDetailView(AdminBaseView):
         disallowed_permission_keys = sorted(set(permission_keys) - allowed_permission_keys)
         if disallowed_permission_keys:
             return Response(
-                {"detail": f"You cannot assign these permissions: {', '.join(disallowed_permission_keys)}"},
+                {
+                    "detail": f"{ROLE_PERMISSION_OWNERSHIP_ERROR} Disallowed: {', '.join(disallowed_permission_keys)}"
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -978,30 +969,18 @@ class AdminRoleDetailView(AdminBaseView):
         entity_type = scope_serializer.validated_data.get("entity_type")
         actor_role = self.role_key(request.user)
         known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
-        delegatable_permission_keys = set(get_delegatable_permission_keys(request.user))
-        effective_permission_keys = set(get_effective_permission_keys(request.user))
-        allowed_permission_keys = (
-            known_permission_keys
-            if actor_role == "super_admin"
-            else delegatable_permission_keys.intersection(effective_permission_keys)
-        )
-        if actor_role == "senior" and role.key not in {"manager", "team_leader", "user"}:
-            return Response(
-                {"detail": "Senior can only restore Manager, Team Leader, and User role permissions."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        if actor_role == "manager" and role.key not in {"team_leader", "user"}:
-            return Response(
-                {"detail": "Manager can only restore Team Leader and User role permissions."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        if actor_role == "team_leader" and role.key != "user":
-            return Response(
-                {"detail": "Team Leader can only restore User role permissions."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        allowed_permission_keys = get_manageable_permission_keys_for_actor(request.user)
+        can_manage_target_role, hierarchy_error = can_manage_role_permissions(request.user, role.key)
+        if not can_manage_target_role:
+            return Response({"detail": hierarchy_error or ROLE_PERMISSION_HIERARCHY_ERROR}, status=status.HTTP_403_FORBIDDEN)
 
-        default_permission_keys = ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())
+        # Restore should use the current persisted role defaults so newly saved defaults
+        # from Customize Default Permissions become the restore baseline.
+        default_permission_keys = set(
+            RolePermission.objects.filter(role=role).values_list("permission__key", flat=True)
+        )
+        if not default_permission_keys:
+            default_permission_keys = ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())
 
         # Super Admin restores global role defaults.
         if actor_role == "super_admin":
@@ -1487,3 +1466,4 @@ class AdminReportsView(AdminBaseView):
                 "trend_summaries": list(queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id")).order_by("-day")[:14]),
             }
         )
+

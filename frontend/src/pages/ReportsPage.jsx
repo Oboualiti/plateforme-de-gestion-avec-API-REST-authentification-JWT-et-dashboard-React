@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -9,7 +9,20 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Download } from 'lucide-react'
+import { 
+  ArrowUpRight, 
+  Download, 
+  Inbox, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle, 
+  Activity, 
+  Target, 
+  FileText, 
+  BarChart3,
+  Users,
+  Briefcase
+} from 'lucide-react'
 
 import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
@@ -92,6 +105,32 @@ function avgResolutionDays(items) {
   return durations.reduce((sum, value) => sum + value, 0) / durations.length
 }
 
+
+function formatRelative(value) {
+  const date = toDate(value)
+  if (!date) return 'just now'
+  const diff = Math.max(0, Date.now() - date.getTime())
+  const hours = Math.floor(diff / 3600000)
+  if (hours < 1) return 'just now'
+  if (hours < 24) return `about ${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days === 1 ? '' : 's'} ago`
+}
+
+function toTagLabel(value) {
+  return cleanLabel(value, 'other').replaceAll('_', ' ').toUpperCase()
+}
+
+const STATUS_BAR_CLASS = {
+  NEW: 'bg-[#d97706]',
+  ACCEPTED: 'bg-[#f2c200]',
+  IN_PROGRESS: 'bg-[#eab308]',
+  COMPLETED: 'bg-[#f2c200]',
+  REJECTED: 'bg-[#dc2626]',
+  CLOSED: 'bg-[#475569]',
+}
+
+const AVATAR_TONE = ['bg-[#f2c200]', 'bg-[#f2c200]', 'bg-[#f2c200]', 'bg-[#f2c200]', 'bg-[#f2c200]']
 function ReportsPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', reports: null, dashboard: null, requests: [] })
@@ -110,6 +149,8 @@ function ReportsPage() {
   const canExportData = hasPermission('export_data')
   const isSuperAdmin = role === 'super_admin' && canViewGlobalReports
   const canViewReports = canViewGlobalReports || canViewCompanyReports || canViewEntityReports
+  const canSeeCompanyVolume = canViewGlobalReports || canViewCompanyReports
+  const canSeeExecutiveCards = (role === 'super_admin' && canViewGlobalReports) || (role === 'senior' && canViewCompanyReports)
 
   useEffect(() => {
     if (!canViewReports) {
@@ -122,7 +163,7 @@ function ReportsPage() {
       setState({ loading: true, error: '', reports: null, dashboard: null, requests: [] })
 
       const [reportsRes, dashboardRes, requestsRes] = await Promise.allSettled([
-        isSuperAdmin ? api.get('/admin/reports/') : Promise.resolve({ data: null }),
+        api.get('/admin/reports/'),
         isSuperAdmin ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }),
         api.get('/requests/', { params: { page: 1, page_size: 400, scope } }),
       ])
@@ -162,7 +203,10 @@ function ReportsPage() {
     const dashboard = state.dashboard || {}
     const items = state.requests || []
 
-    const totalRequests = isSuperAdmin ? dashboard.totals?.requests || items.length : items.length
+    const totalFromReports = (reports.requests_by_status || []).reduce((sum, row) => sum + Number(row.total || 0), 0)
+    const totalRequests = isSuperAdmin
+      ? dashboard.totals?.requests || totalFromReports || items.length
+      : totalFromReports || items.length
     const openQueue = isSuperAdmin
       ? (dashboard.queue?.open ?? items.filter((item) => ACTIVE_SET.has(item.status)).length)
       : items.filter((item) => ACTIVE_SET.has(item.status)).length
@@ -230,9 +274,26 @@ function ReportsPage() {
       ? statusRows
       : [...fallbackStatusMap.entries()].map(([status, total]) => ({ status, total }))
 
+    const typeRows = (reports.requests_by_type || [])
+      .map((entry) => ({
+        type: cleanLabel(entry.category || entry.type, 'Other'),
+        total: Number(entry.total || 0),
+      }))
+      .filter((entry) => entry.total > 0)
+      .sort((a, b) => b.total - a.total)
+
     const companyRows = (reports.request_volume_by_company || [])
       .map((entry) => ({
         name: cleanLabel(entry.company_name || entry['company__name'], 'Unspecified company'),
+        total: Number(entry.total || 0),
+      }))
+      .filter((entry) => entry.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6)
+
+    const entityRows = (reports.request_volume_by_entity || [])
+      .map((entry) => ({
+        name: cleanLabel(entry.target_entity__name, 'Unspecified unit'),
         total: Number(entry.total || 0),
       }))
       .filter((entry) => entry.total > 0)
@@ -248,6 +309,55 @@ function ReportsPage() {
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 6)
+
+    const fallbackTypeMap = new Map()
+    items.forEach((item) => {
+      const key = cleanLabel(item.category, 'Other')
+      fallbackTypeMap.set(key, (fallbackTypeMap.get(key) || 0) + 1)
+    })
+    const fallbackTypeRows = [...fallbackTypeMap.entries()]
+      .map(([type, total]) => ({ type, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 4)
+
+    const requestTypeMix = (typeRows.length ? typeRows : fallbackTypeRows).slice(0, 4)
+    const mixTotal = requestTypeMix.reduce((sum, row) => sum + row.total, 0)
+    const requestVolumeRows = canSeeCompanyVolume
+      ? (companyRows.length ? companyRows : unitRows)
+      : (entityRows.length ? entityRows : unitRows)
+
+    const recentMovement = [...items]
+      .sort((a, b) => {
+        const aTime = toDate(a.updated_at || a.updatedAt || a.created_at || a.createdAt)?.getTime() || 0
+        const bTime = toDate(b.updated_at || b.updatedAt || b.created_at || b.createdAt)?.getTime() || 0
+        return bTime - aTime
+      })
+      .slice(0, 5)
+      .map((item) => ({
+        id: item.id,
+        reference: cleanLabel(item.reference_code || item.request_number, '-'),
+        status: cleanLabel(item.status, 'NEW'),
+        category: cleanLabel(item.category, 'OTHER'),
+        title: cleanLabel(item.title, 'Untitled request'),
+        actor: cleanLabel(item.created_by_name || item.creator_name || item.requester_name, 'Unknown user'),
+        target: cleanLabel(item.target_entity_code || item.target_entity_name || item.source_entity_name, 'Unspecified unit'),
+        when: formatRelative(item.updated_at || item.updatedAt || item.created_at || item.createdAt),
+      }))
+
+    const ownershipMap = new Map()
+    items.forEach((item) => {
+      const key = cleanLabel(item.assignee_name || item.current_assignee__username, 'Unassigned')
+      ownershipMap.set(key, (ownershipMap.get(key) || 0) + 1)
+    })
+    const ownershipRows = [...ownershipMap.entries()]
+      .map(([name, total], idx) => ({
+        name,
+        total,
+        role: cleanLabel(items.find((item) => cleanLabel(item.assignee_name || item.current_assignee__username, 'Unassigned') === name)?.assignee_role_name, 'User'),
+        tone: AVATAR_TONE[idx % AVATAR_TONE.length],
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
 
     const summaryRows = [
       { metric: 'Total requests', value: totalRequests },
@@ -270,10 +380,15 @@ function ReportsPage() {
       workloadPressure,
       trend,
       statusDistribution,
-      companyRows: isSuperAdmin ? companyRows : unitRows,
+      requestTypeMix,
+      mixTotal,
+      requestVolumeRows,
+      recentMovement,
+      ownershipRows,
+      showExecutiveCards: canSeeExecutiveCards,
       summaryRows,
     }
-  }, [isSuperAdmin, state.dashboard, state.reports, state.requests])
+  }, [canSeeCompanyVolume, canSeeExecutiveCards, isSuperAdmin, state.dashboard, state.reports, state.requests])
 
   if (state.loading) {
     return (
@@ -297,6 +412,18 @@ function ReportsPage() {
     )
   }
 
+  if (parsed.parseError) {
+    return (
+      <main className="space-y-4">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-sm font-bold text-destructive">{parsed.parseError}</p>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
+
   return (
     <main className="space-y-5">
       <PageHeader
@@ -309,192 +436,360 @@ function ReportsPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Total Requests</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.totalRequests}</p>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="shadow-sm border-slate-200 bg-white">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Total Requests</p>
+              <div className="p-1 rounded bg-slate-100 text-slate-500">
+                <Inbox className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.totalRequests}</p>
+            <p className="mt-1 text-xs text-slate-500">All time volume</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Open Queue</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.openQueue}</p>
+        <Card className="shadow-sm border-orange-200 bg-orange-50/50">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700">Open Queue</p>
+              <div className="p-1 rounded bg-orange-100 text-orange-600">
+                <Activity className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.openQueue}</p>
+            <p className="mt-1 text-xs text-slate-600">In active workflow</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Resolved</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.resolved}</p>
+        <Card className="shadow-sm border-emerald-200 bg-emerald-50/50">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Resolved</p>
+              <div className="p-1 rounded bg-emerald-100 text-emerald-600">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.resolved}</p>
+            <p className="mt-1 text-xs text-slate-600">Completed requests</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Avg Turnaround</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{parsed.avgTurnaround}</p>
+        <Card className="shadow-sm border-slate-200 bg-white">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Avg Turnaround</p>
+              <div className="p-1 rounded bg-slate-100 text-slate-500">
+                <Clock className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.avgTurnaround}</p>
+            <p className="mt-1 text-xs text-slate-500">Average delivery time</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card className={parsed.unassigned > 0 ? 'border-warning/50' : ''}>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Unassigned</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">{parsed.unassigned}</p>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card className="shadow-sm border-amber-200 bg-amber-50/50">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Unassigned</p>
+              <div className="p-1 rounded bg-amber-100 text-amber-600">
+                <Users className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.unassigned}</p>
+            <p className="mt-1 text-xs text-slate-600">Needs ownership</p>
           </CardContent>
         </Card>
 
-        <Card className={parsed.overdue > 0 ? 'border-destructive/50' : ''}>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Overdue</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">{parsed.overdue}</p>
+        <Card className="shadow-sm border-red-200 bg-red-50/50">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-red-700">Overdue</p>
+              <div className="p-1 rounded bg-red-100 text-red-600">
+                <AlertCircle className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.overdue}</p>
+            <p className="mt-1 text-xs text-slate-600">Past due date</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Resolution Rate</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">{parsed.resolutionRate}%</p>
+        <Card className="shadow-sm border-emerald-200 bg-emerald-50/50">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-start">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Resolution Rate</p>
+              <div className="p-1 rounded bg-emerald-100 text-emerald-600">
+                <Target className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.resolutionRate}%</p>
+            <p className="mt-1 text-xs text-slate-600">{parsed.resolved} closed in scope</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
+        <Card className="lg:col-span-2 shadow-sm">
+          <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
-              <p className="eyebrow">Analytics</p>
-              <h3 className="text-4xl font-extrabold uppercase">Request Flow Over The Last 7 Days</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Created vs resolved volume to quickly see if backlog is growing or shrinking.</p>
+              <h3 className="text-lg font-semibold text-foreground">Request Flow (Last 7 Days)</h3>
+              <p className="text-sm text-muted-foreground">Created vs resolved volume to monitor backlog trends.</p>
             </div>
-            <Button variant="outline" onClick={() => exportCsv('request-flow-7-days.csv', parsed.trend)} disabled={!canExportData}>
-              <Download className="mr-2 h-4 w-4" /> Export CSV
+            <Button variant="outline" size="sm" onClick={() => exportCsv('request-flow-7-days.csv', parsed.trend)} disabled={!canExportData}>
+              <Download className="mr-2 h-4 w-4" /> Export
             </Button>
           </CardHeader>
-          <CardContent className="p-5 pt-4">
-            <div className="h-[330px]">
+          <CardContent className="p-5 pt-6">
+            <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={parsed.trend} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="5 5" stroke="hsl(var(--ink) / 0.28)" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} tickLine={false} axisLine={false} />
+                <LineChart data={parsed.trend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} tickLine={false} axisLine={false} dy={10} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} tickLine={false} axisLine={false} dx={-10} />
                   <Tooltip
                     contentStyle={{
-                      border: '2px solid hsl(var(--ink))',
-                      borderRadius: 4,
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: 6,
                       background: 'hsl(var(--card))',
-                      fontWeight: 700,
+                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                      fontSize: '13px'
                     }}
                   />
-                  <Legend />
-                  <Line type="monotone" dataKey="created" name="Created" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="resolved" name="Resolved" stroke="hsl(var(--success))" strokeWidth={3} dot={{ r: 4 }} />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                  <Line type="monotone" dataKey="created" name="Created" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                  <Line type="monotone" dataKey="resolved" name="Resolved" stroke="hsl(var(--success))" strokeWidth={2} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <p className="eyebrow">Analytics</p>
-            <h3 className="text-4xl font-extrabold uppercase">Control Metrics</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Quick health signals for leadership review.</p>
+        <Card className="shadow-sm flex flex-col">
+          <CardHeader className="border-b bg-muted/20 pb-4">
+            <h3 className="text-lg font-semibold text-foreground">Control Metrics</h3>
+            <p className="text-sm text-muted-foreground">Quick health signals for review.</p>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 p-5 pt-4">
-            <div className="rounded-sm border border-ink/40 p-3">
-              <p className="eyebrow">Resolution rate</p>
-              <p className="mt-1 text-5xl font-bold">{parsed.resolutionRate}%</p>
-              <p className="mt-2 text-sm text-muted-foreground">Share of total requests already delivered.</p>
+          <CardContent className="flex-1 p-5 grid grid-cols-1 gap-4">
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Resolution rate</p>
+                <p className="mt-1 text-xs text-muted-foreground">Already delivered</p>
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.resolutionRate}%</p>
             </div>
-            <div className="rounded-sm border border-ink/40 p-3">
-              <p className="eyebrow">Unassigned work</p>
-              <p className="mt-1 text-5xl font-bold">{parsed.unassigned}</p>
-              <p className="mt-2 text-sm text-muted-foreground">Open items that still need ownership.</p>
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Unassigned work</p>
+                <p className="mt-1 text-xs text-muted-foreground">Needs ownership</p>
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.unassigned}</p>
             </div>
-            <div className="rounded-sm border border-ink/40 p-3">
-              <p className="eyebrow">Workload pressure</p>
-              <p className="mt-1 text-5xl font-bold">{parsed.workloadPressure}</p>
-              <p className="mt-2 text-sm text-muted-foreground">Positive means incoming demand is ahead of completions.</p>
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Workload pressure</p>
+                <p className="mt-1 text-xs text-muted-foreground">Demand vs completions</p>
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.workloadPressure}</p>
             </div>
-            <div className="rounded-sm border border-ink/40 p-3">
-              <p className="eyebrow">Tracked units</p>
-              <p className="mt-1 text-5xl font-bold">{parsed.companyRows.length}</p>
-              <p className="mt-2 text-sm text-muted-foreground">Active companies/units with measurable request volume.</p>
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Tracked units</p>
+                <p className="mt-1 text-xs text-muted-foreground">Active sources</p>
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.requestVolumeRows.length}</p>
             </div>
           </CardContent>
         </Card>
       </div>
-
+      
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
+        <Card className="shadow-sm">
+          <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
-              <p className="eyebrow">Analytics</p>
-              <h3 className="text-4xl font-extrabold uppercase">Status Distribution</h3>
+              <h3 className="text-lg font-semibold text-foreground">Request Type Mix</h3>
+              <p className="text-sm text-muted-foreground">Distribution of work categories.</p>
             </div>
-            <Button variant="outline" onClick={() => exportCsv('status-distribution.csv', parsed.statusDistribution)} disabled={!canExportData}>
-              <Download className="mr-2 h-4 w-4" /> Export CSV
+            <Button variant="outline" size="sm" onClick={() => exportCsv('request-type-mix.csv', parsed.requestTypeMix)} disabled={!canExportData}>
+              <Download className="mr-2 h-4 w-4" /> Export
             </Button>
           </CardHeader>
-          <CardContent className="space-y-3 p-5 pt-4">
-            {parsed.statusDistribution.length ? (
-              parsed.statusDistribution.map((row) => {
-                const pct = parsed.totalRequests ? Math.round((row.total / parsed.totalRequests) * 100) : 0
+          <CardContent className="space-y-4 p-5 pt-6">
+            {parsed.requestTypeMix.length ? (
+              parsed.requestTypeMix.map((row) => {
+                const pct = parsed.mixTotal ? Math.round((row.total / parsed.mixTotal) * 100) : 0
                 return (
-                  <div key={row.status} className="rounded-sm border border-ink/30 p-3">
+                  <div key={row.type} className="group">
                     <div className="mb-2 flex items-center justify-between">
-                      <p className="text-sm font-bold uppercase text-foreground">{row.status.replaceAll('_', ' ')}</p>
-                      <p className="text-sm font-bold tabular-nums text-muted-foreground">{row.total}</p>
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium text-foreground">{row.type}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-semibold text-foreground">{row.total}</span>
+                        <span className="ml-2 text-sm text-muted-foreground">({pct}%)</span>
+                      </div>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full border border-ink/35 bg-muted">
-                      <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                    <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 )
               })
             ) : (
-              <p className="text-sm text-muted-foreground">No status distribution data.</p>
+              <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                <BarChart3 className="mb-2 h-8 w-8 opacity-20" />
+                <p className="text-sm">No request type data available.</p>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
+        <Card className="shadow-sm">
+          <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
-              <p className="eyebrow">Analytics</p>
-              <h3 className="text-4xl font-extrabold uppercase">{isSuperAdmin ? 'Activity By Company' : 'Activity By Unit'}</h3>
+              <h3 className="text-lg font-semibold text-foreground">Demand Concentration</h3>
+              <p className="text-sm text-muted-foreground">Where workload is accumulating.</p>
             </div>
-            <Button variant="outline" onClick={() => exportCsv('activity-distribution.csv', parsed.companyRows)} disabled={!canExportData}>
-              <Download className="mr-2 h-4 w-4" /> Export CSV
+            <Button variant="outline" size="sm" onClick={() => exportCsv('request-volume-distribution.csv', parsed.requestVolumeRows)} disabled={!canExportData}>
+              <Download className="mr-2 h-4 w-4" /> Export
             </Button>
           </CardHeader>
-          <CardContent className="space-y-3 p-5 pt-4">
-            {parsed.companyRows.length ? (
-              parsed.companyRows.map((row) => (
-                <div key={row.name} className="flex items-center justify-between rounded-sm border border-ink/40 p-3">
-                  <div>
-                    <p className="text-xl font-bold text-foreground">{row.name}</p>
-                    <p className="text-sm text-muted-foreground">request volume</p>
+          <CardContent className="space-y-4 p-5 pt-6">
+            {parsed.requestVolumeRows.length ? (
+              parsed.requestVolumeRows.map((row) => {
+                const pct = parsed.totalRequests ? Math.round((row.total / parsed.totalRequests) * 100) : 0
+                return (
+                  <div key={row.name} className="group">
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium text-foreground">{row.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-semibold text-foreground">{row.total}</span>
+                        <span className="ml-2 text-sm text-muted-foreground">({pct}%)</span>
+                      </div>
+                    </div>
+                    <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
-                  <p className="text-4xl font-bold tabular-nums text-foreground">{row.total}</p>
-                </div>
-              ))
+                )
+              })
             ) : (
-              <p className="text-sm text-muted-foreground">No activity data yet.</p>
+              <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                <BarChart3 className="mb-2 h-8 w-8 opacity-20" />
+                <p className="text-sm">No activity data available.</p>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <p className="text-xs text-muted-foreground">Scope: {scopeLabel}</p>
+      {parsed.showExecutiveCards ? (
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <Card className="shadow-sm">
+            <CardHeader className="border-b bg-muted/20 pb-4">
+              <h3 className="text-lg font-semibold text-foreground">Recent Movement</h3>
+              <p className="text-sm text-muted-foreground">Latest activity across your scope.</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {parsed.recentMovement.length ? (
+                  parsed.recentMovement.map((item) => {
+                    const statusClass = STATUS_BAR_CLASS[item.status] || 'bg-slate-500'
+                    return (
+                      <a key={item.id} href={`/requests/${item.id}`} className="group block p-4 transition-colors hover:bg-muted/30">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-muted-foreground">{item.reference}</span>
+                              <div className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                                <div className={`h-1.5 w-1.5 rounded-full ${statusClass}`} />
+                                {toTagLabel(item.status)}
+                              </div>
+                            </div>
+                            <p className="font-medium text-foreground group-hover:text-primary transition-colors">{item.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.actor} &rarr; {item.target} • {item.when}
+                            </p>
+                          </div>
+                          <ArrowUpRight className="mt-1 h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                        </div>
+                      </a>
+                    )
+                  })
+                ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground">No recent movement.</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardHeader className="border-b bg-muted/20 pb-4">
+              <h3 className="text-lg font-semibold text-foreground">Ownership Distribution</h3>
+              <p className="text-sm text-muted-foreground">Active workload by assignee.</p>
+            </CardHeader>
+            <CardContent className="p-5 pt-6 space-y-4">
+              {parsed.ownershipRows.length ? (
+                parsed.ownershipRows.map((owner) => {
+                  const initials = owner.name
+                    .split(' ')
+                    .filter(Boolean)
+                    .map((part) => part[0])
+                    .join('')
+                    .slice(0, 2)
+                    .toUpperCase()
+                  return (
+                    <div key={owner.name} className="flex items-center justify-between rounded-lg border bg-card p-3 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-primary-foreground bg-primary`}>
+                          {initials || 'NA'}
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">{owner.name}</p>
+                          <p className="text-xs text-muted-foreground">{owner.role}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-bold tabular-nums text-foreground">{owner.total}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Open</p>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                  <Users className="mb-2 h-8 w-8 opacity-20" />
+                  <p className="text-sm">No ownership data available.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-end">
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <Target className="h-3 w-3" /> Scope: {scopeLabel}
+        </p>
+      </div>
     </main>
   )
 }
 
 export default ReportsPage
+
+
+
+
+
+
+
+
 
 

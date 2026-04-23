@@ -21,6 +21,9 @@ MANAGE_PERMISSION_SCOPE_ORDER = [
     "manage_users_entity",
 ]
 
+ROLE_PERMISSION_HIERARCHY_ERROR = "You can only manage users below your role."
+ROLE_PERMISSION_OWNERSHIP_ERROR = "You can only assign permissions you already have."
+
 
 def get_user_role_keys(user):
     return list(user.assigned_roles.select_related("role").values_list("role__key", flat=True))
@@ -36,6 +39,25 @@ def get_primary_role_key(user):
     if not role_keys:
         return ""
     return max(role_keys, key=lambda item: ROLE_HIERARCHY.get(item, 0))
+
+
+def can_manage_role_permissions(actor_user, target_role_key):
+    actor_role_key = get_primary_role_key(actor_user)
+    if actor_role_key == "super_admin":
+        return True, ""
+
+    actor_level = ROLE_HIERARCHY.get(actor_role_key, 0)
+    target_level = ROLE_HIERARCHY.get(target_role_key, 0)
+    if actor_level <= 0 or target_level <= 0 or target_level >= actor_level:
+        return False, ROLE_PERMISSION_HIERARCHY_ERROR
+    return True, ""
+
+
+def get_manageable_permission_keys_for_actor(actor_user):
+    actor_role_key = get_primary_role_key(actor_user)
+    if actor_role_key == "super_admin":
+        return set(AppPermission.objects.values_list("key", flat=True))
+    return set(get_effective_permission_keys(actor_user))
 
 
 def get_inherited_permission_keys(user):
@@ -275,3 +297,4 @@ def can_create_requests(user):
 
 def get_default_permissions_for_role(role_key):
     return sorted(DEFAULT_ROLE_PERMISSION_MATRIX.get(role_key, set()))
+

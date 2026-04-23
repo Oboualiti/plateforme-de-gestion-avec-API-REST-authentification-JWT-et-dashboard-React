@@ -1,4 +1,4 @@
-﻿import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { Bell, Building2, FileText, LogOut, Menu, Search, Settings, UserRound, X } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -64,7 +64,11 @@ function SidebarContent({ onNavigate }) {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const path = item.to.split("?")[0];
-                const isActive = location.pathname === path && (item.to.includes("?") ? location.search.includes(item.to.split("?")[1]) : true);
+                const isActive = location.pathname === path && (
+                  item.to.includes("?") 
+                    ? location.search.includes(item.to.split("?")[1]) 
+                    : !location.search.includes("scope=")
+                );
                 return (
                   <NavLink
                     key={item.to}

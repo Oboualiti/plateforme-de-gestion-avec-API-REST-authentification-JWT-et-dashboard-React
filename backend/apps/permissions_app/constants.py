@@ -134,6 +134,30 @@ PERMISSION_DEFINITIONS = [
         "description": "Export reporting data.",
         "category": "reporting",
     },
+    {
+        "key": "view_audit_logs",
+        "name": "View All Logs",
+        "description": "View all system audit logs.",
+        "category": "monitoring",
+    },
+    {
+        "key": "view_user_audit_logs",
+        "name": "View User Logs",
+        "description": "View user management audit logs.",
+        "category": "monitoring",
+    },
+    {
+        "key": "view_access_audit_logs",
+        "name": "View Access Logs",
+        "description": "View role and permission change logs.",
+        "category": "monitoring",
+    },
+    {
+        "key": "view_org_audit_logs",
+        "name": "View Organization Logs",
+        "description": "View company and entity change logs.",
+        "category": "monitoring",
+    },
 ]
 
 
@@ -155,6 +179,10 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_company_reports",
         "view_entity_reports",
         "export_data",
+        "view_audit_logs",
+        "view_user_audit_logs",
+        "view_access_audit_logs",
+        "view_org_audit_logs",
     },
     "manager": {
         "view_company_entities",
@@ -168,6 +196,9 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "close_request",
         "view_entity_reports",
         "export_data",
+        "view_user_audit_logs",
+        "view_access_audit_logs",
+        "view_org_audit_logs",
     },
     "team_leader": {
         "view_company_entities",
@@ -176,6 +207,8 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_own_requests",
         "approve_request",
         "assign_request",
+        "view_user_audit_logs",
+        "view_org_audit_logs",
     },
     "user": {
         "create_request",

@@ -1,4 +1,4 @@
-﻿import {
+import {
   LayoutDashboard,
   Inbox,
   PlusCircle,
@@ -39,7 +39,7 @@ export function getNavForRole(role, user = null) {
   const canExportReports = has("export_data");
   const canAccessUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
   const canAccessHierarchy = has("view_company_entities");
-  const canAccessRoles = canAccessUsers;
+  const canAccessRoles = canAccessUsers || has("view_own_requests");
   const canAccessAuditLogs = hasAny([
     "manage_users_global",
     "manage_users_company",
@@ -76,7 +76,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessEntities ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }] : []),
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
             ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
-            ...(canAccessUsers ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
+            ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
           ],
         }] : []),
         ...(canAccessAuditLogs ? [{
@@ -252,3 +252,4 @@ export function getNavForRole(role, user = null) {
       ];
   }
 }
+

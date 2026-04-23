@@ -1009,9 +1009,18 @@ function AdminControlCenterPage() {
         team_leader: 3,
         user: 4,
       }
-      const seniorEditableRoleKeys = new Set(['manager', 'team_leader', 'user'])
-      const managerEditableRoleKeys = new Set(['team_leader', 'user'])
-      const teamLeaderEditableRoleKeys = new Set(['user'])
+      const roleHierarchy = {
+        super_admin: 7,
+        senior: 6,
+        manager: 5,
+        team_leader: 4,
+        handler: 3,
+        user: 2,
+      }
+      const actorRoleLevel = roleKeys.reduce((highest, roleKey) => {
+        const level = roleHierarchy[roleKey] || 0
+        return level > highest ? level : highest
+      }, 0)
       const companyOptions = data.company_options || []
       const entityOptions = data.entity_options || []
       const filteredEntityOptions = entityOptions.filter(
@@ -1025,13 +1034,25 @@ function AdminControlCenterPage() {
         }
         return (a.name || '').localeCompare(b.name || '')
       })
-      const canEditRole = (roleKey) =>
-        isSuperAdmin ||
-        (isSenior && seniorEditableRoleKeys.has(roleKey)) ||
-        (isManager && managerEditableRoleKeys.has(roleKey)) ||
-        (isTeamLeader && teamLeaderEditableRoleKeys.has(roleKey))
+      const canEditRole = (roleKey) => {
+        if (isSuperAdmin) return true
+        const targetRoleLevel = roleHierarchy[roleKey] || 0
+        return actorRoleLevel > 0 && targetRoleLevel > 0 && actorRoleLevel > targetRoleLevel
+      }
       return (
         <>
+          <section className="panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="eyebrow">Default role policy</p>
+                <h2>Need card-based editing?</h2>
+                <p className="muted-text">Open the dedicated screen to customize default permissions by role.</p>
+              </div>
+              <Link to="/admin/roles/customize">
+                <Button variant="outline">Customize Default Permissions</Button>
+              </Link>
+            </div>
+          </section>
           {(isSuperAdmin || isSenior) && (
             <section className="panel">
               <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap">
@@ -1095,6 +1116,8 @@ function AdminControlCenterPage() {
             roles={sortedRoles}
             allPermissionKeys={data.all_permission_keys || []}
             canEditRole={canEditRole}
+            actorPermissionKeys={effectivePermissionKeys}
+            isSuperAdmin={isSuperAdmin}
             onSaveRole={saveRolePermissions}
             onRestoreRole={restoreRolePermissions}
           />
@@ -1496,6 +1519,10 @@ const permissionMetaByKey = {
   view_company_reports: { title: 'View Company Reports', description: 'Access company reporting', section: 'monitoring' },
   view_entity_reports: { title: 'View Entity Reports', description: 'Access entity reporting', section: 'monitoring' },
   export_data: { title: 'Export Data', description: 'Export monitoring data', section: 'monitoring' },
+  view_audit_logs: { title: 'View All Logs', description: 'View all system audit logs', section: 'monitoring' },
+  view_user_audit_logs: { title: 'View User Logs', description: 'View user management audit logs', section: 'monitoring' },
+  view_access_audit_logs: { title: 'View Access Logs', description: 'View role and permission change logs', section: 'monitoring' },
+  view_org_audit_logs: { title: 'View Organization Logs', description: 'View company and entity change logs', section: 'monitoring' },
 }
 
 const permissionSectionOrder = ['organization', 'access_control', 'requests', 'monitoring', 'other']
@@ -1503,7 +1530,7 @@ const permissionSectionTitle = {
   organization: 'Organization',
   access_control: 'Access Control',
   requests: 'Requests',
-  monitoring: 'Monitoring',
+  monitoring: 'Logs',
   other: 'Other',
 }
 
@@ -1527,7 +1554,7 @@ function buildPermissionRows(allPermissionKeys) {
   })
 }
 
-function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRole, onRestoreRole }) {
+function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPermissionKeys, isSuperAdmin, onSaveRole, onRestoreRole }) {
   const [draftByRoleId, setDraftByRoleId] = useState({})
   const [savingByRoleId, setSavingByRoleId] = useState({})
   const allowedPermissionKeySet = useMemo(
@@ -1560,8 +1587,25 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
     return selected.includes(permissionKey)
   }
 
+  function getPermissionBlockReason(roleKey, permissionKey) {
+    if (!canEditRole(roleKey)) return 'You can only manage users below your role'
+    if (!isSuperAdmin && !actorPermissionKeys?.has(permissionKey)) {
+      return 'You can only assign permissions you already have'
+    }
+    return ''
+  }
+
+  function buildSavePayload(role, permissionKeys) {
+    if (isSuperAdmin) {
+      return permissionKeys.filter((key) => allowedPermissionKeySet.has(key))
+    }
+    return permissionKeys.filter(
+      (key) => allowedPermissionKeySet.has(key) && !getPermissionBlockReason(role.key, key),
+    )
+  }
+
   async function togglePermission(role, permissionKey) {
-    if (!canEditRole(role.key)) return
+    if (getPermissionBlockReason(role.key, permissionKey)) return
     if (savingByRoleId[role.id]) return
 
     const selected = (draftByRoleId[role.id] || []).filter((key) =>
@@ -1574,7 +1618,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
     setDraftByRoleId((current) => ({ ...current, [role.id]: next }))
     setSavingByRoleId((current) => ({ ...current, [role.id]: true }))
     try {
-      await onSaveRole(role.id, next)
+      await onSaveRole(role.id, buildSavePayload(role, next))
     } catch {
       setDraftByRoleId((current) => ({ ...current, [role.id]: selected }))
     } finally {
@@ -1588,7 +1632,8 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Restore defaults</span>
         <div className="flex flex-wrap items-center gap-2">
           {roles.map((role) => {
-            const editable = canEditRole(role.key)
+            const restoreBlockReason = canEditRole(role.key) ? '' : 'You can only manage users below your role'
+            const editable = !restoreBlockReason
             const saving = Boolean(savingByRoleId[role.id])
             return (
               <Button
@@ -1597,6 +1642,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
                 size="sm"
                 onClick={() => onRestoreRole(role.id)}
                 disabled={!editable || saving}
+                title={restoreBlockReason || undefined}
               >
                 Restore {role.name}
               </Button>
@@ -1636,7 +1682,8 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
                       </td>
                       {roles.map((role) => {
                         const checked = isChecked(role.id, row.key)
-                        const editable = canEditRole(role.key)
+                        const blockReason = getPermissionBlockReason(role.key, row.key)
+                        const editable = !blockReason
                         const saving = Boolean(savingByRoleId[role.id])
                         return (
                           <td key={`${row.key}-${role.id}`} className="px-4 py-3 text-center">
@@ -1649,6 +1696,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, onSaveRo
                               } ${editable && !saving ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
                               onClick={() => togglePermission(role, row.key)}
                               disabled={!editable || saving}
+                              title={blockReason || undefined}
                               aria-label={`${checked ? 'Revoke' : 'Grant'} ${row.title} for ${role.name}`}
                             >
                               {checked ? '\u2713' : '-'}
@@ -1710,3 +1758,4 @@ function AdminTableSkeleton({ rows = 8, cols = 6 }) {
 }
 
 export default AdminControlCenterPage
+

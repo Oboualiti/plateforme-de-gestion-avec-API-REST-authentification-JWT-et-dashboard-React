@@ -149,6 +149,20 @@ class RolePagePermissionTests(APITestCase):
                 msg=f"{actor.username} should be denied on roles page",
             )
 
+    def test_roles_page_includes_actor_own_role_for_visibility(self):
+        cases = [
+            (self.manager, {"manager", "team_leader", "user"}),
+            (self.team_leader, {"team_leader", "user"}),
+            (self.user, {"user"}),
+        ]
+
+        for actor, expected_keys in cases:
+            self.client.force_authenticate(user=actor)
+            response = self.client.get(reverse("admin-roles"))
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            payload_keys = {item.get("key") for item in response.data.get("roles", [])}
+            self.assertEqual(payload_keys, expected_keys)
+
     def test_roles_page_catalog_matches_new_permission_keys(self):
         self.client.force_authenticate(user=self.super_admin)
         response = self.client.get(reverse("admin-roles"))
@@ -196,6 +210,38 @@ class RolePagePermissionTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_manager_cannot_edit_upward_role_permissions(self):
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_senior.id}),
+            {"permission_keys": ["view_own_requests"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("You can only manage users below your role", response.data.get("detail", ""))
+
+    def test_senior_can_edit_below_hierarchy_role_permissions(self):
+        self.client.force_authenticate(user=self.senior)
+        response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_manager.id}),
+            {"permission_keys": ["view_company_entities", "view_own_requests"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_super_admin_can_assign_any_permission_to_any_role(self):
+        self.client.force_authenticate(user=self.super_admin)
+        response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),
+            {"permission_keys": ["manage_companies", "view_own_requests"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        updated_keys = set(
+            AppPermission.objects.filter(permission_roles__role=self.role_user).values_list("key", flat=True)
+        )
+        self.assertIn("manage_companies", updated_keys)
+
     def test_manager_cannot_assign_permissions_not_in_own_effective_set(self):
         self.client.force_authenticate(user=self.manager)
         response = self.client.patch(
@@ -204,7 +250,17 @@ class RolePagePermissionTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("You can only assign permissions you already have", response.data.get("detail", ""))
 
+    def test_manager_cannot_assign_manage_companies_without_having_it(self):
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),
+            {"permission_keys": ["manage_companies"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("You can only assign permissions you already have", response.data.get("detail", ""))
     def test_manager_with_view_all_companies_sees_all_companies(self):
         self._allow_permission(self.manager, "view_all_companies")
         self.client.force_authenticate(user=self.manager)
@@ -330,3 +386,32 @@ class RolePagePermissionTests(APITestCase):
                 expected_status,
                 msg=f"{actor.username} restore role {target_role.key} expected {expected_status} got {response.status_code}",
             )
+
+
+    def test_restore_uses_latest_saved_role_defaults(self):
+        manage_companies = AppPermission.objects.get(key="manage_companies")
+
+        self.client.force_authenticate(user=self.super_admin)
+        update_response = self.client.patch(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),
+            {"permission_keys": ["manage_companies", "view_own_requests"]},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+
+        UserPermissionOverride.objects.update_or_create(
+            user=self.user,
+            permission=manage_companies,
+            defaults={"is_allowed": False, "reason": "temporary deny for test"},
+        )
+        self.assertNotIn("manage_companies", set(get_effective_permission_keys(self.user)))
+
+        restore_response = self.client.post(
+            reverse("admin-role-detail", kwargs={"role_id": self.role_user.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(restore_response.status_code, status.HTTP_200_OK)
+
+        self.user.refresh_from_db()
+        self.assertIn("manage_companies", set(get_effective_permission_keys(self.user)))
