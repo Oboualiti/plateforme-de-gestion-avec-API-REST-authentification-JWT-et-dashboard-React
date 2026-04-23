@@ -45,7 +45,10 @@ function getPrimaryRole(user) {
   return user?.role_keys?.[0] || user?.role || 'user'
 }
 
-function getScopeForRole(role) {
+function getScopeForRole(role, permissions) {
+  if (permissions.has('view_global_reports')) return 'all'
+  if (permissions.has('view_company_reports')) return 'company'
+  if (permissions.has('view_entity_reports')) return 'entity'
   if (role === 'super_admin') return 'all'
   if (role === 'senior') return 'company'
   if (role === 'manager') return 'entity'
@@ -53,7 +56,10 @@ function getScopeForRole(role) {
   return 'mine'
 }
 
-function getScopeLabel(role, user) {
+function getScopeLabel(role, user, permissions) {
+  if (permissions.has('view_global_reports')) return 'Global platform'
+  if (permissions.has('view_company_reports')) return user?.company_name || 'Company scope'
+  if (permissions.has('view_entity_reports')) return user?.entity_name || 'Entity scope'
   if (role === 'super_admin') return 'Global platform'
   if (role === 'senior') return user?.company_name || 'Company scope'
   if (role === 'manager') return user?.entity_name || 'Entity scope'
@@ -141,8 +147,8 @@ function ReportsPage() {
     [user?.effective_permission_keys],
   )
   const hasPermission = (permissionKey) => effectivePermissionKeys.has(permissionKey)
-  const scope = getScopeForRole(role)
-  const scopeLabel = getScopeLabel(role, user)
+  const scope = getScopeForRole(role, effectivePermissionKeys)
+  const scopeLabel = getScopeLabel(role, user, effectivePermissionKeys)
   const canViewGlobalReports = hasPermission('view_global_reports')
   const canViewCompanyReports = hasPermission('view_company_reports')
   const canViewEntityReports = hasPermission('view_entity_reports')
@@ -202,6 +208,11 @@ function ReportsPage() {
     const reports = state.reports || {}
     const dashboard = state.dashboard || {}
     const items = state.requests || []
+    const reportStatusRows = Array.isArray(reports.requests_by_status) ? reports.requests_by_status : []
+    const reportTotal = reportStatusRows.reduce((sum, item) => sum + Number(item.total || 0), 0)
+    const reportOpen = Number(reports.open_vs_resolved?.open || 0)
+    const reportResolved = Number(reports.open_vs_resolved?.resolved || 0)
+    const hasReportTotals = reportTotal > 0 || (reportOpen + reportResolved > 0)
 
     const totalFromReports = (reports.requests_by_status || []).reduce((sum, row) => sum + Number(row.total || 0), 0)
     const totalRequests = isSuperAdmin
@@ -209,10 +220,10 @@ function ReportsPage() {
       : totalFromReports || items.length
     const openQueue = isSuperAdmin
       ? (dashboard.queue?.open ?? items.filter((item) => ACTIVE_SET.has(item.status)).length)
-      : items.filter((item) => ACTIVE_SET.has(item.status)).length
+      : (hasReportTotals ? reportOpen : items.filter((item) => ACTIVE_SET.has(item.status)).length)
     const resolved = isSuperAdmin
       ? (dashboard.open_vs_resolved?.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length)
-      : items.filter((item) => RESOLVED_SET.has(item.status)).length
+      : (hasReportTotals ? reportResolved : items.filter((item) => RESOLVED_SET.has(item.status)).length)
     const unassigned = isSuperAdmin
       ? (dashboard.queue?.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length)
       : items.filter((item) => !item.assignee_name && !item.current_assignee__username).length

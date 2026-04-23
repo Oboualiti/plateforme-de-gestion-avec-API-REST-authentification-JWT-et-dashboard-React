@@ -154,10 +154,15 @@ function AppRoutes() {
               'manage_companies',
               'view_all_companies',
               'manage_entities',
+              'manage_company_entities',
               'view_company_entities',
+              'view_all_entities',
               'manage_users_global',
               'manage_users_company',
               'manage_users_entity',
+              'view_users_global',
+              'view_users_company',
+              'view_users_entity',
               'view_all_requests',
               'view_company_requests',
               'view_entity_requests',
@@ -166,6 +171,10 @@ function AppRoutes() {
               'view_global_reports',
               'view_company_reports',
               'view_entity_reports',
+              'view_audit_logs',
+              'view_user_audit_logs',
+              'view_access_audit_logs',
+              'view_org_audit_logs',
             ]}
           />
         }
@@ -196,4 +205,3 @@ function AppRoutes() {
 }
 
 export default AppRoutes
-

@@ -127,13 +127,56 @@ def get_manage_scope(user):
     return None
 
 
-def get_scope_filter(user):
+def get_manage_scope_filter(user):
     effective_permissions = set(get_effective_permission_keys(user))
     if "manage_users_global" in effective_permissions:
         return Q()
     if "manage_users_company" in effective_permissions and user.company_id:
         return Q(company_id=user.company_id)
     if "manage_users_entity" in effective_permissions and user.entity_id:
+        return Q(entity_id=user.entity_id)
+    return None
+
+
+def get_view_scope(user):
+    effective_permissions = set(get_effective_permission_keys(user))
+
+    # Highest-scope visibility wins across both "manage" and "view" permissions.
+    has_global = (
+        "view_users_global" in effective_permissions
+        or "manage_users_global" in effective_permissions
+    )
+    has_company = (
+        bool(user.company_id)
+        and (
+            "view_users_company" in effective_permissions
+            or "manage_users_company" in effective_permissions
+        )
+    )
+    has_entity = (
+        bool(user.entity_id)
+        and (
+            "view_users_entity" in effective_permissions
+            or "manage_users_entity" in effective_permissions
+        )
+    )
+
+    if has_global:
+        return "view_users_global"
+    if has_company:
+        return "view_users_company"
+    if has_entity:
+        return "view_users_entity"
+    return None
+
+
+def get_view_scope_filter(user):
+    scope = get_view_scope(user)
+    if scope == "view_users_global":
+        return Q()
+    if scope == "view_users_company" and user.company_id:
+        return Q(company_id=user.company_id)
+    if scope == "view_users_entity" and user.entity_id:
         return Q(entity_id=user.entity_id)
     return None
 
@@ -156,8 +199,12 @@ def can_manage_any_users(user):
     return False
 
 
+def can_view_any_users(user):
+    return get_view_scope_filter(user) is not None
+
+
 def get_visible_users_queryset(user):
-    scope_filter = get_scope_filter(user)
+    scope_filter = get_view_scope_filter(user)
     if scope_filter is None:
         return user.__class__.objects.none()
 
@@ -182,7 +229,7 @@ def get_visible_users_queryset(user):
             elif role_key == "super_admin":
                 visible_ids.append(candidate.id)
             else:
-                if has_permission(user, "manage_users_entity"):
+                if has_any_permission(user, {"manage_users_entity", "view_users_entity"}):
                     visible_ids.append(candidate.id)
     return user.__class__.objects.filter(id__in=visible_ids).order_by("username")
 
@@ -203,6 +250,8 @@ def can_view_target_user(actor, target):
 
 
 def can_manage_target_user(actor, target):
+    if not can_manage_any_users(actor):
+        return False
     if not can_view_target_user(actor, target):
         return False
     if actor.id == target.id:

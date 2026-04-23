@@ -25,7 +25,7 @@ export function getNavForRole(role, user = null) {
   const has = (permissionKey) => permissionKeys.has(permissionKey);
   const hasAny = (permissionList) => permissionList.some((permissionKey) => has(permissionKey));
   const canAccessCompanies = hasAny(["manage_companies", "view_all_companies"]);
-  const canAccessEntities = hasAny(["manage_entities", "view_company_entities"]);
+  const canAccessEntities = hasAny(["manage_entities", "manage_company_entities", "view_company_entities", "view_all_entities"]);
   const canCreateRequests = Boolean(user?.request_creation_allowed) && has("create_request");
   const canApprovePending = has("approve_request")
     && (
@@ -37,18 +37,22 @@ export function getNavForRole(role, user = null) {
   const canAccessPending = canApprovePending || canTrackOwnPending;
   const canAccessReports = hasAny(["view_global_reports", "view_company_reports", "view_entity_reports"]);
   const canExportReports = has("export_data");
+  const canManageUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
   const canAccessUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
   const canAccessHierarchy = has("view_company_entities");
   const canAccessRoles = canAccessUsers || has("view_own_requests");
   const canAccessAuditLogs = hasAny([
-    "manage_users_global",
-    "manage_users_company",
-    "manage_users_entity",
-    "view_all_requests",
-    "view_company_requests",
-    "view_entity_requests",
-    "view_team_requests",
+    "view_audit_logs",
+    "view_user_audit_logs",
+    "view_access_audit_logs",
+    "view_org_audit_logs",
   ]);
+  const auditLogItems = [
+    ...(has("view_audit_logs") ? [{ label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText }] : []),
+    ...(has("view_user_audit_logs") ? [{ label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText }] : []),
+    ...(has("view_access_audit_logs") ? [{ label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText }] : []),
+    ...(has("view_org_audit_logs") ? [{ label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText }] : []),
+  ];
   switch (role) {
     case "user":
       return [
@@ -81,12 +85,7 @@ export function getNavForRole(role, user = null) {
         }] : []),
         ...(canAccessAuditLogs ? [{
           label: "Audit Logs",
-          items: [
-            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
-            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
-            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
-            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
-          ],
+          items: auditLogItems,
         }] : []),
         ...(canAccessReports ? [{
           label: "Monitoring",
@@ -109,10 +108,11 @@ export function getNavForRole(role, user = null) {
             ...(canAccessPending
               ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
               : []),
-            ...(canAccessUsers
+            ...(canManageUsers
               ? [{ label: "Team Members", to: "/team", icon: UsersRound }]
               : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
+            ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
         },
         {
@@ -126,12 +126,7 @@ export function getNavForRole(role, user = null) {
         },
         ...(canAccessAuditLogs ? [{
           label: "Audit Logs",
-          items: [
-            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
-            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
-            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
-            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
-          ],
+          items: auditLogItems,
         }] : []),
         { label: "Account", items: [profile] },
       ];
@@ -163,12 +158,7 @@ export function getNavForRole(role, user = null) {
         },
         ...(canAccessAuditLogs ? [{
           label: "Audit Logs",
-          items: [
-            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
-            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
-            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
-            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
-          ],
+          items: auditLogItems,
         }] : []),
         { label: "Account", items: [profile] },
       ];
@@ -190,7 +180,7 @@ export function getNavForRole(role, user = null) {
           label: "Organization",
           items: [
             ...(canAccessCompanies ? [{ label: "Companies", to: "/admin/companies", icon: Building2 }] : []),
-            ...(has("manage_entities") || has("view_company_entities")
+            ...(has("manage_entities") || has("manage_company_entities") || has("view_company_entities") || has("view_all_entities")
               ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }]
               : []),
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
@@ -200,12 +190,7 @@ export function getNavForRole(role, user = null) {
         },
         ...(canAccessAuditLogs ? [{
           label: "Audit Logs",
-          items: [
-            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
-            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
-            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
-            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
-          ],
+          items: auditLogItems,
         }] : []),
         { label: "Account", items: [profile] },
       ];
@@ -236,20 +221,14 @@ export function getNavForRole(role, user = null) {
               : []),
             ...(canAccessPending ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }] : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
-            ...(canAccessReports || canExportReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
+            ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
         },
         {
           label: "Audit Logs",
-          items: [
-            { label: "All logs", to: "/admin/audit-logs/all", icon: ScrollText },
-            { label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText },
-            { label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText },
-            { label: "Organization logs", to: "/admin/audit-logs/organization", icon: ScrollText },
-          ],
+          items: auditLogItems,
         },
         { label: "Account", items: [profile] },
       ];
   }
 }
-

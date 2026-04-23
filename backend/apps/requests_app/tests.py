@@ -64,6 +64,11 @@ class RequestPermissionWorkflowTests(APITestCase):
             "manager",
             entity=self.other_prod_entity,
         )
+        self.super_admin = self._create_user_with_role(
+            "super_admin1",
+            "super_admin",
+            entity=self.prod_entity,
+        )
         self.senior_user = self._create_user_with_role(
             "senior1",
             "senior",
@@ -159,3 +164,14 @@ class RequestPermissionWorkflowTests(APITestCase):
         assignee_ids = {item["id"] for item in response.data.get("potential_assignees", [])}
         self.assertNotIn(self.senior_user.id, assignee_ids)
         self.assertIn(self.support_team_leader.id, assignee_ids)
+
+    def test_super_admin_sees_pending_and_submitted_requests_in_default_scope(self):
+        self.client.force_authenticate(user=self.super_admin)
+        url = reverse("requests-list-create")
+        response = self.client.get(url, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data.get("results", [])
+        request_ids = {item["id"] for item in results}
+        self.assertIn(self.pending_request.id, request_ids)
+        self.assertIn(self.submitted_request.id, request_ids)

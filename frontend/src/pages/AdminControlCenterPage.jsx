@@ -296,7 +296,7 @@ function AdminControlCenterPage() {
   const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
   const canManageCompanies = effectivePermissionKeys.has('manage_companies')
-  const canManageEntities = effectivePermissionKeys.has('manage_entities')
+  const canManageEntities = effectivePermissionKeys.has('manage_entities') || effectivePermissionKeys.has('manage_company_entities')
   const actorCompanyId = Number(user?.company_id ?? user?.company ?? 0) || null
   const [companyEditState, setCompanyEditState] = useState({
     open: false,
@@ -1149,6 +1149,13 @@ function AdminControlCenterPage() {
     if (sectionKey === 'audit-logs') {
       const pageSize = 10
       const allRows = data || []
+      const hasAuditCategoryAccess = (categoryKey) => {
+        if (categoryKey === 'all') return effectivePermissionKeys.has('view_audit_logs')
+        if (categoryKey === 'users') return effectivePermissionKeys.has('view_user_audit_logs')
+        if (categoryKey === 'access') return effectivePermissionKeys.has('view_access_audit_logs')
+        if (categoryKey === 'organization') return effectivePermissionKeys.has('view_org_audit_logs')
+        return false
+      }
       const grouped = allRows.reduce((acc, item) => {
         const groupKey = resolveAuditGroupKey(item.module)
         if (!acc[groupKey]) {
@@ -1159,7 +1166,13 @@ function AdminControlCenterPage() {
         return acc
       }, {})
 
-      const selectedGroup = auditCategoryKey === 'all' ? { key: 'all', title: 'All audit logs', rows: allRows } : auditCategoryKey ? grouped[auditCategoryKey] : null
+      const selectedGroup = (
+        auditCategoryKey === 'all'
+          ? (hasAuditCategoryAccess('all') ? { key: 'all', title: 'All audit logs', rows: allRows } : null)
+          : auditCategoryKey
+            ? (hasAuditCategoryAccess(auditCategoryKey) ? grouped[auditCategoryKey] : null)
+            : null
+      )
 
       if (!selectedGroup) {
         return (
@@ -1501,10 +1514,15 @@ const permissionMetaByKey = {
   manage_companies: { title: 'Manage Companies', description: 'Create / edit / disable companies', section: 'organization' },
   view_all_companies: { title: 'View All Companies', description: 'View all companies', section: 'organization' },
   manage_entities: { title: 'Manage Entities', description: 'Create / edit / disable entities', section: 'organization' },
+  manage_company_entities: { title: 'Manage Company Entities', description: 'Create / edit / disable entities in same company', section: 'organization' },
   view_company_entities: { title: 'View Company Entities', description: 'View company entities', section: 'organization' },
+  view_all_entities: { title: 'View All Entities', description: 'View all entities from all companies', section: 'organization' },
   manage_users_global: { title: 'Manage Users Global', description: 'Invite / deactivate globally', section: 'access_control' },
   manage_users_company: { title: 'Manage Users Company', description: 'Invite / deactivate within company', section: 'access_control' },
   manage_users_entity: { title: 'Manage Users Entity', description: 'Invite / deactivate within entity', section: 'access_control' },
+  view_users_global: { title: 'View Users Global', description: 'View users globally', section: 'access_control' },
+  view_users_company: { title: 'View Users Company', description: 'View users within company', section: 'access_control' },
+  view_users_entity: { title: 'View Users Entity', description: 'View users within entity', section: 'access_control' },
   create_request: { title: 'Create Request', description: 'Create new requests', section: 'requests' },
   view_all_requests: { title: 'View All Requests', description: 'View all requests', section: 'requests' },
   view_company_requests: { title: 'View Company Requests', description: 'View company requests', section: 'requests' },
@@ -1515,23 +1533,75 @@ const permissionMetaByKey = {
   assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
   resolve_request: { title: 'Resolve Request', description: 'Mark as resolved', section: 'requests' },
   close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
-  view_global_reports: { title: 'View Global Reports', description: 'Access global reporting', section: 'monitoring' },
-  view_company_reports: { title: 'View Company Reports', description: 'Access company reporting', section: 'monitoring' },
-  view_entity_reports: { title: 'View Entity Reports', description: 'Access entity reporting', section: 'monitoring' },
-  export_data: { title: 'Export Data', description: 'Export monitoring data', section: 'monitoring' },
-  view_audit_logs: { title: 'View All Logs', description: 'View all system audit logs', section: 'monitoring' },
-  view_user_audit_logs: { title: 'View User Logs', description: 'View user management audit logs', section: 'monitoring' },
-  view_access_audit_logs: { title: 'View Access Logs', description: 'View role and permission change logs', section: 'monitoring' },
-  view_org_audit_logs: { title: 'View Organization Logs', description: 'View company and entity change logs', section: 'monitoring' },
+  view_request_discussion: { title: 'View Request Discussion', description: 'View request discussion messages', section: 'requests' },
+  comment_request: { title: 'Comment Request', description: 'Post messages in request discussion', section: 'requests' },
+  view_global_reports: { title: 'View Global Reports', description: 'Access global reporting', section: 'reports' },
+  view_company_reports: { title: 'View Company Reports', description: 'Access company reporting', section: 'reports' },
+  view_entity_reports: { title: 'View Entity Reports', description: 'Access entity reporting', section: 'reports' },
+  export_data: { title: 'Export Data', description: 'Export monitoring data', section: 'reports' },
+  view_audit_logs: { title: 'View All Logs', description: 'View all system audit logs', section: 'logs' },
+  view_user_audit_logs: { title: 'View User Logs', description: 'View user management audit logs', section: 'logs' },
+  view_access_audit_logs: { title: 'View Access Logs', description: 'View role and permission change logs', section: 'logs' },
+  view_org_audit_logs: { title: 'View Organization Logs', description: 'View company and entity change logs', section: 'logs' },
 }
 
-const permissionSectionOrder = ['organization', 'access_control', 'requests', 'monitoring', 'other']
+const permissionSectionOrder = ['organization', 'access_control', 'requests', 'reports', 'logs', 'other']
 const permissionSectionTitle = {
   organization: 'Organization',
   access_control: 'Access Control',
   requests: 'Requests',
-  monitoring: 'Logs',
+  reports: 'Reports',
+  logs: 'Logs',
   other: 'Other',
+}
+
+const PERMISSION_IMPLICATIONS = {
+  manage_companies: [
+    'manage_entities',
+    'manage_company_entities',
+    'view_all_companies',
+    'view_all_entities',
+    'view_company_entities',
+  ],
+  manage_company_entities: ['view_company_entities'],
+  manage_users_global: ['view_users_global', 'manage_users_company', 'manage_users_entity'],
+  manage_users_company: ['view_users_company', 'manage_users_entity'],
+  manage_users_entity: ['view_users_entity'],
+  view_users_global: ['view_users_company', 'view_users_entity'],
+  view_users_company: ['view_users_entity'],
+  manage_entities: ['manage_company_entities'],
+  view_all_companies: ['view_all_entities', 'view_company_entities'],
+  view_all_entities: ['view_company_entities'],
+  view_all_requests: [
+    'view_company_requests',
+    'view_entity_requests',
+    'view_own_requests',
+    'view_team_requests',
+  ],
+  view_company_requests: ['view_entity_requests'],
+  view_global_reports: ['view_company_reports', 'view_entity_reports'],
+  view_company_reports: ['view_entity_reports'],
+  comment_request: ['view_request_discussion'],
+}
+
+const IMPLIED_BY = Object.entries(PERMISSION_IMPLICATIONS).reduce((accumulator, [parent, children]) => {
+  children.forEach((child) => {
+    if (!accumulator[child]) {
+      accumulator[child] = []
+    }
+    accumulator[child].push(parent)
+  })
+  return accumulator
+}, {})
+
+function collectImpliedPermissions(permissionKey, visited = new Set()) {
+  if (visited.has(permissionKey)) {
+    return []
+  }
+  visited.add(permissionKey)
+  const directChildren = PERMISSION_IMPLICATIONS[permissionKey] || []
+  const nestedChildren = directChildren.flatMap((child) => collectImpliedPermissions(child, visited))
+  return [...new Set([...directChildren, ...nestedChildren])]
 }
 
 function toTitleCaseFromKey(key) {
@@ -1611,9 +1681,23 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
     const selected = (draftByRoleId[role.id] || []).filter((key) =>
       allowedPermissionKeySet.has(key),
     )
-    const next = selected.includes(permissionKey)
-      ? selected.filter((item) => item !== permissionKey)
-      : selected.concat(permissionKey)
+    const nextSet = new Set(selected)
+    const isEnabled = nextSet.has(permissionKey)
+    const impliedKeys = collectImpliedPermissions(permissionKey).filter((key) =>
+      allowedPermissionKeySet.has(key),
+    )
+
+    if (isEnabled) {
+      nextSet.delete(permissionKey)
+      ;(IMPLIED_BY[permissionKey] || [])
+        .filter((parent) => allowedPermissionKeySet.has(parent))
+        .forEach((parent) => nextSet.delete(parent))
+    } else {
+      nextSet.add(permissionKey)
+      impliedKeys.forEach((key) => nextSet.add(key))
+    }
+
+    const next = Array.from(nextSet)
 
     setDraftByRoleId((current) => ({ ...current, [role.id]: next }))
     setSavingByRoleId((current) => ({ ...current, [role.id]: true }))
@@ -1758,4 +1842,3 @@ function AdminTableSkeleton({ rows = 8, cols = 6 }) {
 }
 
 export default AdminControlCenterPage
-

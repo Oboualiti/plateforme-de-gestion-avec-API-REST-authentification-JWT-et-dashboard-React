@@ -5,10 +5,12 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.companies.models import Company
+from apps.audit_logs.models import AdminAuditLog
 from apps.entities.models import Entity
 from apps.permissions_app.constants import PERMISSION_DEFINITIONS
 from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import can_manage_any_users, get_effective_permission_keys
+from apps.requests_app.models import MainBranch, OperationalUnit, ServiceRequest
 from apps.roles.models import Role
 from apps.users.models import User
 
@@ -100,6 +102,60 @@ class RolePagePermissionTests(APITestCase):
         )
         self.user.team_leader = self.team_leader
         self.user.save(update_fields=["team_leader"])
+        branch_main = MainBranch.objects.create(name="WMN")
+        branch_other = MainBranch.objects.create(name="VMS")
+        self.unit_prod = OperationalUnit.objects.create(
+            main_branch=branch_main,
+            code=self.prod_entity.code,
+            name=self.prod_entity.name,
+            team_type=OperationalUnit.TeamType.PROD,
+        )
+        self.unit_prod_other = OperationalUnit.objects.create(
+            main_branch=branch_other,
+            code=self.other_company_entity.code,
+            name=self.other_company_entity.name,
+            team_type=OperationalUnit.TeamType.PROD,
+        )
+        self.unit_target = OperationalUnit.objects.create(
+            main_branch=branch_main,
+            code="WMN-SUP",
+            name="WMN-SUP",
+            team_type=OperationalUnit.TeamType.SUPPORT,
+        )
+        self.unit_target_other = OperationalUnit.objects.create(
+            main_branch=branch_other,
+            code="VMS-SUP",
+            name="VMS-SUP",
+            team_type=OperationalUnit.TeamType.SUPPORT,
+        )
+        ServiceRequest.objects.create(
+            request_number="REQ-RPT-0001",
+            title="Local request",
+            description="local",
+            category="INFO",
+            requester_user=self.user,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.prod_entity_other,
+            requester_unit=self.unit_prod,
+            target_unit=self.unit_target,
+            status=ServiceRequest.Status.NEW,
+            is_submitted_to_target=True,
+        )
+        ServiceRequest.objects.create(
+            request_number="REQ-RPT-0002",
+            title="Other company request",
+            description="other",
+            category="INFO",
+            requester_user=self.user_other_company,
+            company=self.other_company,
+            source_entity=self.other_company_entity,
+            target_entity=self.other_company_entity,
+            requester_unit=self.unit_prod_other,
+            target_unit=self.unit_target_other,
+            status=ServiceRequest.Status.NEW,
+            is_submitted_to_target=True,
+        )
 
         self.role_user = Role.objects.get(key="user")
         self.role_manager = Role.objects.get(key="manager")
@@ -306,6 +362,84 @@ class RolePagePermissionTests(APITestCase):
         self.assertEqual(entities_response.status_code, status.HTTP_200_OK)
         entity_ids = {item["id"] for item in entities_response.data.get("entities", [])}
         self.assertIn(create_entity_response.data["id"], entity_ids)
+
+    def test_manager_with_manage_company_entities_can_only_manage_own_company_entities(self):
+        self._allow_permission(self.manager, "manage_company_entities")
+        self.client.force_authenticate(user=self.manager)
+
+        create_own_company_response = self.client.post(
+            reverse("admin-entities"),
+            {
+                "name": "OWN COMPANY ENTITY",
+                "code": "OWN-ENT",
+                "entity_type": Entity.EntityType.SUPPORT,
+                "company": self.company.id,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_own_company_response.status_code, status.HTTP_201_CREATED)
+
+        create_other_company_response = self.client.post(
+            reverse("admin-entities"),
+            {
+                "name": "OTHER COMPANY ENTITY",
+                "code": "OTH-ENT",
+                "entity_type": Entity.EntityType.SUPPORT,
+                "company": self.other_company.id,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_other_company_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_manager_with_view_global_reports_gets_global_report_totals(self):
+        self._allow_permission(self.manager, "view_global_reports")
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.get(reverse("admin-reports"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        total = sum(int(item.get("total") or 0) for item in response.data.get("requests_by_status", []))
+        self.assertEqual(total, 2)
+
+    def test_audit_logs_permissions_gate_and_filter_modules(self):
+        AdminAuditLog.objects.create(actor=self.manager, module="roles", action="update_permissions")
+        AdminAuditLog.objects.create(actor=self.manager, module="users", action="update")
+        AdminAuditLog.objects.create(actor=self.user_other_company, module="roles", action="update_permissions")
+
+        for permission_key in [
+            "view_audit_logs",
+            "view_user_audit_logs",
+            "view_org_audit_logs",
+        ]:
+            permission = AppPermission.objects.get(key=permission_key)
+            UserPermissionOverride.objects.update_or_create(
+                user=self.manager,
+                permission=permission,
+                defaults={"is_allowed": False, "reason": "test-deny"},
+            )
+        self._allow_permission(self.manager, "view_access_audit_logs")
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.get(reverse("admin-audit-logs"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        modules = {item["module"] for item in response.data}
+        self.assertEqual(modules, {"roles"})
+
+    def test_audit_logs_denied_without_any_log_permissions(self):
+        for permission_key in [
+            "view_audit_logs",
+            "view_user_audit_logs",
+            "view_access_audit_logs",
+            "view_org_audit_logs",
+        ]:
+            permission = AppPermission.objects.get(key=permission_key)
+            UserPermissionOverride.objects.update_or_create(
+                user=self.manager,
+                permission=permission,
+                defaults={"is_allowed": False, "reason": "test-deny"},
+            )
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.get(reverse("admin-audit-logs"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_role_editability_matrix_patch_for_all_roles(self):
         url = lambda role_id: reverse("admin-role-detail", kwargs={"role_id": role_id})

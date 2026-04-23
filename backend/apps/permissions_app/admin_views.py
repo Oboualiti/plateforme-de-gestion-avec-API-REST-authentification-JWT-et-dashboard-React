@@ -66,9 +66,24 @@ ADMIN_MODULE_PERMISSIONS = {
     "requests": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
     "assignments": {"assign_request"},
     "status_tracking": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
-    "audit_logs": {"manage_users_global", "manage_users_company", "manage_users_entity", "view_all_requests"},
+    "audit_logs": {"view_audit_logs", "view_user_audit_logs", "view_access_audit_logs", "view_org_audit_logs"},
     "notifications": {"view_company_requests", "view_entity_requests", "view_team_requests", "view_own_requests"},
     "reports": {"view_global_reports", "view_company_reports", "view_entity_reports"},
+}
+
+AUDIT_LOG_MODULES_BY_PERMISSION = {
+    "view_user_audit_logs": {"users"},
+    "view_access_audit_logs": {"permissions", "roles"},
+    "view_org_audit_logs": {"companies", "entities", "hierarchy"},
+}
+
+ROLE_PERMISSION_IMPLICATIONS = {
+    "manage_users_global": {"view_users_global", "manage_users_company", "manage_users_entity"},
+    "manage_users_company": {"view_users_company", "manage_users_entity"},
+    "manage_users_entity": {"view_users_entity"},
+    "view_users_global": {"view_users_company", "view_users_entity"},
+    "view_users_company": {"view_users_entity"},
+    "comment_request": {"view_request_discussion"},
 }
 
 ROLE_DEFAULT_PERMISSION_KEYS = {
@@ -91,17 +106,22 @@ class AdminBaseView(APIView):
         return get_primary_role_key(user)
 
     def scoped_companies(self, user):
-        if has_any_permission(user, {"manage_companies", "view_all_companies"}):
+        if has_any_permission(user, {"manage_companies", "view_all_companies", "view_all_entities"}):
             return Company.objects.all()
-        if has_permission(user, "view_company_entities") and user.company_id:
+        if (
+            has_permission(user, "view_company_entities")
+            or has_permission(user, "manage_company_entities")
+        ) and user.company_id:
             return Company.objects.filter(id=user.company_id)
         if user.company_id:
             return Company.objects.filter(id=user.company_id)
         return Company.objects.none()
 
     def scoped_entities(self, user):
-        if has_permission(user, "manage_entities"):
+        if has_permission(user, "manage_entities") or has_permission(user, "view_all_entities"):
             return Entity.objects.select_related("company").all()
+        if has_permission(user, "manage_company_entities") and user.company_id:
+            return Entity.objects.select_related("company").filter(company_id=user.company_id)
         if has_permission(user, "view_company_entities") and user.company_id:
             return Entity.objects.select_related("company").filter(company_id=user.company_id)
         if user.entity_id:
@@ -117,14 +137,54 @@ class AdminBaseView(APIView):
     def scoped_requests(self, user):
         return get_visible_requests_queryset(user)
 
+    def scoped_report_requests(self, user):
+        queryset = ServiceRequest.objects.select_related(
+            "company",
+            "source_entity",
+            "target_entity",
+            "requester_user",
+            "requester_user__company",
+            "requester_user__entity",
+            "current_assignee",
+        )
+
+        if has_permission(user, "view_global_reports"):
+            return queryset
+
+        visibility_filter = Q(pk__in=[])
+        if has_permission(user, "view_company_reports") and user.company_id:
+            visibility_filter |= (
+                Q(company_id=user.company_id)
+                | Q(company__isnull=True, requester_user__company_id=user.company_id)
+            )
+        if has_permission(user, "view_entity_reports") and user.entity_id:
+            visibility_filter |= (
+                Q(source_entity_id=user.entity_id)
+                | Q(target_entity_id=user.entity_id)
+                | Q(requester_user__entity_id=user.entity_id)
+            )
+
+        if not visibility_filter.children:
+            return queryset.none()
+        return queryset.filter(visibility_filter).distinct()
+
     def scoped_audit_logs(self, user):
         queryset = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
-        if has_permission(user, "view_all_requests"):
+        if has_permission(user, "view_audit_logs"):
             return queryset
-        if has_permission(user, "view_company_requests") and user.company_id:
-            return queryset.filter(Q(actor__company_id=user.company_id) | Q(actor_id=user.id))
-        visible_actor_ids = list(self.scoped_users(user).values_list("id", flat=True))
-        return queryset.filter(actor_id__in=visible_actor_ids)
+
+        allowed_modules = set()
+        for permission_key, modules in AUDIT_LOG_MODULES_BY_PERMISSION.items():
+            if has_permission(user, permission_key):
+                allowed_modules.update(modules)
+
+        if not allowed_modules:
+            return queryset.none()
+
+        scoped_queryset = queryset.filter(module__in=allowed_modules)
+        if user.company_id:
+            return scoped_queryset.filter(Q(actor__company_id=user.company_id) | Q(actor_id=user.id))
+        return scoped_queryset.filter(actor_id=user.id)
 
 
 class AdminDashboardView(AdminBaseView):
@@ -277,10 +337,24 @@ class AdminEntitiesView(AdminBaseView):
         )
 
     def post(self, request):
-        if not has_permission(request.user, "manage_entities"):
+        can_manage_global_entities = has_permission(request.user, "manage_entities")
+        can_manage_company_entities = has_permission(request.user, "manage_company_entities")
+        if not (can_manage_global_entities or can_manage_company_entities):
             return Response({"detail": "You do not have permission to manage entities."}, status=status.HTTP_403_FORBIDDEN)
         serializer = EntityWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if can_manage_company_entities and not can_manage_global_entities:
+            if not request.user.company_id:
+                return Response(
+                    {"detail": "You must belong to a company to manage company entities."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            company = serializer.validated_data.get("company")
+            if not company or company.id != request.user.company_id:
+                return Response(
+                    {"detail": "You can only manage entities in your own company."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         entity = serializer.save()
         log_admin_action(actor=request.user, module="entities", action="create", target_model="Entity", target_id=entity.id, target_label=entity.name)
         return Response(EntityAdminSerializer(entity).data, status=status.HTTP_201_CREATED)
@@ -290,7 +364,9 @@ class AdminEntityDetailView(AdminBaseView):
     module_key = "entities"
 
     def patch(self, request, entity_id):
-        if not has_permission(request.user, "manage_entities"):
+        can_manage_global_entities = has_permission(request.user, "manage_entities")
+        can_manage_company_entities = has_permission(request.user, "manage_company_entities")
+        if not (can_manage_global_entities or can_manage_company_entities):
             return Response({"detail": "You do not have permission to manage entities."}, status=status.HTTP_403_FORBIDDEN)
         entity = self.scoped_entities(request.user).filter(id=entity_id).first()
         if entity is None:
@@ -300,6 +376,18 @@ class AdminEntityDetailView(AdminBaseView):
         
         serializer = EntityWriteSerializer(entity, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        if can_manage_company_entities and not can_manage_global_entities:
+            if not request.user.company_id:
+                return Response(
+                    {"detail": "You must belong to a company to manage company entities."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            company = serializer.validated_data.get("company")
+            if company and company.id != request.user.company_id:
+                return Response(
+                    {"detail": "You can only manage entities in your own company."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         serializer.save()
         
         if is_active is not None:
@@ -681,6 +769,21 @@ class AdminRolesView(AdminBaseView):
 class AdminRoleDetailView(AdminBaseView):
     module_key = "roles"
 
+    @staticmethod
+    def _expand_permission_keys(permission_keys):
+        expanded = set(permission_keys)
+        changed = True
+        while changed:
+            changed = False
+            for parent, children in ROLE_PERMISSION_IMPLICATIONS.items():
+                if parent not in expanded:
+                    continue
+                missing = set(children) - expanded
+                if missing:
+                    expanded.update(missing)
+                    changed = True
+        return sorted(expanded)
+
     def patch(self, request, role_id):
         role = Role.objects.filter(id=role_id).first()
         if role is None:
@@ -691,7 +794,7 @@ class AdminRoleDetailView(AdminBaseView):
             return Response({"detail": hierarchy_error or ROLE_PERMISSION_HIERARCHY_ERROR}, status=status.HTTP_403_FORBIDDEN)
         serializer = RolePermissionMappingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        permission_keys = serializer.validated_data["permission_keys"]
+        permission_keys = self._expand_permission_keys(serializer.validated_data["permission_keys"])
         company_id = serializer.validated_data.get("company_id")
         entity_id = serializer.validated_data.get("entity_id")
         entity_type = serializer.validated_data.get("entity_type")
@@ -1443,7 +1546,7 @@ class AdminReportsView(AdminBaseView):
     module_key = "reports"
 
     def get(self, request):
-        queryset = self.scoped_requests(request.user)
+        queryset = self.scoped_report_requests(request.user)
         volume_by_company = (
             queryset.annotate(
                 company_name=Coalesce("company__name", "requester_user__company__name", Value("No company"))
@@ -1466,4 +1569,3 @@ class AdminReportsView(AdminBaseView):
                 "trend_summaries": list(queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id")).order_by("-day")[:14]),
             }
         )
-

@@ -2,7 +2,7 @@ from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.exceptions import NotFound
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -32,6 +32,7 @@ from .import_export import (
 from .services import (
     ROLE_HIERARCHY,
     can_manage_any_users,
+    can_view_any_users,
     can_manage_target_user,
     can_view_target_user,
     has_permission,
@@ -48,6 +49,13 @@ class BaseManageUsersView(APIView):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
+        if request.method in SAFE_METHODS:
+            if can_view_any_users(request.user):
+                return
+            self.permission_denied(
+                request,
+                message="You do not have permission to view users.",
+            )
         if not can_manage_any_users(request.user):
             self.permission_denied(
                 request,
@@ -84,8 +92,14 @@ class GlobalSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _scoped_entities(self, user):
-        if has_permission(user, "view_all_companies") or has_permission(user, "manage_companies"):
+        if (
+            has_permission(user, "view_all_companies")
+            or has_permission(user, "manage_companies")
+            or has_permission(user, "view_all_entities")
+        ):
             return Entity.objects.filter(is_active=True).select_related("company")
+        if has_permission(user, "manage_company_entities") and user.company_id:
+            return Entity.objects.filter(is_active=True, company_id=user.company_id).select_related("company")
         if has_permission(user, "view_company_entities") and user.company_id:
             return Entity.objects.filter(is_active=True, company_id=user.company_id).select_related("company")
         if user.entity_id:
@@ -144,7 +158,7 @@ class GlobalSearchView(APIView):
         )
         user_results = []
         for item in users_qs:
-            can_open_admin_user = can_manage_any_users(request.user)
+            can_open_admin_user = can_view_any_users(request.user)
             link = f"/admin/users/{item.id}" if can_open_admin_user else "/profile"
             user_results.append(
                 {

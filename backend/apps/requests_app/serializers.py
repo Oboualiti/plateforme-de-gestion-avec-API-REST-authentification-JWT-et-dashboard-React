@@ -255,7 +255,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     )
     attachment = serializers.FileField(read_only=True)
     attachment_url = serializers.SerializerMethodField()
-    comments = RequestCommentSerializer(source="messages", many=True, read_only=True)
+    comments = serializers.SerializerMethodField()
     status_history = RequestHistorySerializer(many=True, read_only=True)
     assignment_history = RequestAssignmentEventSerializer(many=True, read_only=True)
     team_reassignment_history = RequestTeamReassignmentEventSerializer(
@@ -266,6 +266,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     can_update_status = serializers.SerializerMethodField()
     allowed_status_transitions = serializers.SerializerMethodField()
     can_reassign_target_team = serializers.SerializerMethodField()
+    can_view_request_discussion = serializers.SerializerMethodField()
     available_reassignment_targets = serializers.SerializerMethodField()
     potential_assignees = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
@@ -311,6 +312,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "can_update_status",
             "allowed_status_transitions",
             "can_reassign_target_team",
+            "can_view_request_discussion",
             "available_reassignment_targets",
             "potential_assignees",
             "is_stuck",
@@ -354,6 +356,19 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_reassign_target_team(self, obj):
         return bool(self.context.get("can_reassign_target_team"))
+
+    def get_can_view_request_discussion(self, obj):
+        return bool(self.context.get("can_view_request_discussion"))
+
+    def get_comments(self, obj):
+        if not self.context.get("can_view_request_discussion"):
+            return []
+        serializer = RequestCommentSerializer(
+            obj.messages.all(),
+            many=True,
+            context=self.context,
+        )
+        return serializer.data
 
     def get_available_reassignment_targets(self, obj):
         targets = self.context.get("available_reassignment_targets") or []
@@ -440,16 +455,17 @@ class RequestDetailSerializer(serializers.ModelSerializer):
                 }
             )
 
-        for item in obj.messages.all():
-            events.append(
-                {
-                    "kind": "comment",
-                    "timestamp": item.created_at,
-                    "title": "Comment added",
-                    "description": f"{item.sender.username} commented from {item.sender.entity.name if item.sender.entity_id else 'Unknown entity'}.",
-                    "note": item.message,
-                }
-            )
+        if self.context.get("can_view_request_discussion"):
+            for item in obj.messages.all():
+                events.append(
+                    {
+                        "kind": "comment",
+                        "timestamp": item.created_at,
+                        "title": "Comment added",
+                        "description": f"{item.sender.username} commented from {item.sender.entity.name if item.sender.entity_id else 'Unknown entity'}.",
+                        "note": item.message,
+                    }
+                )
 
         return sorted(events, key=lambda event: event["timestamp"], reverse=True)
 

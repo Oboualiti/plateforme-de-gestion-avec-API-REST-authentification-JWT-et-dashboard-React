@@ -267,6 +267,11 @@ class RequestAiSummaryView(OpenRouterMixin, APIView):
         service_request = load_request(request_id)
         if service_request is None or not get_visible_requests_queryset(request.user).filter(id=request_id).exists():
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not has_permission(request.user, "view_request_discussion"):
+            return Response(
+                {"detail": "You do not have permission to view request discussion."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         comments = list(service_request.messages.all().order_by("created_at"))
         status_events = list(service_request.status_history.all().order_by("changed_at"))
@@ -602,6 +607,16 @@ class RequestCommentCreateView(APIView):
         service_request = ServiceRequest.objects.filter(id=request_id).first()
         if service_request is None or not self.has_access(request.user, service_request):
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not has_permission(request.user, "view_request_discussion"):
+            return Response(
+                {"detail": "You do not have permission to view request discussion."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not has_permission(request.user, "comment_request"):
+            return Response(
+                {"detail": "You do not have permission to comment on requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = RequestCommentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         request_message = RequestMessage.objects.create(
@@ -1079,6 +1094,11 @@ def get_visible_requests_queryset(user):
         .order_by("-created_at")
     )
 
+    # Super Admin always has global visibility over requests, regardless of
+    # customized permission matrix toggles.
+    if get_primary_role_key(user) == "super_admin":
+        return base_queryset.distinct()
+
     effective_permissions = set(get_effective_permission_keys(user))
     visibility_filter = Q(pk__in=[])
 
@@ -1263,6 +1283,7 @@ def build_request_detail_context(request, service_request):
         "allowed_status_transitions": allowed_status_transitions,
         "can_assign_request": can_assign_request(request.user, service_request),
         "can_reassign_target_team": can_reassign_target_team(request.user, service_request),
+        "can_view_request_discussion": has_permission(request.user, "view_request_discussion"),
         "available_reassignment_targets": get_available_reassignment_targets(
             request.user, service_request
         ),
@@ -1414,6 +1435,10 @@ def apply_scope_filters(queryset, user, scope):
     # Operational/request-list scopes should only contain requests that were
     # submitted to target teams. This also covers the default "/requests"
     # case where scope is empty.
+    # Super Admin is global and can inspect all requests, including those not
+    # yet submitted to target teams.
+    if normalized_scope in {"", "all"} and get_primary_role_key(user) == "super_admin":
+        return queryset
     if normalized_scope in {"", "team", "entity", "company", "team-all", "all"}:
         return queryset.filter(is_submitted_to_target=True)
     return queryset

@@ -27,9 +27,21 @@ PERMISSION_DEFINITIONS = [
         "category": "organization",
     },
     {
+        "key": "manage_company_entities",
+        "name": "Manage Company Entities",
+        "description": "Create, edit, or delete entities within the same company.",
+        "category": "organization",
+    },
+    {
         "key": "view_company_entities",
         "name": "View Company Entities",
         "description": "View entities belonging to the current company.",
+        "category": "organization",
+    },
+    {
+        "key": "view_all_entities",
+        "name": "View All Entities",
+        "description": "View entities from all companies in read-only mode.",
         "category": "organization",
     },
     {
@@ -48,6 +60,24 @@ PERMISSION_DEFINITIONS = [
         "key": "manage_users_entity",
         "name": "Manage Users Entity",
         "description": "Manage users within the same entity.",
+        "category": "user_management",
+    },
+    {
+        "key": "view_users_global",
+        "name": "View Users Global",
+        "description": "View users globally.",
+        "category": "user_management",
+    },
+    {
+        "key": "view_users_company",
+        "name": "View Users Company",
+        "description": "View users within the same company.",
+        "category": "user_management",
+    },
+    {
+        "key": "view_users_entity",
+        "name": "View Users Entity",
+        "description": "View users within the same entity.",
         "category": "user_management",
     },
     {
@@ -111,6 +141,18 @@ PERMISSION_DEFINITIONS = [
         "category": "actions",
     },
     {
+        "key": "view_request_discussion",
+        "name": "View Request Discussion",
+        "description": "View request discussion messages.",
+        "category": "requests",
+    },
+    {
+        "key": "comment_request",
+        "name": "Comment Request",
+        "description": "Post messages in request discussions.",
+        "category": "requests",
+    },
+    {
         "key": "view_global_reports",
         "name": "View Global Reports",
         "description": "Access global reporting.",
@@ -164,9 +206,11 @@ PERMISSION_DEFINITIONS = [
 DEFAULT_ROLE_PERMISSION_MATRIX = {
     "super_admin": {definition["key"] for definition in PERMISSION_DEFINITIONS},
     "senior": {
-        "manage_entities",
+        "manage_company_entities",
         "view_company_entities",
         "manage_users_company",
+        "view_users_company",
+        "view_users_entity",
         "create_request",
         "view_company_requests",
         "view_entity_requests",
@@ -176,6 +220,8 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "assign_request",
         "resolve_request",
         "close_request",
+        "view_request_discussion",
+        "comment_request",
         "view_company_reports",
         "view_entity_reports",
         "export_data",
@@ -187,6 +233,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
     "manager": {
         "view_company_entities",
         "manage_users_entity",
+        "view_users_entity",
         "create_request",
         "view_entity_requests",
         "view_team_requests",
@@ -194,6 +241,8 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "approve_request",
         "assign_request",
         "close_request",
+        "view_request_discussion",
+        "comment_request",
         "view_entity_reports",
         "export_data",
         "view_user_audit_logs",
@@ -214,6 +263,8 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "create_request",
         "view_own_requests",
         "close_request",
+        "view_request_discussion",
+        "comment_request",
     },
 }
 

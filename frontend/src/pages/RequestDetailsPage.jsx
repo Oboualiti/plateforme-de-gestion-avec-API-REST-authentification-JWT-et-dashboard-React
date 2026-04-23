@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -122,8 +122,13 @@ function RequestDetailsPage() {
 
   const request = state.request
   const roleKeys = user?.role_keys || []
+  const effectivePermissionKeys = new Set(user?.effective_permission_keys || [])
   const isManager = roleKeys.includes('manager')
   const isSenior = roleKeys.includes('senior')
+  const canViewRequestDiscussion = Boolean(
+    request?.can_view_request_discussion ?? effectivePermissionKeys.has('view_request_discussion'),
+  )
+  const canCommentRequest = canViewRequestDiscussion && effectivePermissionKeys.has('comment_request')
   const canChangeStatus = Boolean(request?.can_update_status)
   const allowedStatusTransitions = request?.allowed_status_transitions || []
   const statusOptions = useMemo(() => {
@@ -184,6 +189,12 @@ function RequestDetailsPage() {
     }
   }, [lastCommentId, activeTab])
 
+  useEffect(() => {
+    if (!canViewRequestDiscussion && activeTab === 'comments') {
+      setActiveTab('history')
+    }
+  }, [canViewRequestDiscussion, activeTab])
+
   async function handleAction(promise) {
     setActionState({ busy: true, error: '' })
     try {
@@ -202,6 +213,7 @@ function RequestDetailsPage() {
 
   async function submitComment(e) {
     e.preventDefault()
+    if (!canCommentRequest) return
     if (!comment.trim() && !commentAttachment) return
     const formData = new FormData()
     formData.append('message', comment)
@@ -341,9 +353,11 @@ function RequestDetailsPage() {
           <article className="surface-card overflow-hidden">
             <div className="flex border-b border-border bg-muted/5">
               <button 
-                onClick={() => setActiveTab('comments')}
+                onClick={() => canViewRequestDiscussion && setActiveTab('comments')}
+                disabled={!canViewRequestDiscussion}
                 className={cn("flex-1 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2", 
-                  activeTab === 'comments' ? "border-primary text-foreground bg-card" : "border-transparent text-muted-foreground hover:text-foreground")}
+                  activeTab === 'comments' ? "border-primary text-foreground bg-card" : "border-transparent text-muted-foreground hover:text-foreground",
+                  !canViewRequestDiscussion && "cursor-not-allowed opacity-50 hover:text-muted-foreground")}
               >
                 Discussion ({comments.length})
               </button>
@@ -359,6 +373,12 @@ function RequestDetailsPage() {
             <div className="p-8">
               {activeTab === 'comments' ? (
                 <div className="space-y-8">
+                  {!canViewRequestDiscussion ? (
+                    <div className="py-8 text-center text-xs font-medium text-muted-foreground">
+                      You do not have permission to view this discussion.
+                    </div>
+                  ) : (
+                    <>
                   <div ref={discussionRef} className="max-h-[500px] overflow-y-auto space-y-6 pr-4 custom-scrollbar">
                     {comments.length === 0 ? (
                       <div className="py-12 text-center text-muted-foreground">
@@ -378,7 +398,7 @@ function RequestDetailsPage() {
                               {item.message}
                             </div>
                             <div className="mt-1 text-[10px] text-muted-foreground">
-                               {item.sender_entity_name ? `${item.sender_entity_name} • ` : ''}{item.sender_role_keys?.join(', ')}
+                               {item.sender_entity_name ? `${item.sender_entity_name} â€¢ ` : ''}{item.sender_role_keys?.join(', ')}
                             </div>
                           </div>
                         </div>
@@ -386,30 +406,38 @@ function RequestDetailsPage() {
                     )}
                   </div>
 
-                  <form onSubmit={submitComment} className="mt-8 border-t border-border pt-8">
-                    <textarea
-                      value={comment}
-                      onChange={e => setComment(e.target.value)}
-                      placeholder="Type your message..."
-                      className="w-full min-h-[100px] rounded-lg border-2 border-ink bg-card p-4 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none transition-all placeholder:text-muted-foreground"
-                    />
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                         <input 
-                          type="file" 
-                          id="file-upload" 
-                          className="hidden" 
-                          onChange={e => setCommentAttachment(e.target.files?.[0])}
-                         />
-                         <label htmlFor="file-upload" className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
-                           {commentAttachment ? `📎 ${commentAttachment.name}` : 'Attach File'}
-                         </label>
+                  {canCommentRequest ? (
+                    <form onSubmit={submitComment} className="mt-8 border-t border-border pt-8">
+                      <textarea
+                        value={comment}
+                        onChange={e => setComment(e.target.value)}
+                        placeholder="Type your message..."
+                        className="w-full min-h-[100px] rounded-lg border-2 border-ink bg-card p-4 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none transition-all placeholder:text-muted-foreground"
+                      />
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                           <input 
+                            type="file" 
+                            id="file-upload" 
+                            className="hidden" 
+                            onChange={e => setCommentAttachment(e.target.files?.[0])}
+                           />
+                           <label htmlFor="file-upload" className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
+                             {commentAttachment ? `📎 ${commentAttachment.name}` : 'Attach File'}
+                           </label>
+                        </div>
+                        <Button size="sm" type="submit" disabled={actionState.busy || (!comment.trim() && !commentAttachment)}>
+                          Post Response
+                        </Button>
                       </div>
-                      <Button size="sm" type="submit" disabled={actionState.busy || (!comment.trim() && !commentAttachment)}>
-                        Post Response
-                      </Button>
+                    </form>
+                  ) : (
+                    <div className="mt-8 border-t border-border pt-6 text-xs font-medium text-muted-foreground">
+                      You do not have permission to comment in this discussion.
                     </div>
-                  </form>
+                  )}
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
@@ -626,3 +654,4 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
+
