@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db.models.deletion import ProtectedError
 from django.db.models import Count, Q, Value
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
@@ -300,11 +301,36 @@ class AdminCompanyDetailView(AdminBaseView):
         serializer.save()
         
         if is_active is not None:
+            Entity.objects.filter(company_id=company_id).update(is_active=is_active)
             User.objects.filter(company_id=company_id).update(is_active=is_active)
         
         company.refresh_from_db()
         log_admin_action(actor=request.user, module="companies", action="update", target_model="Company", target_id=company.id, target_label=company.name)
         return Response(CompanyAdminSerializer(company).data)
+
+    def delete(self, request, company_id):
+        if not has_permission(request.user, "manage_companies"):
+            return Response({"detail": "You do not have permission to manage companies."}, status=status.HTTP_403_FORBIDDEN)
+        company = self.scoped_companies(request.user).filter(id=company_id).first()
+        if company is None:
+            return Response({"detail": "Company not found."}, status=status.HTTP_404_NOT_FOUND)
+        company_name = company.name
+        try:
+            company.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "Cannot remove company because it is linked to existing requests or protected records."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        log_admin_action(
+            actor=request.user,
+            module="companies",
+            action="delete",
+            target_model="Company",
+            target_id=company_id,
+            target_label=company_name,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AdminEntitiesView(AdminBaseView):
@@ -415,6 +441,38 @@ class AdminEntityDetailView(AdminBaseView):
         entity.refresh_from_db()
         log_admin_action(actor=request.user, module="entities", action="update", target_model="Entity", target_id=entity.id, target_label=entity.name)
         return Response(EntityAdminSerializer(entity).data)
+
+    def delete(self, request, entity_id):
+        can_manage_global_entities = has_permission(request.user, "manage_entities")
+        can_manage_company_entities = has_permission(request.user, "manage_company_entities")
+        if not (can_manage_global_entities or can_manage_company_entities):
+            return Response({"detail": "You do not have permission to manage entities."}, status=status.HTTP_403_FORBIDDEN)
+        entity = self.scoped_entities(request.user).filter(id=entity_id).first()
+        if entity is None:
+            return Response({"detail": "Entity not found."}, status=status.HTTP_404_NOT_FOUND)
+        if can_manage_company_entities and not can_manage_global_entities:
+            if not request.user.company_id or entity.company_id != request.user.company_id:
+                return Response(
+                    {"detail": "You can only manage entities in your own company."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        entity_name = entity.name
+        try:
+            entity.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "Cannot remove entity because it is linked to existing requests or protected records."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        log_admin_action(
+            actor=request.user,
+            module="entities",
+            action="delete",
+            target_model="Entity",
+            target_id=entity_id,
+            target_label=entity_name,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class AdminHierarchyView(AdminBaseView):
