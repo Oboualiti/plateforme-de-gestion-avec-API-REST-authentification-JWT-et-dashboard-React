@@ -184,7 +184,7 @@ function AppRoutes() {
           <Route path="/admin/notifications" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/hierarchy" element={<HierarchyPage />} />
           <Route path="/admin/status-tracking" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/audit-logs" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/audit-logs" element={<Navigate to="/admin/audit-logs/users" replace />} />
           <Route path="/admin/audit-logs/:category" element={<AdminControlCenterPage />} />
           <Route path="/admin/users/create" element={<CreateManagedUserPage />} />
           <Route path="/admin/users" element={<UsersPage />} />

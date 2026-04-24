@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+﻿import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -229,6 +229,13 @@ const auditGroups = [
   { key: 'organization', title: 'Organization logs', modules: ['companies', 'entities', 'hierarchy'] },
 ]
 
+const auditModulesByCategory = {
+  users: ['users'],
+  access: ['permissions', 'roles'],
+  organization: ['companies', 'entities', 'hierarchy'],
+  all: [],
+}
+
 function resolveAuditGroupKey(module) {
   const matched = auditGroups.find((group) => group.modules.includes(module))
   return matched ? matched.key : 'other'
@@ -331,6 +338,10 @@ function AdminControlCenterPage() {
     setState({ loading: true, error: '', data: null, sectionKey })
     try {
       let requestConfig
+      if (sectionKey === 'audit-logs' && auditCategoryKey) {
+        const modules = auditModulesByCategory[auditCategoryKey] || []
+        requestConfig = modules.length ? { params: { modules: modules.join(',') } } : undefined
+      }
       if (sectionKey === 'roles') {
         const params = {}
         if (isSuperAdmin && roleScopeFilter.company_id) {
@@ -1170,7 +1181,14 @@ function AdminControlCenterPage() {
         auditCategoryKey === 'all'
           ? (hasAuditCategoryAccess('all') ? { key: 'all', title: 'All audit logs', rows: allRows } : null)
           : auditCategoryKey
-            ? (hasAuditCategoryAccess(auditCategoryKey) ? grouped[auditCategoryKey] : null)
+            ? (hasAuditCategoryAccess(auditCategoryKey)
+                ? (grouped[auditCategoryKey]
+                    || {
+                      key: auditCategoryKey,
+                      title: auditGroups.find((group) => group.key === auditCategoryKey)?.title || 'Audit logs',
+                      rows: [],
+                    })
+                : null)
             : null
       )
 
@@ -1219,6 +1237,11 @@ function AdminControlCenterPage() {
                     <span className="font-bold text-sm">{formatAuditAction(item.action)}</span>
                   </div>
                   <div className="text-sm font-medium mb-1">{item.target_label || item.target_model || '-'}</div>
+                  <div className="text-xs text-muted-foreground mb-1">
+                    {(item.target_company_name || item.target_entity_name)
+                      ? `${item.target_company_name || '-'}${item.target_entity_name ? ` / ${item.target_entity_name}` : ''}`
+                      : '-'}
+                  </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-3">
                     <span className="font-semibold text-foreground/70">{item.actor_name || '-'}</span>
                     <Separator orientation="vertical" className="h-3" />
@@ -1543,6 +1566,10 @@ const permissionMetaByKey = {
   view_user_audit_logs: { title: 'View User Logs', description: 'View user management audit logs', section: 'logs' },
   view_access_audit_logs: { title: 'View Access Logs', description: 'View role and permission change logs', section: 'logs' },
   view_org_audit_logs: { title: 'View Organization Logs', description: 'View company and entity change logs', section: 'logs' },
+  view_logs_scope_team: { title: 'Team Log Scope', description: 'Logs limited to team scope', section: 'logs' },
+  view_logs_scope_entity: { title: 'Entity Log Scope', description: 'Logs limited to entity scope', section: 'logs' },
+  view_logs_scope_company: { title: 'Company Log Scope', description: 'Logs limited to company scope', section: 'logs' },
+  view_logs_scope_global: { title: 'Global Log Scope', description: 'Logs visible across all companies', section: 'logs' },
 }
 
 const permissionSectionOrder = ['organization', 'access_control', 'requests', 'reports', 'logs', 'other']
@@ -1554,6 +1581,17 @@ const permissionSectionTitle = {
   logs: 'Logs',
   other: 'Other',
 }
+
+const LOG_PERMISSION_ORDER = [
+  'view_audit_logs',
+  'view_logs_scope_global',
+  'view_logs_scope_company',
+  'view_logs_scope_entity',
+  'view_logs_scope_team',
+  'view_org_audit_logs',
+  'view_access_audit_logs',
+  'view_user_audit_logs',
+]
 
 const PERMISSION_IMPLICATIONS = {
   manage_companies: [
@@ -1582,6 +1620,9 @@ const PERMISSION_IMPLICATIONS = {
   view_global_reports: ['view_company_reports', 'view_entity_reports'],
   view_company_reports: ['view_entity_reports'],
   comment_request: ['view_request_discussion'],
+  view_logs_scope_global: ['view_logs_scope_company', 'view_logs_scope_entity', 'view_logs_scope_team'],
+  view_logs_scope_company: ['view_logs_scope_entity', 'view_logs_scope_team'],
+  view_logs_scope_entity: ['view_logs_scope_team'],
 }
 
 const IMPLIED_BY = Object.entries(PERMISSION_IMPLICATIONS).reduce((accumulator, [parent, children]) => {
@@ -1604,6 +1645,30 @@ function collectImpliedPermissions(permissionKey, visited = new Set()) {
   return [...new Set([...directChildren, ...nestedChildren])]
 }
 
+function applyLogScopePolicyForRole(roleKey, permissionKeys) {
+  const next = new Set(permissionKeys || [])
+
+  if (next.has('view_logs_scope_global')) {
+    next.add('view_logs_scope_company')
+    next.add('view_logs_scope_entity')
+    next.add('view_logs_scope_team')
+  } else if (next.has('view_logs_scope_company')) {
+    next.add('view_logs_scope_entity')
+    next.add('view_logs_scope_team')
+  } else if (next.has('view_logs_scope_entity')) {
+    next.add('view_logs_scope_team')
+  }
+
+  if (roleKey === 'senior' && (next.has('view_logs_scope_entity') || next.has('view_logs_scope_team'))) {
+    next.add('view_logs_scope_company')
+  }
+  if (roleKey === 'manager' && next.has('view_logs_scope_team')) {
+    next.add('view_logs_scope_entity')
+  }
+
+  return Array.from(next)
+}
+
 function toTitleCaseFromKey(key) {
   return key
     .split('_')
@@ -1613,15 +1678,32 @@ function toTitleCaseFromKey(key) {
 }
 
 function buildPermissionRows(allPermissionKeys) {
-  return (allPermissionKeys || []).map((key) => {
-    const metadata = permissionMetaByKey[key]
-    return {
-      key,
-      title: metadata?.title || toTitleCaseFromKey(key),
-      description: metadata?.description || key.replaceAll('_', ' '),
-      section: metadata?.section || 'other',
-    }
-  })
+  const sectionIndex = (section) => {
+    const idx = permissionSectionOrder.indexOf(section)
+    return idx === -1 ? permissionSectionOrder.length : idx
+  }
+
+  return (allPermissionKeys || [])
+    .map((key) => {
+      const metadata = permissionMetaByKey[key]
+      return {
+        key,
+        title: metadata?.title || toTitleCaseFromKey(key),
+        description: metadata?.description || key.replaceAll('_', ' '),
+        section: metadata?.section || 'other',
+      }
+    })
+    .sort((a, b) => {
+      if (a.section !== b.section) return sectionIndex(a.section) - sectionIndex(b.section)
+      if (a.section === 'logs') {
+        const ai = LOG_PERMISSION_ORDER.indexOf(a.key)
+        const bi = LOG_PERMISSION_ORDER.indexOf(b.key)
+        const aOrder = ai === -1 ? 999 : ai
+        const bOrder = bi === -1 ? 999 : bi
+        if (aOrder !== bOrder) return aOrder - bOrder
+      }
+      return a.title.localeCompare(b.title)
+    })
 }
 
 function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPermissionKeys, isSuperAdmin, onSaveRole, onRestoreRole }) {
@@ -1666,10 +1748,11 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
   }
 
   function buildSavePayload(role, permissionKeys) {
+    const normalized = applyLogScopePolicyForRole(role.key, permissionKeys)
     if (isSuperAdmin) {
-      return permissionKeys.filter((key) => allowedPermissionKeySet.has(key))
+      return normalized.filter((key) => allowedPermissionKeySet.has(key))
     }
-    return permissionKeys.filter(
+    return normalized.filter(
       (key) => allowedPermissionKeySet.has(key) && !getPermissionBlockReason(role.key, key),
     )
   }
@@ -1684,7 +1767,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
     const nextSet = new Set(selected)
     const isEnabled = nextSet.has(permissionKey)
     const impliedKeys = collectImpliedPermissions(permissionKey).filter((key) =>
-      allowedPermissionKeySet.has(key),
+      allowedPermissionKeySet.has(key) && !getPermissionBlockReason(role.key, key),
     )
 
     if (isEnabled) {
@@ -1697,7 +1780,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
       impliedKeys.forEach((key) => nextSet.add(key))
     }
 
-    const next = Array.from(nextSet)
+    const next = applyLogScopePolicyForRole(role.key, Array.from(nextSet))
 
     setDraftByRoleId((current) => ({ ...current, [role.id]: next }))
     setSavingByRoleId((current) => ({ ...current, [role.id]: true }))
@@ -1842,3 +1925,5 @@ function AdminTableSkeleton({ rows = 8, cols = 6 }) {
 }
 
 export default AdminControlCenterPage
+
+

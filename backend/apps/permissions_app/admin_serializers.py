@@ -228,10 +228,93 @@ class StatusTrackingSerializer(serializers.ModelSerializer):
 
 class AuditLogSerializer(serializers.ModelSerializer):
     actor_name = serializers.CharField(source="actor.username", read_only=True)
+    actor_company_name = serializers.SerializerMethodField()
+    actor_entity_name = serializers.SerializerMethodField()
+    target_company_name = serializers.SerializerMethodField()
+    target_entity_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AdminAuditLog
-        fields = ["id", "module", "action", "target_model", "target_id", "target_label", "metadata", "actor_name", "created_at"]
+        fields = [
+            "id",
+            "module",
+            "action",
+            "target_model",
+            "target_id",
+            "target_label",
+            "metadata",
+            "actor_name",
+            "actor_company_name",
+            "actor_entity_name",
+            "target_company_name",
+            "target_entity_name",
+            "created_at",
+        ]
+
+    def _parse_target_id(self, obj):
+        try:
+            return int(obj.target_id)
+        except (TypeError, ValueError):
+            return None
+
+    def get_actor_company_name(self, obj):
+        actor = getattr(obj, "actor", None)
+        if not actor or not getattr(actor, "company", None):
+            return ""
+        return actor.company.name or ""
+
+    def get_actor_entity_name(self, obj):
+        actor = getattr(obj, "actor", None)
+        if not actor or not getattr(actor, "entity", None):
+            return ""
+        return actor.entity.name or ""
+
+    def get_target_company_name(self, obj):
+        target_model = (obj.target_model or "").lower()
+        target_id = self._parse_target_id(obj)
+
+        metadata_company_id = obj.metadata.get("company_id") if isinstance(obj.metadata, dict) else None
+        if metadata_company_id:
+            company = Company.objects.filter(id=metadata_company_id).only("name").first()
+            if company:
+                return company.name or ""
+
+        if target_model == "company" and target_id:
+            company = Company.objects.filter(id=target_id).only("name").first()
+            return company.name if company else ""
+
+        if target_model == "entity" and target_id:
+            entity = Entity.objects.select_related("company").filter(id=target_id).only("company__name").first()
+            if entity and entity.company:
+                return entity.company.name or ""
+
+        if target_model == "user" and target_id:
+            target_user = User.objects.select_related("company").filter(id=target_id).only("company__name").first()
+            if target_user and target_user.company:
+                return target_user.company.name or ""
+
+        return ""
+
+    def get_target_entity_name(self, obj):
+        target_model = (obj.target_model or "").lower()
+        target_id = self._parse_target_id(obj)
+
+        metadata_entity_id = obj.metadata.get("entity_id") if isinstance(obj.metadata, dict) else None
+        if metadata_entity_id:
+            entity = Entity.objects.filter(id=metadata_entity_id).only("name").first()
+            if entity:
+                return entity.name or ""
+
+        if target_model == "entity" and target_id:
+            entity = Entity.objects.filter(id=target_id).only("name").first()
+            return entity.name if entity else ""
+
+        if target_model == "user" and target_id:
+            target_user = User.objects.select_related("entity").filter(id=target_id).only("entity__name").first()
+            if target_user and target_user.entity:
+                return target_user.entity.name or ""
+
+        return ""
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

@@ -18,6 +18,52 @@ const SECTION_TITLE = {
   other: 'Other',
 }
 
+const LOG_PERMISSION_ORDER = [
+  'view_audit_logs',
+  'view_logs_scope_global',
+  'view_logs_scope_company',
+  'view_logs_scope_entity',
+  'view_logs_scope_team',
+  'view_org_audit_logs',
+  'view_access_audit_logs',
+  'view_user_audit_logs',
+]
+
+const PERMISSION_IMPLICATIONS = {
+  manage_companies: [
+    'manage_entities',
+    'manage_company_entities',
+    'view_all_companies',
+    'view_all_entities',
+    'view_company_entities',
+  ],
+  manage_company_entities: ['view_company_entities'],
+  manage_users_global: ['view_users_global', 'manage_users_company', 'manage_users_entity'],
+  manage_users_company: ['view_users_company', 'manage_users_entity'],
+  manage_users_entity: ['view_users_entity'],
+  view_users_global: ['view_users_company', 'view_users_entity'],
+  view_users_company: ['view_users_entity'],
+  manage_entities: ['manage_company_entities'],
+  view_all_companies: ['view_all_entities', 'view_company_entities'],
+  view_all_entities: ['view_company_entities'],
+  view_all_requests: ['view_company_requests', 'view_entity_requests', 'view_own_requests', 'view_team_requests'],
+  view_company_requests: ['view_entity_requests'],
+  view_global_reports: ['view_company_reports', 'view_entity_reports'],
+  view_company_reports: ['view_entity_reports'],
+  comment_request: ['view_request_discussion'],
+  view_logs_scope_global: ['view_logs_scope_company', 'view_logs_scope_entity', 'view_logs_scope_team'],
+  view_logs_scope_company: ['view_logs_scope_entity', 'view_logs_scope_team'],
+  view_logs_scope_entity: ['view_logs_scope_team'],
+}
+
+const IMPLIED_BY = Object.entries(PERMISSION_IMPLICATIONS).reduce((accumulator, [parent, children]) => {
+  children.forEach((child) => {
+    if (!accumulator[child]) accumulator[child] = []
+    accumulator[child].push(parent)
+  })
+  return accumulator
+}, {})
+
 const ROLE_LEVEL_FALLBACK = {
   super_admin: 7,
   senior: 6,
@@ -49,6 +95,13 @@ const PERMISSION_META_BY_KEY = {
   view_company_reports: { title: 'View Company Reports', description: 'Access company reporting', section: 'monitoring' },
   view_entity_reports: { title: 'View Entity Reports', description: 'Access entity reporting', section: 'monitoring' },
   export_data: { title: 'Export Data', description: 'Export monitoring data', section: 'monitoring' },
+  view_user_audit_logs: { title: 'View User Logs', description: 'View user management audit logs', section: 'monitoring' },
+  view_access_audit_logs: { title: 'View Access Logs', description: 'View role and permission change logs', section: 'monitoring' },
+  view_org_audit_logs: { title: 'View Organization Logs', description: 'View company and entity change logs', section: 'monitoring' },
+  view_logs_scope_team: { title: 'Team Log Scope', description: 'Logs limited to team scope', section: 'monitoring' },
+  view_logs_scope_entity: { title: 'Entity Log Scope', description: 'Logs limited to entity scope', section: 'monitoring' },
+  view_logs_scope_company: { title: 'Company Log Scope', description: 'Logs limited to company scope', section: 'monitoring' },
+  view_logs_scope_global: { title: 'Global Log Scope', description: 'Logs visible across all companies', section: 'monitoring' },
 }
 
 function toScopePayload(searchParams) {
@@ -70,16 +123,65 @@ function toTitleCaseFromKey(key) {
     .join(' ')
 }
 
+function collectImpliedPermissions(permissionKey, visited = new Set()) {
+  if (visited.has(permissionKey)) return []
+  visited.add(permissionKey)
+  const directChildren = PERMISSION_IMPLICATIONS[permissionKey] || []
+  const nestedChildren = directChildren.flatMap((child) => collectImpliedPermissions(child, visited))
+  return [...new Set([...directChildren, ...nestedChildren])]
+}
+
+function applyLogScopePolicyForRole(roleKey, permissionKeys) {
+  const next = new Set(permissionKeys || [])
+
+  if (next.has('view_logs_scope_global')) {
+    next.add('view_logs_scope_company')
+    next.add('view_logs_scope_entity')
+    next.add('view_logs_scope_team')
+  } else if (next.has('view_logs_scope_company')) {
+    next.add('view_logs_scope_entity')
+    next.add('view_logs_scope_team')
+  } else if (next.has('view_logs_scope_entity')) {
+    next.add('view_logs_scope_team')
+  }
+
+  if (roleKey === 'senior' && (next.has('view_logs_scope_entity') || next.has('view_logs_scope_team'))) {
+    next.add('view_logs_scope_company')
+  }
+  if (roleKey === 'manager' && next.has('view_logs_scope_team')) {
+    next.add('view_logs_scope_entity')
+  }
+
+  return Array.from(next)
+}
+
 function buildPermissionRows(permissionKeys) {
-  return (permissionKeys || []).map((key) => {
-    const metadata = PERMISSION_META_BY_KEY[key]
-    return {
-      key,
-      title: metadata?.title || toTitleCaseFromKey(key),
-      description: metadata?.description || key.replaceAll('_', ' '),
-      section: metadata?.section || 'other',
-    }
-  })
+  const sectionIndex = (section) => {
+    const idx = SECTION_ORDER.indexOf(section)
+    return idx === -1 ? SECTION_ORDER.length : idx
+  }
+
+  return (permissionKeys || [])
+    .map((key) => {
+      const metadata = PERMISSION_META_BY_KEY[key]
+      return {
+        key,
+        title: metadata?.title || toTitleCaseFromKey(key),
+        description: metadata?.description || key.replaceAll('_', ' '),
+        section: metadata?.section || 'other',
+      }
+    })
+    .sort((a, b) => {
+      if (a.section !== b.section) return sectionIndex(a.section) - sectionIndex(b.section)
+      if (a.section === 'monitoring') {
+        const ai = LOG_PERMISSION_ORDER.indexOf(a.key)
+        const bi = LOG_PERMISSION_ORDER.indexOf(b.key)
+        const aOrder = ai === -1 ? 999 : ai
+        const bOrder = bi === -1 ? 999 : bi
+        if (aOrder !== bOrder) return aOrder - bOrder
+      }
+      return a.title.localeCompare(b.title)
+    })
 }
 
 function groupRowsBySection(rows) {
@@ -176,9 +278,19 @@ function CustomizeRolePermissionEditorPage() {
   function togglePermission(permissionKey) {
     const blockReason = getBlockReason(permissionKey)
     if (blockReason || saving) return
+
     setDraft((current) => {
-      if (current.includes(permissionKey)) return current.filter((item) => item !== permissionKey)
-      return current.concat(permissionKey)
+      const nextSet = new Set(current)
+      if (nextSet.has(permissionKey)) {
+        nextSet.delete(permissionKey)
+        ;(IMPLIED_BY[permissionKey] || []).forEach((parent) => nextSet.delete(parent))
+      } else {
+        nextSet.add(permissionKey)
+        collectImpliedPermissions(permissionKey).forEach((childKey) => {
+          if (!getBlockReason(childKey)) nextSet.add(childKey)
+        })
+      }
+      return applyLogScopePolicyForRole(selectedRole?.key, Array.from(nextSet))
     })
   }
 
@@ -187,7 +299,7 @@ function CustomizeRolePermissionEditorPage() {
     setSaving(true)
     setMessage('')
     try {
-      const selected = draft.filter((key) => allowedPermissionSet.has(key))
+      const selected = applyLogScopePolicyForRole(selectedRole?.key, draft).filter((key) => allowedPermissionSet.has(key))
       const safeSelection = isSuperAdmin ? selected : selected.filter((key) => effectivePermissionKeys.has(key))
       await api.patch(`/admin/roles/${selectedRole.id}/defaults/`, { permission_keys: safeSelection })
       setSaved(safeSelection)

@@ -1,4 +1,4 @@
-from datetime import timedelta
+﻿from datetime import timedelta
 
 from django.db.models import Count, Q, Value
 from django.db.models.functions import Coalesce, TruncDate
@@ -91,6 +91,32 @@ ROLE_DEFAULT_PERMISSION_KEYS = {
     for role_key in ROLE_HIERARCHY.keys()
 }
 
+LOG_SCOPE_GLOBAL_KEY = "view_logs_scope_global"
+LOG_SCOPE_COMPANY_KEY = "view_logs_scope_company"
+LOG_SCOPE_ENTITY_KEY = "view_logs_scope_entity"
+LOG_SCOPE_TEAM_KEY = "view_logs_scope_team"
+
+
+def normalize_log_scope_permission_keys(role_key, permission_keys):
+    keys = set(permission_keys or [])
+
+    if LOG_SCOPE_GLOBAL_KEY in keys:
+        keys.update({LOG_SCOPE_COMPANY_KEY, LOG_SCOPE_ENTITY_KEY, LOG_SCOPE_TEAM_KEY})
+    elif LOG_SCOPE_COMPANY_KEY in keys:
+        keys.update({LOG_SCOPE_ENTITY_KEY, LOG_SCOPE_TEAM_KEY})
+    elif LOG_SCOPE_ENTITY_KEY in keys:
+        keys.add(LOG_SCOPE_TEAM_KEY)
+
+    # Role-specific guardrails for realistic delegation scope.
+    if role_key == "senior" and (LOG_SCOPE_ENTITY_KEY in keys or LOG_SCOPE_TEAM_KEY in keys):
+        keys.add(LOG_SCOPE_COMPANY_KEY)
+    if role_key == "manager" and LOG_SCOPE_TEAM_KEY in keys:
+        keys.add(LOG_SCOPE_ENTITY_KEY)
+
+    return sorted(keys)
+
+
+HIDDEN_ROLE_PERMISSION_KEYS = {"view_audit_logs"}
 def get_saved_default_permission_keys(role):
     custom_keys = set(
         RoleDefaultPermission.objects.filter(role=role).values_list("permission__key", flat=True)
@@ -184,28 +210,77 @@ class AdminBaseView(APIView):
         return queryset.filter(visibility_filter).distinct()
 
     def scoped_audit_logs(self, user):
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"scoped_audit_logs called for user {user.username}")
-        logger.info(f"Permissions: {get_effective_permission_keys(user)}")
-        logger.info(f"Has view_audit_logs: {has_permission(user, 'view_audit_logs')}")
-        
-        queryset = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
-        if has_permission(user, "view_audit_logs"):
-            return queryset
+        queryset = AdminAuditLog.objects.select_related("actor", "actor__company", "actor__entity").order_by("-created_at")
+
+        effective = set(get_effective_permission_keys(user))
 
         allowed_modules = set()
-        for permission_key, modules in AUDIT_LOG_MODULES_BY_PERMISSION.items():
-            if has_permission(user, permission_key):
+        if "view_audit_logs" in effective:
+            for modules in AUDIT_LOG_MODULES_BY_PERMISSION.values():
                 allowed_modules.update(modules)
+        else:
+            if "view_user_audit_logs" in effective:
+                allowed_modules.update(AUDIT_LOG_MODULES_BY_PERMISSION["view_user_audit_logs"])
+            if "view_access_audit_logs" in effective:
+                allowed_modules.update(AUDIT_LOG_MODULES_BY_PERMISSION["view_access_audit_logs"])
+            if "view_org_audit_logs" in effective:
+                allowed_modules.update(AUDIT_LOG_MODULES_BY_PERMISSION["view_org_audit_logs"])
 
         if not allowed_modules:
             return queryset.none()
 
         scoped_queryset = queryset.filter(module__in=allowed_modules)
-        if user.company_id:
-            return scoped_queryset.filter(Q(actor__company_id=user.company_id) | Q(actor_id=user.id))
-        return scoped_queryset.filter(actor_id=user.id)
+
+        # Scope is permission-driven, not role-driven.
+        if "view_logs_scope_global" in effective:
+            return scoped_queryset
+
+        if "view_logs_scope_company" in effective and user.company_id:
+            company_user_ids = list(User.objects.filter(company_id=user.company_id).values_list("id", flat=True))
+            company_user_ids_str = [str(item) for item in company_user_ids]
+            company_entity_ids = list(Entity.objects.filter(company_id=user.company_id).values_list("id", flat=True))
+            company_entity_ids_str = [str(item) for item in company_entity_ids]
+            return scoped_queryset.filter(
+                Q(target_model="User", target_id__in=company_user_ids_str)
+                | Q(target_model="Company", target_id=str(user.company_id))
+                | Q(target_model="Entity", target_id__in=company_entity_ids_str)
+                | Q(module="roles", metadata__company_id=user.company_id)
+                | Q(module="roles", metadata__entity_id__in=company_entity_ids)
+                | Q(module="roles", metadata__team_leader_id__in=company_user_ids)
+            )
+
+        if "view_logs_scope_entity" in effective and user.entity_id:
+            entity_user_ids = list(User.objects.filter(entity_id=user.entity_id).values_list("id", flat=True))
+            entity_user_ids_str = [str(item) for item in entity_user_ids]
+            entity_team_leader_ids = list(
+                User.objects.filter(entity_id=user.entity_id, assigned_roles__role__key="team_leader")
+                .values_list("id", flat=True)
+                .distinct()
+            )
+            return scoped_queryset.filter(
+                Q(target_model="User", target_id__in=entity_user_ids_str)
+                | Q(target_model="Entity", target_id=str(user.entity_id))
+                | Q(module="roles", metadata__entity_id=user.entity_id)
+                | Q(module="roles", metadata__team_leader_id__in=entity_team_leader_ids)
+            )
+
+        if "view_logs_scope_team" in effective:
+            if user.team_leader_id:
+                team_user_ids = list(User.objects.filter(Q(team_leader_id=user.team_leader_id) | Q(id=user.team_leader_id) | Q(id=user.id)).values_list("id", flat=True))
+            elif get_primary_role_key(user) == "team_leader":
+                team_user_ids = list(User.objects.filter(Q(team_leader_id=user.id) | Q(id=user.id)).values_list("id", flat=True))
+            else:
+                team_user_ids = [user.id]
+            team_user_ids_str = [str(item) for item in team_user_ids]
+            filters = Q(target_model="User", target_id__in=team_user_ids_str) | Q(actor_id__in=team_user_ids)
+            if user.entity_id:
+                filters |= Q(target_model="Entity", target_id=str(user.entity_id))
+                filters |= Q(module="roles", metadata__entity_id=user.entity_id)
+                filters |= Q(module="roles", metadata__team_leader_id__in=team_user_ids)
+            return scoped_queryset.filter(filters)
+
+        # No explicit log-scope permission -> no logs.
+        return queryset.none()
 
 
 class AdminDashboardView(AdminBaseView):
@@ -782,7 +857,7 @@ class AdminRolesView(AdminBaseView):
         return Response(
             {
                 "roles": roles_payload,
-                "all_permission_keys": list(AppPermission.objects.values_list("key", flat=True).order_by("key")),
+                "all_permission_keys": list(AppPermission.objects.exclude(key__in=HIDDEN_ROLE_PERMISSION_KEYS).values_list("key", flat=True).order_by("key")),
                 "company_options": company_options,
                 "entity_options": entity_options,
                 "applied_scope": {"company_id": company_id, "entity_id": entity_id, "entity_type": entity_type},
@@ -824,6 +899,7 @@ class AdminRoleDetailView(AdminBaseView):
         serializer = RolePermissionMappingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         permission_keys = self._expand_permission_keys(serializer.validated_data["permission_keys"])
+        permission_keys = normalize_log_scope_permission_keys(role.key, permission_keys)
         company_id = serializer.validated_data.get("company_id")
         entity_id = serializer.validated_data.get("entity_id")
         entity_type = serializer.validated_data.get("entity_type")
@@ -1354,7 +1430,7 @@ class AdminRoleDefaultDetailView(AdminBaseView):
 
         serializer = RolePermissionMappingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        permission_keys = serializer.validated_data["permission_keys"]
+        permission_keys = normalize_log_scope_permission_keys(role.key, serializer.validated_data["permission_keys"])
 
         known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
         unknown_permission_keys = sorted(set(permission_keys) - known_permission_keys)
@@ -1585,8 +1661,17 @@ class AdminAuditLogsView(AdminBaseView):
     def get(self, request):
         queryset = self.scoped_audit_logs(request.user)
         module = request.query_params.get("module")
-        if module:
-            queryset = queryset.filter(module=module)
+        modules_param = request.query_params.get("modules")
+
+        modules = []
+        if modules_param:
+            modules = [item.strip() for item in modules_param.split(",") if item.strip()]
+        elif module:
+            modules = [module.strip()]
+
+        if modules:
+            queryset = queryset.filter(module__in=modules)
+
         return Response(AuditLogSerializer(queryset[:200], many=True).data)
 
 

@@ -200,6 +200,30 @@ PERMISSION_DEFINITIONS = [
         "description": "View company and entity change logs.",
         "category": "monitoring",
     },
+    {
+        "key": "view_logs_scope_team",
+        "name": "View Team-Scoped Logs",
+        "description": "Limit visible logs to team scope.",
+        "category": "monitoring",
+    },
+    {
+        "key": "view_logs_scope_entity",
+        "name": "View Entity-Scoped Logs",
+        "description": "Limit visible logs to entity scope.",
+        "category": "monitoring",
+    },
+    {
+        "key": "view_logs_scope_company",
+        "name": "View Company-Scoped Logs",
+        "description": "Limit visible logs to company scope.",
+        "category": "monitoring",
+    },
+    {
+        "key": "view_logs_scope_global",
+        "name": "View Global-Scoped Logs",
+        "description": "View logs across all companies.",
+        "category": "monitoring",
+    },
 ]
 
 
@@ -225,10 +249,10 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_company_reports",
         "view_entity_reports",
         "export_data",
-        "view_audit_logs",
         "view_user_audit_logs",
         "view_access_audit_logs",
         "view_org_audit_logs",
+        "view_logs_scope_company",
     },
     "manager": {
         "view_company_entities",
@@ -248,6 +272,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_user_audit_logs",
         "view_access_audit_logs",
         "view_org_audit_logs",
+        "view_logs_scope_entity",
     },
     "team_leader": {
         "view_company_entities",
@@ -258,6 +283,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "assign_request",
         "view_user_audit_logs",
         "view_org_audit_logs",
+        "view_logs_scope_team",
     },
     "user": {
         "create_request",

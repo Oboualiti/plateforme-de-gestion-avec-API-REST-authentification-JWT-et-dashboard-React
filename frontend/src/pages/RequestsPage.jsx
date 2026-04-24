@@ -54,6 +54,7 @@ function RequestsPage() {
   const { user, refreshUser } = useAuth()
   const [searchParams] = useSearchParams()
   const scope = searchParams.get('scope') || 'all'
+  const resolvedScope = scope === 'mine' ? 'all' : scope
   const initialSearch = searchParams.get('search') || ''
 
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
@@ -88,8 +89,8 @@ function RequestsPage() {
   const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
   const isBasicUser = roleKeys.includes('user')
-  const isIncomingQueueTeamLeader = isTeamLeader && scope === 'team'
-  const isPendingScope = scope === 'pending'
+  const isIncomingQueueTeamLeader = isTeamLeader && resolvedScope === 'team'
+  const isPendingScope = resolvedScope === 'pending'
   const canDecidePending = isPendingScope
     && hasPermission('approve_request')
     && (
@@ -114,7 +115,7 @@ function RequestsPage() {
 
   const applyScopeFilter = (items) => {
     if (!Array.isArray(items)) return []
-    if (scope !== 'team' || !user?.entity_id) return items
+    if (resolvedScope !== 'team' || !user?.entity_id) return items
 
     const currentEntityId = Number(user.entity_id)
     const currentEntityName = (user.entity_name || '').trim().toLowerCase()
@@ -216,9 +217,9 @@ function RequestsPage() {
     try {
       await refreshUser()
       const params = {
-        page: scope === 'team' ? 1 : pagination.page,
-        page_size: scope === 'team' ? 200 : pagination.pageSize,
-        scope: scope !== 'all' ? scope : undefined,
+        page: resolvedScope === 'team' ? 1 : pagination.page,
+        page_size: resolvedScope === 'team' ? 200 : pagination.pageSize,
+        scope: resolvedScope !== 'all' ? resolvedScope : undefined,
         search: filters.search || undefined,
         company_id: isGlobalAdmin ? filters.company_id || undefined : actorCompanyId || undefined,
         source_entity_id: filters.source_entity_id || undefined,
@@ -232,9 +233,9 @@ function RequestsPage() {
       setState({ loading: false, error: '', requests: results })
       setPagination((current) => ({
         ...current,
-        count: scope === 'team' ? results.length : Number(payload.count || 0),
-        next: scope === 'team' ? null : payload.next || null,
-        previous: scope === 'team' ? null : payload.previous || null,
+        count: resolvedScope === 'team' ? results.length : Number(payload.count || 0),
+        next: resolvedScope === 'team' ? null : payload.next || null,
+        previous: resolvedScope === 'team' ? null : payload.previous || null,
       }))
     } catch (error) {
       setState({
@@ -263,10 +264,10 @@ function RequestsPage() {
   useEffect(() => {
     setState((current) => ({ ...current, loading: true, error: '' }))
     loadRequests()
-  }, [filters, pagination.page, scope, refreshUser])
+  }, [filters, pagination.page, resolvedScope, refreshUser])
 
   useEffect(() => {
-    if (scope !== 'pending') return undefined
+    if (resolvedScope !== 'pending') return undefined
 
     const refreshPending = () => {
       loadRequests()
@@ -281,7 +282,7 @@ function RequestsPage() {
       window.removeEventListener('focus', refreshPending)
       document.removeEventListener('visibilitychange', refreshPending)
     }
-  }, [scope, filters, pagination.page, refreshUser])
+  }, [resolvedScope, filters, pagination.page, refreshUser])
 
   function handleFilterChange(key, value) {
     setFilters((current) => {
@@ -314,7 +315,7 @@ function RequestsPage() {
   return (
     <main className="space-y-6">
       <PageHeader
-        title={scopeTitle[scope] || 'Requests'}
+        title={scopeTitle[resolvedScope] || 'Requests'}
         description="Browse, filter, and manage requests across your scope."
         actions={
           user?.request_creation_allowed && hasPermission('create_request') ? (
