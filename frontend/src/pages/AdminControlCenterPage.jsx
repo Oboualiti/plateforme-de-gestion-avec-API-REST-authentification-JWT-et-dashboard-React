@@ -12,7 +12,7 @@ import { Select } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
 import { Skeleton } from '../components/ui/skeleton'
 
-function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
+function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit, onDelete }) {
   if (!editState.open) return null
 
   return (
@@ -81,11 +81,16 @@ function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
               </Select>
             </div>
           </CardContent>
-          <div className="flex justify-end gap-2 p-6 pt-2 border-t mt-4">
+          <div className="flex items-center justify-between gap-2 p-6 pt-2 border-t mt-4">
+            <Button type="button" variant="destructive" onClick={onDelete} disabled={editState.saving}>
+              Remove
+            </Button>
+            <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={editState.saving}>Cancel</Button>
             <Button type="submit" disabled={editState.saving}>
               {editState.saving ? 'Saving...' : 'Save changes'}
             </Button>
+            </div>
           </div>
         </form>
       </Card>
@@ -93,7 +98,7 @@ function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit }) {
   )
 }
 
-function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmit }) {
+function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmit, onDelete }) {
   if (!editState.open) return null
 
   return (
@@ -193,11 +198,16 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
               </Select>
             </div>
           </CardContent>
-          <div className="flex justify-end gap-2 p-6 pt-2 border-t mt-4">
+          <div className="flex items-center justify-between gap-2 p-6 pt-2 border-t mt-4">
+            <Button type="button" variant="destructive" onClick={onDelete} disabled={editState.saving}>
+              Remove
+            </Button>
+            <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={editState.saving}>Cancel</Button>
             <Button type="submit" disabled={editState.saving}>
               {editState.saving ? 'Saving...' : 'Save changes'}
             </Button>
+            </div>
           </div>
         </form>
       </Card>
@@ -584,6 +594,23 @@ function AdminControlCenterPage() {
     }
   }
 
+  async function deleteCompany() {
+    if (!companyEditState.companyId || companyEditState.saving) return
+    const confirmed = window.confirm('Remove this company? This cannot be undone.')
+    if (!confirmed) return
+
+    setCompanyEditState((current) => ({ ...current, saving: true }))
+    try {
+      await api.delete(`/admin/companies/${companyEditState.companyId}/`)
+      setMessage('Company removed.')
+      closeCompanyEditModal()
+      loadSection()
+    } catch (error) {
+      setCompanyEditState((current) => ({ ...current, saving: false }))
+      setMessage(error.response?.data?.detail || 'Could not remove company.')
+    }
+  }
+
   function updateEntityEditField(field, value) {
     setEntityEditState((current) => ({
       ...current,
@@ -639,6 +666,23 @@ function AdminControlCenterPage() {
     } catch (error) {
       setEntityEditState((current) => ({ ...current, saving: false }))
       setMessage(error.response?.data?.detail || 'Could not update entity.')
+    }
+  }
+
+  async function deleteEntity() {
+    if (!entityEditState.entityId || entityEditState.saving) return
+    const confirmed = window.confirm('Remove this entity? This cannot be undone.')
+    if (!confirmed) return
+
+    setEntityEditState((current) => ({ ...current, saving: true }))
+    try {
+      await api.delete(`/admin/entities/${entityEditState.entityId}/`)
+      setMessage('Entity removed.')
+      closeEntityEditModal()
+      loadSection()
+    } catch (error) {
+      setEntityEditState((current) => ({ ...current, saving: false }))
+      setMessage(error.response?.data?.detail || 'Could not remove entity.')
     }
   }
 
@@ -1467,6 +1511,7 @@ function AdminControlCenterPage() {
         onClose={closeCompanyEditModal}
         onFieldChange={updateCompanyEditField}
         onSubmit={submitCompanyEdit}
+        onDelete={deleteCompany}
       />
 
       <EntityEditModal
@@ -1475,6 +1520,7 @@ function AdminControlCenterPage() {
         onClose={closeEntityEditModal}
         onFieldChange={updateEntityEditField}
         onSubmit={submitEntityEdit}
+        onDelete={deleteEntity}
       />
     </div>
   )

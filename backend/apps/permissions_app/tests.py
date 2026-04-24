@@ -393,6 +393,28 @@ class RolePagePermissionTests(APITestCase):
         )
         self.assertEqual(create_other_company_response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_deactivating_company_deactivates_all_its_entities(self):
+        self.client.force_authenticate(user=self.super_admin)
+        self.assertTrue(
+            Entity.objects.filter(company_id=self.company.id).values_list("is_active", flat=True).first()
+        )
+
+        response = self.client.patch(
+            reverse("admin-company-detail", kwargs={"company_id": self.company.id}),
+            {"is_active": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        own_company_statuses = list(
+            Entity.objects.filter(company_id=self.company.id).values_list("is_active", flat=True)
+        )
+        other_company_statuses = list(
+            Entity.objects.filter(company_id=self.other_company.id).values_list("is_active", flat=True)
+        )
+        self.assertTrue(own_company_statuses and all(status is False for status in own_company_statuses))
+        self.assertTrue(other_company_statuses and all(status is True for status in other_company_statuses))
+
     def test_manager_with_view_global_reports_gets_global_report_totals(self):
         self._allow_permission(self.manager, "view_global_reports")
         self.client.force_authenticate(user=self.manager)
