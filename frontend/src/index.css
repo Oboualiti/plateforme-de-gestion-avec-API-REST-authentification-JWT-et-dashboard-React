@@ -190,16 +190,16 @@
   }
 
   .dark {
-    --background: 220 18% 12%;
+    --background: 220 18% 13%;
     --foreground: 55 18% 95%;
-    --card: 222 20% 16%;
+    --card: 220 19% 15%;
     --card-foreground: 55 18% 95%;
-    --popover: 222 20% 16%;
+    --popover: 220 19% 15%;
     --popover-foreground: 55 18% 95%;
 
-    --surface-1: 222 20% 16%;
-    --surface-2: 222 20% 20%;
-    --surface-3: 222 20% 24%;
+    --surface-1: 220 19% 15%;
+    --surface-2: 220 19% 15%;
+    --surface-3: 220 18% 17%;
 
     --primary: 247 74% 62%;
     --primary-foreground: 0 0% 100%;
@@ -211,7 +211,7 @@
     --accent: 247 74% 62%;
     --accent-foreground: 0 0% 100%;
 
-    --muted: 222 20% 22%;
+    --muted: 220 16% 18%;
     --muted-foreground: 220 14% 72%;
 
     --ink: 0 0% 100%;
@@ -322,7 +322,7 @@
   }
 
   .data-table {
-    @apply w-full border-collapse text-left tabular-nums;
+    @apply w-full border-separate border-spacing-0 text-left tabular-nums;
   }
 
   .data-table thead {
@@ -343,6 +343,15 @@
 
   .data-table tr:hover td {
     @apply bg-primary/15;
+  }
+
+
+  .dark .data-table td {
+    background-color: hsl(var(--card));
+  }
+
+  .dark .data-table tr:hover td {
+    background-color: hsl(var(--surface-2));
   }
 
   .filter-bar {
@@ -369,3 +378,90 @@
     @apply mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8;
   }
 }
+
+
+
+
+@layer base {
+  .dark,
+  .dark body,
+  .dark #root {
+    background-color: hsl(var(--background));
+    background-image: none;
+  }
+}
+
+@layer components {
+  .surface-card,
+  .data-table {
+    isolation: isolate;
+  }
+
+  .dark .surface-card,
+  .dark .filter-bar,
+  .dark .data-table,
+  .dark .data-table thead,
+  .dark .data-table tbody,
+  .dark .data-table tr,
+  .dark .data-table th,
+  .dark .data-table td {
+    background-image: none;
+    background-blend-mode: normal;
+  }
+
+  .dark .surface-card {
+    background-color: hsl(var(--card));
+  }
+
+  .dark .filter-bar,
+  .dark .data-table thead {
+    background-color: hsl(var(--surface-2));
+  }
+
+  .dark .data-table td {
+    background-color: hsl(var(--card));
+  }
+
+  .dark .data-table tr:hover td {
+    background-color: hsl(var(--surface-2));
+  }
+}
+
+
+@layer components {
+  .dark .data-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    background-color: hsl(var(--card));
+  }
+
+  .dark .data-table tr {
+    background-color: hsl(var(--card));
+  }
+
+  .dark .data-table td {
+    background-color: hsl(var(--card));
+    transition: none;
+    will-change: auto;
+  }
+
+  .dark .data-table tr:hover td {
+    background-color: hsl(var(--surface-2));
+  }
+}
+
+
+@layer components {
+  .dark .hover\:bg-muted\/30:hover,
+  .dark .hover\:bg-muted\/60:hover,
+  .dark .hover\:bg-primary-soft:hover,
+  .dark .hover\:bg-primary\/15:hover {
+    background-color: hsl(var(--surface-2)) !important;
+    background-image: none !important;
+  }
+
+  .dark .transition-colors {
+    will-change: auto;
+  }
+}
+

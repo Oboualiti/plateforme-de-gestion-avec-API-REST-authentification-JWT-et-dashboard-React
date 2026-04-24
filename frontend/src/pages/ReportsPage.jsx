@@ -543,7 +543,7 @@ function ReportsPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2 shadow-sm">
+        <Card className="lg:col-span-2 shadow-elev-sm">
           <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Request Flow (Last 7 Days)</h3>
@@ -578,34 +578,34 @@ function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm flex flex-col">
+        <Card className="shadow-elev-sm flex flex-col">
           <CardHeader className="border-b bg-muted/20 pb-4">
             <h3 className="text-lg font-semibold text-foreground">Control Metrics</h3>
             <p className="text-sm text-muted-foreground">Quick health signals for review.</p>
           </CardHeader>
           <CardContent className="flex-1 p-5 grid grid-cols-1 gap-4">
-            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Resolution rate</p>
                 <p className="mt-1 text-xs text-muted-foreground">Already delivered</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.resolutionRate}%</p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Unassigned work</p>
                 <p className="mt-1 text-xs text-muted-foreground">Needs ownership</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.unassigned}</p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Workload pressure</p>
                 <p className="mt-1 text-xs text-muted-foreground">Demand vs completions</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.workloadPressure}</p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Tracked units</p>
                 <p className="mt-1 text-xs text-muted-foreground">Active sources</p>
@@ -617,7 +617,7 @@ function ReportsPage() {
       </div>
       
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="shadow-sm">
+        <Card className="shadow-elev-sm">
           <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Request Type Mix</h3>
@@ -658,7 +658,7 @@ function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-elev-sm">
           <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Demand Concentration</h3>
@@ -702,7 +702,7 @@ function ReportsPage() {
 
       {parsed.showExecutiveCards ? (
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <Card className="shadow-sm">
+          <Card className="shadow-elev-sm">
             <CardHeader className="border-b bg-muted/20 pb-4">
               <h3 className="text-lg font-semibold text-foreground">Recent Movement</h3>
               <p className="text-sm text-muted-foreground">Latest activity across your scope.</p>
@@ -740,7 +740,7 @@ function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm">
+          <Card className="shadow-elev-sm">
             <CardHeader className="border-b bg-muted/20 pb-4">
               <h3 className="text-lg font-semibold text-foreground">Ownership Distribution</h3>
               <p className="text-sm text-muted-foreground">Active workload by assignee.</p>
@@ -756,7 +756,7 @@ function ReportsPage() {
                     .slice(0, 2)
                     .toUpperCase()
                   return (
-                    <div key={owner.name} className="flex items-center justify-between rounded-lg border bg-card p-3 shadow-sm">
+                    <div key={owner.name} className="flex items-center justify-between rounded-lg border bg-card p-3 shadow-elev-sm">
                       <div className="flex items-center gap-3">
                         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-primary-foreground bg-primary`}>
                           {initials || 'NA'}
@@ -794,6 +794,7 @@ function ReportsPage() {
 }
 
 export default ReportsPage
+
 
 
 

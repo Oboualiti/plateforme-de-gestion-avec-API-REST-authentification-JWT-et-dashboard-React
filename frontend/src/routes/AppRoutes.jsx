@@ -70,7 +70,7 @@ function LoginPage() {
             <img
               src={isDarkMode ? wServiceLogoDark : wServiceLogo}
               alt="W-Service logo"
-              className={`h-auto object-contain ${isDarkMode ? 'w-[330px] sm:w-[390px]' : 'w-[220px] sm:w-[260px]'}`}
+              className={`h-auto w-[220px] object-contain sm:w-[260px]`}
               loading="lazy"
               width={1080}
               height={458}
@@ -90,7 +90,7 @@ function LoginPage() {
           </div>
         </div>
 
-        <form className="w-full max-w-md space-y-6 rounded-2xl border border-border bg-card p-8 shadow-xl" onSubmit={handleSubmit}>
+        <form className="w-full max-w-md space-y-6 rounded-2xl border border-border bg-card p-8 shadow-elev-xl" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <p className="text-xs font-bold tracking-widest text-muted-foreground uppercase">Authentication</p>
             <h2 className="text-2xl font-semibold text-foreground">Sign in to continue</h2>
@@ -220,3 +220,5 @@ function AppRoutes() {
 }
 
 export default AppRoutes
+
+

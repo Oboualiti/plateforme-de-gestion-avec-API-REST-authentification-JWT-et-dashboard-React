@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -33,6 +33,58 @@ function getApiErrorMessage(error, fallback) {
   return fallback
 }
 
+const PERMISSION_SECTION_ORDER = ['organization', 'access_control', 'requests', 'reports', 'logs']
+
+const PERMISSION_SECTION_LABELS = {
+  organization: 'Organization',
+  access_control: 'Access Control',
+  requests: 'Requests',
+  reports: 'Reports',
+  logs: 'Logs',
+}
+
+const PERMISSION_SECTION_BY_KEY = {
+  manage_companies: 'organization',
+  view_all_companies: 'organization',
+  manage_entities: 'organization',
+  manage_company_entities: 'organization',
+  view_company_entities: 'organization',
+  view_all_entities: 'organization',
+  manage_users_global: 'access_control',
+  manage_users_company: 'access_control',
+  manage_users_entity: 'access_control',
+  view_users_global: 'access_control',
+  view_users_company: 'access_control',
+  view_users_entity: 'access_control',
+  create_request: 'requests',
+  view_all_requests: 'requests',
+  view_company_requests: 'requests',
+  view_entity_requests: 'requests',
+  view_team_requests: 'requests',
+  view_own_requests: 'requests',
+  approve_request: 'requests',
+  assign_request: 'requests',
+  resolve_request: 'requests',
+  close_request: 'requests',
+  view_request_discussion: 'requests',
+  comment_request: 'requests',
+  view_global_reports: 'reports',
+  view_company_reports: 'reports',
+  view_entity_reports: 'reports',
+  export_data: 'reports',
+  view_audit_logs: 'logs',
+  view_user_audit_logs: 'logs',
+  view_access_audit_logs: 'logs',
+  view_org_audit_logs: 'logs',
+  view_logs_scope_team: 'logs',
+  view_logs_scope_entity: 'logs',
+  view_logs_scope_company: 'logs',
+  view_logs_scope_global: 'logs',
+}
+
+function getPermissionSection(permissionKey) {
+  return PERMISSION_SECTION_BY_KEY[permissionKey] || 'requests'
+}
 function PermissionDetailPage() {
   const { userId } = useParams()
   const navigate = useNavigate()
@@ -188,6 +240,12 @@ function PermissionDetailPage() {
   const canShowCompany = isSuperAdmin
   const canShowEntity = ['manager', 'team_leader', 'user'].includes(targetRole)
   const canShowTeamLeader = targetRole === 'user'
+
+  const groupedPermissions = PERMISSION_SECTION_ORDER.map((sectionKey) => ({
+    sectionKey,
+    sectionLabel: PERMISSION_SECTION_LABELS[sectionKey],
+    items: (user?.permissions || []).filter((permission) => getPermissionSection(permission.key) === sectionKey),
+  })).filter((group) => group.items.length > 0)
 
   const companyId = Number(profileForm.company_id)
   const entityId = Number(profileForm.entity_id)
@@ -584,3 +642,10 @@ function PermissionDetailPage() {
 }
 
 export default PermissionDetailPage
+
+
+
+
+
+
+

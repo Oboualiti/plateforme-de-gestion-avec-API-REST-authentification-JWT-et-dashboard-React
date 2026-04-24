@@ -707,7 +707,7 @@ function Dashboard() {
             <CardContent className="space-y-4 pt-6">
               {metrics.ownership.length ? (
                 metrics.ownership.slice(0, 5).map((owner) => (
-                  <div key={owner.name} className="flex items-center justify-between rounded-lg border bg-card p-3 shadow-sm">
+                  <div key={owner.name} className="flex items-center justify-between rounded-lg border bg-card p-3 shadow-elev-sm">
                     <div className="flex items-center gap-3">
                       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-primary-foreground bg-primary`}>
                         {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
@@ -1105,6 +1105,7 @@ function Dashboard() {
 }
 
 export default Dashboard
+
 
 
 

@@ -26,7 +26,7 @@ function Brand({ isDarkMode }) {
         <img
           src={isDarkMode ? wServiceLogoDark : wServiceLogo}
           alt="W-Service logo"
-          className={`h-9 w-auto object-contain ${isDarkMode ? 'origin-left scale-[2.35]' : ''}`}
+          className={`h-9 w-auto object-contain ${isDarkMode ? 'origin-left scale-[2.35]' : 'origin-left scale-[2.35]'}`}
           loading="lazy"
           width={1080}
           height={458}
@@ -507,6 +507,9 @@ export function AppShell({ children }) {
     </div>
   );
 }
+
+
+
 
 
 

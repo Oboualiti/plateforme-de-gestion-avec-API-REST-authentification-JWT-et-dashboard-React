@@ -125,7 +125,7 @@ function StatusNoteModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <section className="w-full max-w-lg rounded-xl border-2 border-ink bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
+      <section className="w-full max-w-lg rounded-xl border-2 border-ink bg-card shadow-elev-xl animate-in fade-in zoom-in duration-200">
         <div className="border-b border-border px-6 py-5">
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status update</p>
           <h3 className="mt-1 text-lg font-extrabold text-foreground">Move request to {statusLabelMap[targetStatus]}</h3>
@@ -204,8 +204,10 @@ function RequestDetailsPage() {
   const request = state.request
   const roleKeys = user?.role_keys || []
   const effectivePermissionKeys = new Set(user?.effective_permission_keys || [])
+  const isSuperAdmin = roleKeys.includes('super_admin')
   const isManager = roleKeys.includes('manager')
   const isSenior = roleKeys.includes('senior')
+  const isTeamLeader = roleKeys.includes('team_leader')
   const canViewRequestDiscussion = Boolean(
     request?.can_view_request_discussion ?? effectivePermissionKeys.has('view_request_discussion'),
   )
@@ -216,13 +218,20 @@ function RequestDetailsPage() {
     const options = [request?.status, ...allowedStatusTransitions].filter(Boolean)
     return [...new Set(options)]
   }, [allowedStatusTransitions, request?.status])
-  const canAssignToMe = Boolean(request?.can_assign_to_me)
   const canEditDeadline = Boolean(request?.can_edit_deadline)
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
+  const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader
   const potentialAssignees = request?.potential_assignees || []
-  const canManagerAssignTl = (isManager || isSenior)
+  const assignableUsers = useMemo(() => {
+    if (!isSuperAdmin) return potentialAssignees
+    return potentialAssignees.filter((candidate) => {
+      const keys = candidate?.role_keys || candidate?.roles?.map((role) => role?.key).filter(Boolean) || []
+      return keys.includes('team_leader') || candidate?.role === 'team_leader'
+    })
+  }, [isSuperAdmin, potentialAssignees])
+  const canManagerAssignTl = (isSuperAdmin || isManager || isSenior)
     && !request?.current_assignee
-    && potentialAssignees.length > 0
+    && assignableUsers.length > 0
 
   const comments = request?.comments || []
   const lastCommentId = comments.length ? comments[comments.length - 1].id : null
@@ -442,7 +451,7 @@ function RequestDetailsPage() {
 
   return (
     <main className="page-content pb-12 space-y-6">
-      <section className="surface-card min-h-[210px] bg-gradient-to-r from-surface-1 via-surface-1 to-primary-soft/55 dark:from-surface-1 dark:via-surface-1 dark:to-surface-2 p-8">
+      <section className="surface-card min-h-[210px] bg-surface-1 dark:bg-gradient-to-r dark:from-surface-1 dark:via-surface-1 dark:to-surface-2 p-8">
         <div className="flex min-h-[170px] flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0 space-y-2">
             <Button
@@ -456,12 +465,11 @@ function RequestDetailsPage() {
             <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">
               {request.reference_code || `#${request.request_number}`}
             </p>
-            <h1 className="text-6xl font-black uppercase tracking-[-0.02em] leading-none text-foreground">
+            <h1 className="text-5xl font-black uppercase tracking-[-0.02em] leading-none text-foreground">
               {request.title || 'Untitled Request'}
             </h1>
-            <p className="pt-1 text-xl font-medium leading-none text-foreground/85">
-              {request.description || 'No detailed description provided.'}
-            </p>
+
+
           </div>
           <div className="flex flex-col items-start gap-3 pb-1 lg:items-end">
             <span className="inline-flex items-center rounded-md border-2 border-ink bg-primary px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
@@ -764,7 +772,7 @@ function RequestDetailsPage() {
                           onChange={e => setAssignmentForm(curr => ({ ...curr, userId: e.target.value }))}
                        >
                           <option value="">Select individual...</option>
-                          {potentialAssignees.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                          {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
                        </Select>
                     </div>
                     <textarea 
@@ -774,7 +782,7 @@ function RequestDetailsPage() {
                        onChange={e => setAssignmentForm(curr => ({ ...curr, note: e.target.value }))}
                     />
                     <Button size="sm" className="w-full" onClick={handleAssignToUser} disabled={!assignmentForm.userId || actionState.busy}>
-                       Assign Team Member
+                       Assign Team Leader
                     </Button>
                   </div>
                 )}
@@ -875,3 +883,8 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
+
+
+
+
+

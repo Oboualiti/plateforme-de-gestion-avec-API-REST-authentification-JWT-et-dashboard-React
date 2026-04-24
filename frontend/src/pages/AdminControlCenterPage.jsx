@@ -1,4 +1,4 @@
-﻿import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -17,7 +17,7 @@ function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit, onDelet
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <Card className="w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200">
+      <Card className="w-full max-w-lg shadow-elev-xl animate-in fade-in zoom-in duration-200">
         <CardHeader>
           <CardTitle>Edit company</CardTitle>
           <CardDescription>Update company details and senior assignment.</CardDescription>
@@ -103,7 +103,7 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <Card className="w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200">
+      <Card className="w-full max-w-lg shadow-elev-xl animate-in fade-in zoom-in duration-200">
         <CardHeader>
           <CardTitle>Edit entity</CardTitle>
           <CardDescription>Update core fields and manager assignment for this entity.</CardDescription>
@@ -220,7 +220,7 @@ function DeleteConfirmModal({ open, title, description, confirmLabel, loading, o
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <Card className="w-full max-w-md border-2 border-destructive/40 shadow-2xl animate-in fade-in zoom-in duration-200">
+      <Card className="w-full max-w-md border-2 border-destructive/40 shadow-elev-xl animate-in fade-in zoom-in duration-200">
         <CardHeader>
           <div className="inline-flex w-fit items-center rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-bold uppercase tracking-widest text-destructive">
             Dangerous action
@@ -1452,7 +1452,7 @@ function AdminControlCenterPage() {
                 {topTrend.map((item, idx) => (
                   <div key={idx} className="flex-1 flex flex-col items-center gap-2 group">
                     <div className="w-full bg-primary/20 rounded-t-sm transition-all hover:bg-primary/40 relative" style={{ height: `${Math.max(10, Math.round((item.value / maxTrendValue) * 100))}%` }}>
-                       <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md border">
+                       <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-elev-md border">
                          {item.value}
                        </div>
                     </div>
