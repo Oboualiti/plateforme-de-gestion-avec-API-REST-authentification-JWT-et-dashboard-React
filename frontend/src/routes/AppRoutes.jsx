@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import MainLayout from '../components/layout/MainLayout'
@@ -21,6 +21,7 @@ import RequestsPage from '../pages/RequestsPage'
 import ProtectedRoute from './ProtectedRoute'
 
 import wServiceLogo from '../assets/logo.png'
+import wServiceLogoDark from '../assets/logo_dark_mode.png'
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -28,6 +29,20 @@ function LoginPage() {
   const [form, setForm] = useState({ username: 'prod', password: 'test12345' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const stored = window.localStorage.getItem('theme')
+    if (stored === 'dark') return true
+    if (stored === 'light') return false
+    return document.documentElement.classList.contains('dark')
+  })
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'))
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
@@ -53,9 +68,9 @@ function LoginPage() {
         <div className="flex-1 space-y-6">
           <div className="flex items-center gap-4">
             <img
-              src={wServiceLogo}
+              src={isDarkMode ? wServiceLogoDark : wServiceLogo}
               alt="W-Service logo"
-              className="h-20 w-auto object-contain sm:h-24"
+              className={`h-auto object-contain ${isDarkMode ? 'w-[330px] sm:w-[390px]' : 'w-[220px] sm:w-[260px]'}`}
               loading="lazy"
               width={1080}
               height={458}

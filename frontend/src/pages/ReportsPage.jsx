@@ -448,96 +448,96 @@ function ReportsPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-sm border-slate-200 bg-white">
+        <Card className="surface-card border-border/70 bg-card">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Total Requests</p>
-              <div className="p-1 rounded bg-slate-100 text-slate-500">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Total Requests</p>
+              <div className="p-1 rounded bg-muted text-muted-foreground">
                 <Inbox className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.totalRequests}</p>
-            <p className="mt-1 text-xs text-slate-500">All time volume</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.totalRequests}</p>
+            <p className="mt-1 text-xs text-muted-foreground">All time volume</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-orange-200 bg-orange-50/50">
+        <Card className="surface-card border-warning/40 bg-warning/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700">Open Queue</p>
-              <div className="p-1 rounded bg-orange-100 text-orange-600">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Open Queue</p>
+              <div className="p-1 rounded bg-warning/20 text-warning">
                 <Activity className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.openQueue}</p>
-            <p className="mt-1 text-xs text-slate-600">In active workflow</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.openQueue}</p>
+            <p className="mt-1 text-xs text-muted-foreground">In active workflow</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-emerald-200 bg-emerald-50/50">
+        <Card className="surface-card border-success/40 bg-success/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Resolved</p>
-              <div className="p-1 rounded bg-emerald-100 text-emerald-600">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved</p>
+              <div className="p-1 rounded bg-success/20 text-success">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.resolved}</p>
-            <p className="mt-1 text-xs text-slate-600">Completed requests</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.resolved}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Completed requests</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-slate-200 bg-white">
+        <Card className="surface-card border-border/70 bg-card">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Avg Turnaround</p>
-              <div className="p-1 rounded bg-slate-100 text-slate-500">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Avg Turnaround</p>
+              <div className="p-1 rounded bg-muted text-muted-foreground">
                 <Clock className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.avgTurnaround}</p>
-            <p className="mt-1 text-xs text-slate-500">Average delivery time</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.avgTurnaround}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Average delivery time</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="shadow-sm border-amber-200 bg-amber-50/50">
+        <Card className="surface-card border-warning/40 bg-warning/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Unassigned</p>
-              <div className="p-1 rounded bg-amber-100 text-amber-600">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Unassigned</p>
+              <div className="p-1 rounded bg-warning/20 text-warning">
                 <Users className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.unassigned}</p>
-            <p className="mt-1 text-xs text-slate-600">Needs ownership</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.unassigned}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Needs ownership</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-red-200 bg-red-50/50">
+        <Card className="surface-card border-destructive/40 bg-destructive/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-red-700">Overdue</p>
-              <div className="p-1 rounded bg-red-100 text-red-600">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">Overdue</p>
+              <div className="p-1 rounded bg-destructive/20 text-destructive">
                 <AlertCircle className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.overdue}</p>
-            <p className="mt-1 text-xs text-slate-600">Past due date</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.overdue}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Past due date</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm border-emerald-200 bg-emerald-50/50">
+        <Card className="surface-card border-success/40 bg-success/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Resolution Rate</p>
-              <div className="p-1 rounded bg-emerald-100 text-emerald-600">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolution Rate</p>
+              <div className="p-1 rounded bg-success/20 text-success">
                 <Target className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{parsed.resolutionRate}%</p>
-            <p className="mt-1 text-xs text-slate-600">{parsed.resolved} closed in scope</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{parsed.resolutionRate}%</p>
+            <p className="mt-1 text-xs text-muted-foreground">{parsed.resolved} closed in scope</p>
           </CardContent>
         </Card>
       </div>
@@ -794,7 +794,6 @@ function ReportsPage() {
 }
 
 export default ReportsPage
-
 
 
 

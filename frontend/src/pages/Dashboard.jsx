@@ -326,55 +326,55 @@ function Dashboard() {
 
         {/* Standardized KPI System */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="shadow-sm border-slate-200 bg-white">
+          <Card className="surface-card border-border/70 bg-card">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Total Requests</p>
-                <div className="p-1 rounded bg-slate-100 text-slate-500">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Total Requests</p>
+                <div className="p-1 rounded bg-muted text-muted-foreground">
                   <Inbox className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.totalRequests}</p>
-              <p className="mt-1 text-xs text-slate-500">Recorded demand in scope</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.totalRequests}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Recorded demand in scope</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-amber-200 bg-amber-50/50">
+          <Card className="surface-card border-warning/40 bg-warning/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Status Overview</p>
-                <div className="p-1 rounded bg-amber-100 text-amber-600">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Status Overview</p>
+                <div className="p-1 rounded bg-warning/20 text-warning">
                   <AlertCircle className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.attentionCount}</p>
-              <p className="mt-1 text-xs text-slate-600">Items needing attention</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Items needing attention</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-orange-200 bg-orange-50/50">
+          <Card className="surface-card border-warning/40 bg-warning/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700">Open Requests</p>
-                <div className="p-1 rounded bg-orange-100 text-orange-600">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Open Requests</p>
+                <div className="p-1 rounded bg-warning/20 text-warning">
                   <Activity className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.openRequests}</p>
-              <p className="mt-1 text-xs text-slate-600">{metrics.unassigned} pending assignment</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{metrics.unassigned} pending assignment</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-emerald-200 bg-emerald-50/50">
+          <Card className="surface-card border-success/40 bg-success/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Resolution Rate</p>
-                <div className="p-1 rounded bg-emerald-100 text-emerald-600">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolution Rate</p>
+                <div className="p-1 rounded bg-success/20 text-success">
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.resolutionRate}%</p>
-              <p className="mt-1 text-xs text-slate-600">{metrics.resolved} closed items</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
+              <p className="mt-1 text-xs text-muted-foreground">{metrics.resolved} closed items</p>
             </CardContent>
           </Card>
         </div>
@@ -520,55 +520,55 @@ function Dashboard() {
 
         {/* Standardized KPI System */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="shadow-sm border-slate-200 bg-white">
+          <Card className="surface-card border-border/70 bg-card">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Team Queue</p>
-                <div className="p-1 rounded bg-slate-100 text-slate-500">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Team Queue</p>
+                <div className="p-1 rounded bg-muted text-muted-foreground">
                   <ClipboardList className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.openRequests}</p>
-              <p className="mt-1 text-xs text-slate-500">Requests needing coordination</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Requests needing coordination</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-slate-200 bg-white">
+          <Card className="surface-card border-border/70 bg-card">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Units in Focus</p>
-                <div className="p-1 rounded bg-slate-100 text-slate-500">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Units in Focus</p>
+                <div className="p-1 rounded bg-muted text-muted-foreground">
                   <Building2 className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.concentration.length}</p>
-              <p className="mt-1 text-xs text-slate-500">Active platform entities</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.concentration.length}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Active platform entities</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-amber-200 bg-amber-50/50">
+          <Card className="surface-card border-warning/40 bg-warning/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Need Attention</p>
-                <div className="p-1 rounded bg-amber-100 text-amber-600">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Need Attention</p>
+                <div className="p-1 rounded bg-warning/20 text-warning">
                   <AlertCircle className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.attentionCount}</p>
-              <p className="mt-1 text-xs text-slate-600">{metrics.overdue} overdue items</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{metrics.overdue} overdue items</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-emerald-200 bg-emerald-50/50">
+          <Card className="surface-card border-success/40 bg-success/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Resolved in Scope</p>
-                <div className="p-1 rounded bg-emerald-100 text-emerald-600">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved in Scope</p>
+                <div className="p-1 rounded bg-success/20 text-success">
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{metrics.resolved}</p>
-              <p className="mt-1 text-xs text-slate-600">Closed or completed work</p>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.resolved}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Closed or completed work</p>
             </CardContent>
           </Card>
         </div>
@@ -1105,8 +1105,6 @@ function Dashboard() {
 }
 
 export default Dashboard
-
-
 
 
 

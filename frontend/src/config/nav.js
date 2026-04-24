@@ -54,7 +54,6 @@ export function getNavForRole(role, user = null) {
         {
           label: "Workspace",
           items: [
-            dashboard,
             ...(canCreateRequests
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),

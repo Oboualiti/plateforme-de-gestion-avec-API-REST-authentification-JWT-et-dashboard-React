@@ -106,6 +106,54 @@ function StatusStepper({ currentStatus }) {
   )
 }
 
+function StatusNoteModal({
+  open,
+  targetStatus,
+  note,
+  required,
+  error,
+  loading,
+  onChangeNote,
+  onCancel,
+  onConfirm,
+}) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+      <section className="w-full max-w-lg rounded-xl border-2 border-ink bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
+        <div className="border-b border-border px-6 py-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status update</p>
+          <h3 className="mt-1 text-lg font-extrabold text-foreground">Move request to {statusLabelMap[targetStatus]}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {required ? 'Resolution note is required for this terminal status.' : 'Add an optional note for this transition.'}
+          </p>
+        </div>
+        <div className="space-y-3 px-6 py-5">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            {required ? 'Resolution note *' : 'Note'}
+          </label>
+          <textarea
+            value={note}
+            onChange={(event) => onChangeNote(event.target.value)}
+            className="w-full min-h-[110px] rounded-lg border-2 border-ink bg-card p-3 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-muted-foreground"
+            placeholder={required ? 'Write the resolution note...' : 'Optional note...'}
+          />
+          {error ? <p className="text-xs font-semibold text-destructive">{error}</p> : null}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Saving...' : 'Confirm'}
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function RequestDetailsPage() {
   const { requestId } = useParams()
   const navigate = useNavigate()
@@ -118,6 +166,13 @@ function RequestDetailsPage() {
   const [actionState, setActionState] = useState({ busy: false, error: '' })
   const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
   const [historyPage, setHistoryPage] = useState(1)
+  const [statusDialog, setStatusDialog] = useState({
+    open: false,
+    targetStatus: '',
+    note: '',
+    required: false,
+    error: '',
+  })
   const discussionRef = useRef(null)
 
   const request = state.request
@@ -221,15 +276,48 @@ function RequestDetailsPage() {
     await handleAction(api.post(`/requests/${requestId}/comments/`, formData))
   }
 
-  async function updateStatus(status) {
-    const isTerminal = terminalStatuses.has(status)
-    const promptMsg = isTerminal ? 'Resolution note is required:' : 'Optional note for this change:'
-    const note = window.prompt(promptMsg)?.trim()
-    if (isTerminal && !note) {
-      setActionState({ busy: false, error: 'Resolution note is required for terminal statuses.' })
+  function requestStatusChange(status) {
+    if (!status || status === request?.status) return
+    const required = terminalStatuses.has(status)
+    setStatusDialog({
+      open: true,
+      targetStatus: status,
+      note: '',
+      required,
+      error: '',
+    })
+  }
+
+  function closeStatusDialog() {
+    if (actionState.busy) return
+    setStatusDialog({
+      open: false,
+      targetStatus: '',
+      note: '',
+      required: false,
+      error: '',
+    })
+  }
+
+  async function confirmStatusChange() {
+    const note = statusDialog.note.trim()
+    if (statusDialog.required && !note) {
+      setStatusDialog((current) => ({
+        ...current,
+        error: 'Resolution note is required for terminal statuses.',
+      }))
       return
     }
-    await handleAction(api.post(`/requests/${requestId}/status/`, { status, note: note || '' }))
+    await handleAction(
+      api.post(`/requests/${requestId}/status/`, { status: statusDialog.targetStatus, note }),
+    )
+    setStatusDialog({
+      open: false,
+      targetStatus: '',
+      note: '',
+      required: false,
+      error: '',
+    })
   }
 
   async function handleAssignToMe() {
@@ -282,7 +370,7 @@ function RequestDetailsPage() {
 
   return (
     <main className="page-content pb-12 space-y-6">
-      <section className="surface-card min-h-[210px] bg-gradient-to-r from-[#fcfcfb] via-[#fcfcfb] to-[#f7f0cf] p-8">
+      <section className="surface-card min-h-[210px] bg-gradient-to-r from-surface-1 via-surface-1 to-primary-soft/55 dark:from-surface-1 dark:via-surface-1 dark:to-surface-2 p-8">
         <div className="flex min-h-[170px] flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0 space-y-2">
             <Button
@@ -304,7 +392,7 @@ function RequestDetailsPage() {
             </p>
           </div>
           <div className="flex flex-col items-start gap-3 pb-1 lg:items-end">
-            <span className="inline-flex items-center rounded-md border-2 border-ink bg-slate-900 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-white">
+            <span className="inline-flex items-center rounded-md border-2 border-ink bg-primary px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
               {statusLabelMap[request.status]}
             </span>
             <span className="flex items-center text-xs font-extrabold uppercase tracking-[0.16em] text-muted-foreground">
@@ -501,7 +589,7 @@ function RequestDetailsPage() {
                    <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Transition Status</label>
                    <Select 
                       value={request.status} 
-                      onChange={e => updateStatus(e.target.value)}
+                      onChange={e => requestStatusChange(e.target.value)}
                       disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
                       className="w-full"
                    >
@@ -649,9 +737,22 @@ function RequestDetailsPage() {
           </article>
         </aside>
       </div>
+
+      <StatusNoteModal
+        open={statusDialog.open}
+        targetStatus={statusDialog.targetStatus}
+        note={statusDialog.note}
+        required={statusDialog.required}
+        error={statusDialog.error}
+        loading={actionState.busy}
+        onChangeNote={(value) =>
+          setStatusDialog((current) => ({ ...current, note: value, error: '' }))
+        }
+        onCancel={closeStatusDialog}
+        onConfirm={confirmStatusChange}
+      />
     </main>
   )
 }
 
 export default RequestDetailsPage
-

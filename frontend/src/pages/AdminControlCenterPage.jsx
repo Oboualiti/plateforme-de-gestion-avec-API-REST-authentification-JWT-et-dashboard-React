@@ -215,6 +215,32 @@ function EntityEditModal({ editState, companies, onClose, onFieldChange, onSubmi
   )
 }
 
+function DeleteConfirmModal({ open, title, description, confirmLabel, loading, onCancel, onConfirm }) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+      <Card className="w-full max-w-md border-2 border-destructive/40 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <CardHeader>
+          <div className="inline-flex w-fit items-center rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-bold uppercase tracking-widest text-destructive">
+            Dangerous action
+          </div>
+          <CardTitle className="mt-2">{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-end gap-2 border-t pt-4">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Removing...' : confirmLabel}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 const sectionConfig = {
   dashboard: { title: 'Dashboard', endpoint: '/admin/dashboard/' },
   companies: { title: 'Companies', endpoint: '/admin/companies/' },
@@ -342,6 +368,10 @@ function AdminControlCenterPage() {
       manager_user_id: '',
       is_active: true,
     },
+  })
+  const [deleteConfirmState, setDeleteConfirmState] = useState({
+    open: false,
+    type: '',
   })
 
   async function loadSection() {
@@ -566,6 +596,15 @@ function AdminControlCenterPage() {
     })
   }
 
+  function openDeleteConfirm(type) {
+    setDeleteConfirmState({ open: true, type })
+  }
+
+  function closeDeleteConfirm() {
+    if (companyEditState.saving || entityEditState.saving) return
+    setDeleteConfirmState({ open: false, type: '' })
+  }
+
   async function submitCompanyEdit(event) {
     event.preventDefault()
     if (!companyEditState.companyId) return
@@ -596,13 +635,12 @@ function AdminControlCenterPage() {
 
   async function deleteCompany() {
     if (!companyEditState.companyId || companyEditState.saving) return
-    const confirmed = window.confirm('Remove this company? This cannot be undone.')
-    if (!confirmed) return
 
     setCompanyEditState((current) => ({ ...current, saving: true }))
     try {
       await api.delete(`/admin/companies/${companyEditState.companyId}/`)
       setMessage('Company removed.')
+      setDeleteConfirmState({ open: false, type: '' })
       closeCompanyEditModal()
       loadSection()
     } catch (error) {
@@ -671,13 +709,12 @@ function AdminControlCenterPage() {
 
   async function deleteEntity() {
     if (!entityEditState.entityId || entityEditState.saving) return
-    const confirmed = window.confirm('Remove this entity? This cannot be undone.')
-    if (!confirmed) return
 
     setEntityEditState((current) => ({ ...current, saving: true }))
     try {
       await api.delete(`/admin/entities/${entityEditState.entityId}/`)
       setMessage('Entity removed.')
+      setDeleteConfirmState({ open: false, type: '' })
       closeEntityEditModal()
       loadSection()
     } catch (error) {
@@ -1511,7 +1548,7 @@ function AdminControlCenterPage() {
         onClose={closeCompanyEditModal}
         onFieldChange={updateCompanyEditField}
         onSubmit={submitCompanyEdit}
-        onDelete={deleteCompany}
+        onDelete={() => openDeleteConfirm('company')}
       />
 
       <EntityEditModal
@@ -1520,7 +1557,21 @@ function AdminControlCenterPage() {
         onClose={closeEntityEditModal}
         onFieldChange={updateEntityEditField}
         onSubmit={submitEntityEdit}
-        onDelete={deleteEntity}
+        onDelete={() => openDeleteConfirm('entity')}
+      />
+
+      <DeleteConfirmModal
+        open={deleteConfirmState.open}
+        title={deleteConfirmState.type === 'company' ? 'Remove Company' : 'Remove Entity'}
+        description={
+          deleteConfirmState.type === 'company'
+            ? 'This will permanently remove this company. This action cannot be undone.'
+            : 'This will permanently remove this entity. This action cannot be undone.'
+        }
+        confirmLabel={deleteConfirmState.type === 'company' ? 'Remove company' : 'Remove entity'}
+        loading={companyEditState.saving || entityEditState.saving}
+        onCancel={closeDeleteConfirm}
+        onConfirm={deleteConfirmState.type === 'company' ? deleteCompany : deleteEntity}
       />
     </div>
   )
@@ -1867,7 +1918,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1080px] border-collapse">
           <thead>
-            <tr className="bg-[#e9e7db] text-foreground">
+            <tr>
               <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
               {roles.map((role) => (
                 <th key={role.id} className="border-b-2 border-foreground/90 px-4 py-3 text-center text-xs font-bold uppercase tracking-widest">
@@ -1882,7 +1933,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
               if (!rows.length) return null
               return (
                 <Fragment key={section}>
-                  <tr className="bg-[#f4f0dc]">
+                  <tr className="bg-surface-2">
                     <td colSpan={roles.length + 1} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
                       {permissionSectionTitle[section] || section}
                     </td>

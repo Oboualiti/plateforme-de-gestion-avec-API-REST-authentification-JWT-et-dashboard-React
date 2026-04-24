@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge'
 import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
@@ -57,6 +58,32 @@ function roleBadgeClass(roleKey) {
   return toneByRole[roleKey] || 'bg-slate-500 text-white'
 }
 
+function DeleteConfirmModal({ open, username, loading, onCancel, onConfirm }) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+      <Card className="w-full max-w-md border-2 border-destructive/40 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <CardHeader>
+          <div className="inline-flex w-fit items-center rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-bold uppercase tracking-widest text-destructive">
+            Dangerous action
+          </div>
+          <CardTitle className="mt-2">Remove User</CardTitle>
+          <CardDescription>Delete user "{username || 'this user'}"? This action cannot be undone.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-end gap-2 border-t pt-4">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Removing...' : 'Remove user'}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 function UsersPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -75,6 +102,12 @@ function UsersPage() {
   const [entityId, setEntityId] = useState('all')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState('')
+  const [deleteConfirmState, setDeleteConfirmState] = useState({
+    open: false,
+    userId: null,
+    username: '',
+    loading: false,
+  })
   const importInputRef = useRef(null)
 
   useEffect(() => {
@@ -112,13 +145,29 @@ function UsersPage() {
     }
   }, [])
 
-  async function deleteUser(userId, username) {
-    const confirmed = window.confirm(`Delete user "${username || 'this user'}"?`)
-    if (!confirmed) return
+  function openDeleteConfirm(userId, username) {
+    setDeleteConfirmState({
+      open: true,
+      userId,
+      username: username || '',
+      loading: false,
+    })
+  }
+
+  function closeDeleteConfirm() {
+    if (deleteConfirmState.loading) return
+    setDeleteConfirmState({ open: false, userId: null, username: '', loading: false })
+  }
+
+  async function confirmDeleteUser() {
+    if (!deleteConfirmState.userId || deleteConfirmState.loading) return
+    setDeleteConfirmState((current) => ({ ...current, loading: true }))
     try {
-      await api.delete(`/admin/users/manageable/${userId}/`)
-      setUsers((current) => current.filter((item) => item.id !== userId))
+      await api.delete(`/admin/users/manageable/${deleteConfirmState.userId}/`)
+      setUsers((current) => current.filter((item) => item.id !== deleteConfirmState.userId))
+      setDeleteConfirmState({ open: false, userId: null, username: '', loading: false })
     } catch (err) {
+      setDeleteConfirmState((current) => ({ ...current, loading: false }))
       window.alert(err?.response?.data?.detail || 'Could not delete user.')
     }
   }
@@ -345,7 +394,7 @@ function UsersPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => deleteUser(item.id, item.username)}
+                            onClick={() => openDeleteConfirm(item.id, item.username)}
                             className={`${item.can_edit ? 'text-destructive hover:underline' : 'text-muted-foreground cursor-not-allowed'}`}
                             disabled={!item.can_edit}
                           >
@@ -367,6 +416,14 @@ function UsersPage() {
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal
+        open={deleteConfirmState.open}
+        username={deleteConfirmState.username}
+        loading={deleteConfirmState.loading}
+        onCancel={closeDeleteConfirm}
+        onConfirm={confirmDeleteUser}
+      />
     </main>
   )
 }

@@ -386,7 +386,7 @@ function CustomizeRolePermissionEditorPage() {
             if (!rows.length) return null
             return (
               <section key={section} className="rounded-sm border border-border/80">
-                <div className="border-b bg-[#f4f0dc] px-3 py-2 text-xs font-bold uppercase tracking-[0.16em]">
+                <div className="border-b bg-surface-2 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-foreground">
                   {SECTION_TITLE[section] || section}
                 </div>
                 <div className="divide-y divide-border/60">

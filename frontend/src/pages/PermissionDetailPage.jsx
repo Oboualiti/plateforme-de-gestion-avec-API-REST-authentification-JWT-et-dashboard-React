@@ -544,16 +544,16 @@ function PermissionDetailPage() {
           <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+          <table className="data-table">
             <thead>
-              <tr className="bg-[#e9e7db] text-foreground">
-                <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
-                <th className="border-b-2 border-foreground/90 px-4 py-3 text-center text-xs font-bold uppercase tracking-widest">Status</th>
+              <tr>
+                <th>Permission</th>
+                <th className="text-center">Status</th>
               </tr>
             </thead>
             <tbody>
               {user.permissions.map((permission) => (
-                <tr key={permission.key} className="border-b border-border/80">
+                <tr key={permission.key}>
                   <td className="px-4 py-3 align-top">
                     <div className="text-base font-bold leading-tight">{permission.name}</div>
                     <div className="text-sm text-muted-foreground">{permission.key}</div>
@@ -584,4 +584,3 @@ function PermissionDetailPage() {
 }
 
 export default PermissionDetailPage
-

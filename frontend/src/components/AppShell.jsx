@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { Bell, Building2, FileText, LogOut, Menu, Search, Settings, UserRound, X } from "lucide-react";
+import { Bell, Building2, FileText, LogOut, Menu, Moon, Search, Settings, Sun, UserRound, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useAuth } from "../context/AuthContext";
 import { ROLE_LABELS, ROLE_RANK } from "../lib/constants";
@@ -17,18 +17,21 @@ import {
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
 import wServiceLogo from "../assets/logo.png";
+import wServiceLogoDark from "../assets/logo_dark_mode.png";
 
-function Brand() {
+function Brand({ isDarkMode }) {
   return (
     <div className="flex flex-col items-start justify-center gap-0">
-      <img
-        src={wServiceLogo}
-        alt="W-Service logo"
-        className="h-9 w-auto max-w-[155px] object-contain"
-        loading="lazy"
-        width={1080}
-        height={458}
-      />
+      <div className="h-9 w-[165px] overflow-visible">
+        <img
+          src={isDarkMode ? wServiceLogoDark : wServiceLogo}
+          alt="W-Service logo"
+          className={`h-9 w-auto object-contain ${isDarkMode ? 'origin-left scale-[2.35]' : ''}`}
+          loading="lazy"
+          width={1080}
+          height={458}
+        />
+      </div>
       <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Requests Mgmt</div>
     </div>
   );
@@ -36,7 +39,7 @@ function Brand() {
 
 
 
-function SidebarContent({ onNavigate }) {
+function SidebarContent({ onNavigate, isDarkMode }) {
   const { user, logout } = useAuth();
   const role = user?.role_keys?.[0] || user?.role || "super_admin";
   const groups = getNavForRole(role, user).filter((group) => Array.isArray(group.items) && group.items.length > 0);
@@ -52,7 +55,7 @@ function SidebarContent({ onNavigate }) {
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="flex h-16 items-center border-b border-sidebar-border px-6">
-        <Brand />
+        <Brand isDarkMode={isDarkMode} />
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         {groups.map((group) => (
@@ -280,7 +283,18 @@ export function AppShell({ children }) {
     users: [],
     entities: [],
   });
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const stored = window.localStorage.getItem("theme");
+    if (stored === "dark") return true;
+    if (stored === "light") return false;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
   const blurTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDarkMode);
+    window.localStorage.setItem("theme", isDarkMode ? "dark" : "light");
+  }, [isDarkMode]);
 
   useEffect(() => {
     if (location.pathname !== "/requests") return;
@@ -368,7 +382,7 @@ export function AppShell({ children }) {
     <div className="min-h-screen bg-background">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r-2 border-sidebar-border lg:block">
-        <SidebarContent />
+        <SidebarContent isDarkMode={isDarkMode} />
       </aside>
 
       {/* Mobile sidebar */}
@@ -383,7 +397,7 @@ export function AppShell({ children }) {
             >
               <X className="h-4 w-4" />
             </button>
-            <SidebarContent onNavigate={() => setOpen(false)} />
+            <SidebarContent onNavigate={() => setOpen(false)} isDarkMode={isDarkMode} />
           </aside>
         </div>
       )}
@@ -472,6 +486,16 @@ export function AppShell({ children }) {
             )}
           </form>
           <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsDarkMode((current) => !current)}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input px-2.5 text-xs font-bold uppercase tracking-wider text-foreground transition-colors hover:bg-muted"
+              title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              {isDarkMode ? "Light" : "Dark"}
+            </button>
             <NotificationsBell />
             <UserMenu />
           </div>
@@ -483,10 +507,6 @@ export function AppShell({ children }) {
     </div>
   );
 }
-
-
-
-
 
 
 

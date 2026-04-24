@@ -9,6 +9,32 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Badge } from '../components/ui/badge'
 
+function DeleteConfirmModal({ open, username, loading, onCancel, onConfirm }) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+      <Card className="w-full max-w-md border-2 border-destructive/40 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <CardHeader>
+          <div className="inline-flex w-fit items-center rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-bold uppercase tracking-widest text-destructive">
+            Dangerous action
+          </div>
+          <CardTitle className="mt-2">Remove User</CardTitle>
+          <CardDescription>Delete user "{username || 'this user'}"? This action cannot be undone.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-end gap-2 border-t pt-4">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Removing...' : 'Remove user'}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 function PermissionManagementPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -33,6 +59,12 @@ function PermissionManagementPage() {
   const [actionMessage, setActionMessage] = useState('')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState('')
+  const [deleteConfirmState, setDeleteConfirmState] = useState({
+    open: false,
+    userId: null,
+    username: '',
+    loading: false,
+  })
   const importInputRef = useRef(null)
   
   const isSuccessMessage = actionMessage && !actionMessage.toLowerCase().includes('could not')
@@ -274,15 +306,34 @@ function PermissionManagementPage() {
     })
   }, [searchText, roleFilter, statusFilter, entityTypeFilter, companyFilter, entityFilter, showEntityTypeFilter, showCompanyFilter, showEntityFilter, state.users])
 
-  async function deleteUser(event, userId, username) {
+  function openDeleteConfirm(event, userId, username) {
     event.stopPropagation()
-    const confirmed = window.confirm(`Delete user "${username}"?`)
-    if (!confirmed) return
+    setDeleteConfirmState({
+      open: true,
+      userId,
+      username: username || '',
+      loading: false,
+    })
+  }
+
+  function closeDeleteConfirm() {
+    if (deleteConfirmState.loading) return
+    setDeleteConfirmState({ open: false, userId: null, username: '', loading: false })
+  }
+
+  async function confirmDeleteUser() {
+    if (!deleteConfirmState.userId || deleteConfirmState.loading) return
+    setDeleteConfirmState((current) => ({ ...current, loading: true }))
     try {
-      await api.delete(`/admin/users/manageable/${userId}/`)
-      setState((current) => ({ ...current, users: current.users.filter((item) => item.id !== userId) }))
+      await api.delete(`/admin/users/manageable/${deleteConfirmState.userId}/`)
       setActionMessage('User deleted.')
+      setState((current) => ({
+        ...current,
+        users: current.users.filter((item) => item.id !== deleteConfirmState.userId),
+      }))
+      setDeleteConfirmState({ open: false, userId: null, username: '', loading: false })
     } catch (error) {
+      setDeleteConfirmState((current) => ({ ...current, loading: false }))
       setActionMessage(error.response?.data?.detail || 'Could not delete user.')
     }
   }
@@ -460,7 +511,7 @@ function PermissionManagementPage() {
                       <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/admin/users/${item.id}`) }} disabled={!item.can_edit}>
                         Edit
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => deleteUser(e, item.id, item.username)} disabled={!item.can_edit}>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => openDeleteConfirm(e, item.id, item.username)} disabled={!item.can_edit}>
                         Delete
                       </Button>
                     </div>
@@ -478,9 +529,16 @@ function PermissionManagementPage() {
           {state.loading && <div className="py-20 text-center text-sm muted-text">Loading directory...</div>}
         </div>
       </Card>
+
+      <DeleteConfirmModal
+        open={deleteConfirmState.open}
+        username={deleteConfirmState.username}
+        loading={deleteConfirmState.loading}
+        onCancel={closeDeleteConfirm}
+        onConfirm={confirmDeleteUser}
+      />
     </main>
   )
 }
 
 export default PermissionManagementPage
-
