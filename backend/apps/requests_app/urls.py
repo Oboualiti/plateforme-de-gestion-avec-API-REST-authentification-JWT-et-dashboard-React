@@ -5,6 +5,7 @@ from .views import (
     MainBranchViewSet,
     OperationalUnitViewSet,
     RequestCommentCreateView,
+    RequestDeadlineUpdateView,
     RequestDetailView,
     RequestAssignToMeView,
     RequestAssignUserView,
@@ -45,6 +46,11 @@ urlpatterns = [
         "requests/<int:request_id>/status/",
         RequestStatusUpdateView.as_view(),
         name="requests-status",
+    ),
+    path(
+        "requests/<int:request_id>/deadline/",
+        RequestDeadlineUpdateView.as_view(),
+        name="requests-deadline",
     ),
     path(
         "requests/<int:request_id>/assign/",

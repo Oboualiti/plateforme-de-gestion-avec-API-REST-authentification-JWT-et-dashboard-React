@@ -272,6 +272,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     is_stuck = serializers.SerializerMethodField()
     is_submitted_to_target = serializers.BooleanField(read_only=True)
     is_pending_approval = serializers.SerializerMethodField()
+    can_edit_deadline = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
 
     class Meta:
@@ -290,6 +291,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "accepted_at",
             "completed_at",
             "closed_at",
+            "deadline_date",
             "resolution_note",
             "company",
             "company_name",
@@ -318,6 +320,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "is_stuck",
             "is_submitted_to_target",
             "is_pending_approval",
+            "can_edit_deadline",
         ]
 
     def get_role_keys(self, obj):
@@ -382,6 +385,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_is_pending_approval(self, obj):
         return (not obj.is_submitted_to_target) and obj.status == ServiceRequest.Status.NEW
+
+    def get_can_edit_deadline(self, obj):
+        return bool(self.context.get("can_edit_deadline"))
 
     def get_attachment_url(self, obj):
         if not obj.attachment:
@@ -511,6 +517,7 @@ class RequestCommentCreateSerializer(serializers.Serializer):
 class RequestStatusUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=ServiceRequest.Status.choices)
     note = serializers.CharField(required=False, allow_blank=True)
+    deadline_date = serializers.DateField(required=False)
 
     def validate(self, attrs):
         if attrs["status"] in {
@@ -522,6 +529,10 @@ class RequestStatusUpdateSerializer(serializers.Serializer):
                 {"note": "A resolution note is required for this status."}
             )
         return attrs
+
+
+class RequestDeadlineUpdateSerializer(serializers.Serializer):
+    deadline_date = serializers.DateField()
 
 
 class RequestAssignUserSerializer(serializers.Serializer):

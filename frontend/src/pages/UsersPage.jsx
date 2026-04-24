@@ -88,15 +88,21 @@ function UsersPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  const isSuperAdmin = (user?.role_keys || []).includes('super_admin')
-  const scopeLabel = isSuperAdmin ? 'All companies' : (user?.company_name || 'Global')
-
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [users, setUsers] = useState([])
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    next: null,
+    previous: null,
+  })
+  const [refreshKey, setRefreshKey] = useState(0)
   const [companies, setCompanies] = useState([])
   const [entities, setEntities] = useState([])
   const [q, setQ] = useState('')
+  const [qInput, setQInput] = useState('')
   const [role, setRole] = useState('all')
   const [companyId, setCompanyId] = useState('all')
   const [entityId, setEntityId] = useState('all')
@@ -109,41 +115,135 @@ function UsersPage() {
     loading: false,
   })
   const importInputRef = useRef(null)
+  const hasLoadedOnceRef = useRef(false)
+
+  function applyLocalFilters(items) {
+    const search = q.trim().toLowerCase()
+    return (items || []).filter((u) => {
+      const primaryRole = u.role || u.roles?.[0]?.key || 'user'
+      if (role !== 'all' && primaryRole !== role) return false
+      if (companyId !== 'all' && Number(u.company_id) !== Number(companyId)) return false
+      if (entityId !== 'all' && Number(u.entity_id) !== Number(entityId)) return false
+      if (!search) return true
+
+      const username = (u.username || '').toLowerCase()
+      const email = (u.email || '').toLowerCase()
+      const fullName = `${u.first_name || ''} ${u.last_name || ''}`.trim().toLowerCase()
+      return username.includes(search) || email.includes(search) || fullName.includes(search)
+    })
+  }
 
   useEffect(() => {
     let active = true
-    async function load() {
+    async function loadOptions() {
       try {
-        const [usersRes, optionsRes] = await Promise.all([
-          api.get('/admin/users/manageable/'),
-          api.get('/admin/users/manageable/options/'),
-        ])
+        const optionsRes = await api.get('/admin/users/manageable/options/')
         if (!active) return
-
-        const usersData = usersRes.data?.results !== undefined ? usersRes.data.results : usersRes.data
         const optionsData = optionsRes.data || {}
         const companiesData = optionsData.company_options || []
         const entitiesData = optionsData.entity_options || []
 
-        setUsers(Array.isArray(usersData) ? usersData : [])
         setCompanies(Array.isArray(companiesData) ? companiesData : [])
         setEntities(Array.isArray(entitiesData) ? entitiesData : [])
+      } catch (err) {
+        if (!active) return
+        setError(err?.response?.data?.detail || 'Failed to load user options.')
+        setCompanies([])
+        setEntities([])
+      }
+    }
+    loadOptions()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQ(qInput)
+    }, 180)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [qInput])
+
+  useEffect(() => {
+    let active = true
+    async function loadUsers() {
+      if (!hasLoadedOnceRef.current) {
+        setLoading(true)
+      }
+      try {
+        const params = {
+          page: pagination.page,
+          page_size: pagination.pageSize,
+        }
+        if (q.trim()) params.search = q.trim()
+        if (role !== 'all') params.role = role
+        if (companyId !== 'all') params.company_id = Number(companyId)
+        if (entityId !== 'all') params.entity_id = Number(entityId)
+
+        const usersRes = await api.get('/admin/users/manageable/', { params })
+        if (!active) return
+
+        const payload = usersRes.data
+        if (Array.isArray(payload)) {
+          const filteredLocal = applyLocalFilters(payload)
+          const start = (pagination.page - 1) * pagination.pageSize
+          const end = start + pagination.pageSize
+          setUsers(filteredLocal.slice(start, end))
+          setPagination((current) => ({
+            ...current,
+            total: filteredLocal.length,
+            next: end < filteredLocal.length ? 'local-next' : null,
+            previous: start > 0 ? 'local-prev' : null,
+          }))
+        } else {
+          const usersData = Array.isArray(payload?.results) ? payload.results : []
+          const hasServerPagination =
+            typeof payload?.count === 'number' ||
+            payload?.next !== undefined ||
+            payload?.previous !== undefined
+
+          if (hasServerPagination && typeof payload?.count === 'number') {
+            setUsers(usersData)
+            setPagination((current) => ({
+              ...current,
+              total: Number(payload.count || 0),
+              next: payload?.next || null,
+              previous: payload?.previous || null,
+            }))
+          } else {
+            const filteredLocal = applyLocalFilters(usersData)
+            const start = (pagination.page - 1) * pagination.pageSize
+            const end = start + pagination.pageSize
+            setUsers(filteredLocal.slice(start, end))
+            setPagination((current) => ({
+              ...current,
+              total: filteredLocal.length,
+              next: end < filteredLocal.length ? 'local-next' : null,
+              previous: start > 0 ? 'local-prev' : null,
+            }))
+          }
+        }
         setError('')
       } catch (err) {
         if (!active) return
         setError(err?.response?.data?.detail || 'Failed to load users.')
         setUsers([])
-        setCompanies([])
-        setEntities([])
       } finally {
-        if (active) setLoading(false)
+        if (active) {
+          setLoading(false)
+          hasLoadedOnceRef.current = true
+        }
       }
     }
-    load()
+    loadUsers()
     return () => {
       active = false
     }
-  }, [])
+  }, [pagination.page, pagination.pageSize, q, role, companyId, entityId, refreshKey])
 
   function openDeleteConfirm(userId, username) {
     setDeleteConfirmState({
@@ -164,7 +264,7 @@ function UsersPage() {
     setDeleteConfirmState((current) => ({ ...current, loading: true }))
     try {
       await api.delete(`/admin/users/manageable/${deleteConfirmState.userId}/`)
-      setUsers((current) => current.filter((item) => item.id !== deleteConfirmState.userId))
+      setRefreshKey((current) => current + 1)
       setDeleteConfirmState({ open: false, userId: null, username: '', loading: false })
     } catch (err) {
       setDeleteConfirmState((current) => ({ ...current, loading: false }))
@@ -203,11 +303,7 @@ function UsersPage() {
       })
       const created = response.data?.created_users || []
       if (created.length) {
-        setUsers((current) => {
-          const existingIds = new Set(current.map((item) => item.id))
-          const additions = created.filter((item) => !existingIds.has(item.id))
-          return [...additions, ...current]
-        })
+        setRefreshKey((current) => current + 1)
       }
     } catch (err) {
       window.alert(err?.response?.data?.detail || 'Could not import users.')
@@ -217,26 +313,21 @@ function UsersPage() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const search = q.trim().toLowerCase()
-    return users.filter((u) => {
-      const primaryRole = u.role || u.roles?.[0]?.key || 'user'
-      if (role !== 'all' && primaryRole !== role) return false
-      if (companyId !== 'all' && Number(u.company_id) !== Number(companyId)) return false
-      if (entityId !== 'all' && Number(u.entity_id) !== Number(entityId)) return false
-
-      if (!search) return true
-      const username = (u.username || '').toLowerCase()
-      const email = (u.email || '').toLowerCase()
-      const fullName = `${u.first_name || ''} ${u.last_name || ''}`.trim().toLowerCase()
-      return username.includes(search) || email.includes(search) || fullName.includes(search)
-    })
-  }, [users, q, role, companyId, entityId])
-
   const visibleEntities = useMemo(
     () => entities.filter((item) => companyId === 'all' || Number(item.company_id) === Number(companyId)),
     [entities, companyId],
   )
+  const visibleUsers = useMemo(() => {
+    const search = qInput.trim().toLowerCase()
+    if (!search) return users
+    return users.filter((item) => {
+      const username = (item.username || '').toLowerCase()
+      const email = (item.email || '').toLowerCase()
+      const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim().toLowerCase()
+      return username.includes(search) || email.includes(search) || fullName.includes(search)
+    })
+  }, [users, qInput])
+  const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.pageSize))
 
   if (loading) {
     return (
@@ -277,14 +368,6 @@ function UsersPage() {
             </Button>
           </div>
         }
-        meta={
-          <div className="flex items-center gap-4 text-xs">
-            <span className="text-muted-foreground uppercase tracking-widest font-bold">Scope:</span>
-            <span>{isSuperAdmin ? 'manage_users_global' : 'manage_users_entity'}</span>
-            <span className="text-muted-foreground uppercase tracking-widest font-bold ml-2">Entity:</span>
-            <span>{scopeLabel}</span>
-          </div>
-        }
       />
 
       <input ref={importInputRef} type="file" accept=".csv,.xlsx" onChange={importUsers} className="hidden" />
@@ -296,13 +379,19 @@ function UsersPage() {
           <div className="filter-bar flex-nowrap overflow-x-auto">
             <div className="relative min-w-[280px] flex-1">
               <Input
-                value={q}
-                onChange={(event) => setQ(event.target.value)}
+                value={qInput}
+                onChange={(event) => {
+                  setQInput(event.target.value)
+                  setPagination((current) => ({ ...current, page: 1 }))
+                }}
                 placeholder="Search by name or username..."
                 className="h-9"
               />
             </div>
-            <Select className="app-select !w-[190px] shrink-0" value={role} onChange={(event) => setRole(event.target.value)}>
+            <Select className="app-select !w-[190px] shrink-0" value={role} onChange={(event) => {
+              setRole(event.target.value)
+              setPagination((current) => ({ ...current, page: 1 }))
+            }}>
               <option value="all">All roles</option>
               {roleKeys.map((roleKey) => (
                 <option key={roleKey} value={roleKey}>
@@ -316,6 +405,7 @@ function UsersPage() {
               onChange={(event) => {
                 setCompanyId(event.target.value)
                 setEntityId('all')
+                setPagination((current) => ({ ...current, page: 1 }))
               }}
             >
               <option value="all">All companies</option>
@@ -325,7 +415,10 @@ function UsersPage() {
                 </option>
               ))}
             </Select>
-            <Select className="app-select !w-[210px] shrink-0" value={entityId} onChange={(event) => setEntityId(event.target.value)}>
+            <Select className="app-select !w-[210px] shrink-0" value={entityId} onChange={(event) => {
+              setEntityId(event.target.value)
+              setPagination((current) => ({ ...current, page: 1 }))
+            }}>
               <option value="all">All entities</option>
               {visibleEntities.map((entity) => (
                 <option key={entity.id} value={String(entity.id)}>
@@ -347,7 +440,7 @@ function UsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((item) => {
+                {visibleUsers.map((item) => {
                   const roleKey = item.role || item.roles?.[0]?.key || 'user'
                   const roleLabel = ROLE_LABELS[roleKey] || roleKey
                   const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.username || 'User'
@@ -407,12 +500,38 @@ function UsersPage() {
                 })}
               </tbody>
             </table>
-            {!filtered.length && (
+            {!visibleUsers.length && (
               <div className="py-20 text-center space-y-2">
                 <p className="text-sm font-medium">No results found</p>
                 <p className="text-xs text-muted-foreground">Try adjusting your filters or search terms.</p>
               </div>
             )}
+          </div>
+
+          <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs">
+            <p className="text-muted-foreground">
+              Showing page {pagination.page} of {totalPages} ({pagination.total} users)
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!pagination.previous || pagination.page <= 1 || loading}
+                onClick={() => setPagination((current) => ({ ...current, page: Math.max(1, current.page - 1) }))}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!pagination.next || pagination.page >= totalPages || loading}
+                onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </div>
       )}

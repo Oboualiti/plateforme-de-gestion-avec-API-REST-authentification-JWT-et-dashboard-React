@@ -544,7 +544,7 @@ function PermissionDetailPage() {
           <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="data-table">
+          <table className="data-table bg-card">
             <thead>
               <tr>
                 <th>Permission</th>
@@ -553,7 +553,7 @@ function PermissionDetailPage() {
             </thead>
             <tbody>
               {user.permissions.map((permission) => (
-                <tr key={permission.key}>
+                <tr key={permission.key} className="bg-card">
                   <td className="px-4 py-3 align-top">
                     <div className="text-base font-bold leading-tight">{permission.name}</div>
                     <div className="text-sm text-muted-foreground">{permission.key}</div>

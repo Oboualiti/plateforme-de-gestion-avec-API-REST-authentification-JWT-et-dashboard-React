@@ -334,7 +334,7 @@
   }
 
   .data-table td {
-    @apply border-b border-ink/20 px-4 py-3 text-sm transition-colors;
+    @apply border-b border-ink/20 bg-card px-4 py-3 text-sm transition-colors;
   }
 
   .data-table tr:last-child td {

@@ -1,4 +1,5 @@
 from django.test import TestCase
+from datetime import date
 
 # Create your tests here.
 from django.core.management import call_command
@@ -79,6 +80,21 @@ class RequestPermissionWorkflowTests(APITestCase):
             "team_leader",
             entity=self.support_entity,
         )
+        self.support_senior = self._create_user_with_role(
+            "senior_support",
+            "senior",
+            entity=self.support_entity,
+        )
+        self.support_super_admin = self._create_user_with_role(
+            "super_support",
+            "super_admin",
+            entity=self.support_entity,
+        )
+        self.support_manager = self._create_user_with_role(
+            "manager_support",
+            "manager",
+            entity=self.support_entity,
+        )
 
         self.pending_request = ServiceRequest.objects.create(
             request_number="REQ-UNIT-0001",
@@ -147,7 +163,11 @@ class RequestPermissionWorkflowTests(APITestCase):
         url = reverse("requests-status", kwargs={"request_id": self.submitted_request.id})
         response = self.client.post(
             url,
-            {"status": ServiceRequest.Status.ACCEPTED, "note": "Accepted by senior"},
+            {
+                "status": ServiceRequest.Status.ACCEPTED,
+                "note": "Accepted by senior",
+                "deadline_date": "2026-05-03",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -175,3 +195,71 @@ class RequestPermissionWorkflowTests(APITestCase):
         request_ids = {item["id"] for item in results}
         self.assertIn(self.pending_request.id, request_ids)
         self.assertIn(self.submitted_request.id, request_ids)
+
+    def test_target_entity_accept_requires_deadline(self):
+        self.client.force_authenticate(user=self.support_manager)
+        url = reverse("requests-status", kwargs={"request_id": self.submitted_request.id})
+        response = self.client.post(
+            url,
+            {"status": ServiceRequest.Status.ACCEPTED, "note": "Taking ownership"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("approximate deadline", str(response.data.get("detail", "")).lower())
+
+    def test_target_entity_accept_sets_deadline(self):
+        self.client.force_authenticate(user=self.support_manager)
+        url = reverse("requests-status", kwargs={"request_id": self.submitted_request.id})
+        response = self.client.post(
+            url,
+            {
+                "status": ServiceRequest.Status.ACCEPTED,
+                "note": "Accepted by support manager",
+                "deadline_date": "2026-05-01",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.submitted_request.refresh_from_db()
+        self.assertEqual(self.submitted_request.status, ServiceRequest.Status.ACCEPTED)
+        self.assertEqual(self.submitted_request.deadline_date.isoformat(), "2026-05-01")
+
+    def test_only_target_entity_users_can_update_deadline(self):
+        url = reverse("requests-deadline", kwargs={"request_id": self.submitted_request.id})
+
+        self.client.force_authenticate(user=self.outsider_manager)
+        forbidden_response = self.client.post(
+            url,
+            {"deadline_date": "2026-05-04"},
+            format="json",
+        )
+        self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(user=self.support_team_leader)
+        success_response = self.client.post(
+            url,
+            {"deadline_date": "2026-05-04"},
+            format="json",
+        )
+        self.assertEqual(success_response.status_code, status.HTTP_200_OK)
+        self.submitted_request.refresh_from_db()
+        self.assertEqual(self.submitted_request.deadline_date, date(2026, 5, 4))
+
+    def test_senior_and_super_admin_can_edit_deadline_with_permission(self):
+        url = reverse("requests-deadline", kwargs={"request_id": self.submitted_request.id})
+
+        self.client.force_authenticate(user=self.support_senior)
+        senior_response = self.client.post(
+            url,
+            {"deadline_date": "2026-05-06"},
+            format="json",
+        )
+        self.assertEqual(senior_response.status_code, status.HTTP_200_OK)
+
+        self.client.force_authenticate(user=self.support_super_admin)
+        super_admin_response = self.client.post(
+            url,
+            {"deadline_date": "2026-05-07"},
+            format="json",
+        )
+        self.assertEqual(super_admin_response.status_code, status.HTTP_200_OK)

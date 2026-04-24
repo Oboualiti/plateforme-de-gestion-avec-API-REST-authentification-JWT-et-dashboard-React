@@ -1653,6 +1653,7 @@ const permissionMetaByKey = {
   assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
   resolve_request: { title: 'Resolve Request', description: 'Mark as resolved', section: 'requests' },
   close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
+  edit_request_deadline: { title: 'Edit Request Deadline', description: 'Set and update approximate request deadlines', section: 'requests' },
   view_request_discussion: { title: 'View Request Discussion', description: 'View request discussion messages', section: 'requests' },
   comment_request: { title: 'Comment Request', description: 'Post messages in request discussion', section: 'requests' },
   view_global_reports: { title: 'View Global Reports', description: 'Access global reporting', section: 'reports' },
@@ -1916,7 +1917,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-collapse">
+        <table className="w-full min-w-[1080px] border-collapse bg-card">
           <thead>
             <tr>
               <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
@@ -1939,8 +1940,8 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
                     </td>
                   </tr>
                   {rows.map((row) => (
-                    <tr key={row.key} className="border-b border-border/80">
-                      <td className="px-4 py-3 align-top">
+                    <tr key={row.key} className="border-b border-border/80 bg-card">
+                      <td className="bg-card px-4 py-3 align-top">
                         <div className="text-base font-bold leading-tight">{row.title}</div>
                         <div className="text-sm text-muted-foreground">{row.description}</div>
                       </td>
@@ -1950,7 +1951,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
                         const editable = !blockReason
                         const saving = Boolean(savingByRoleId[role.id])
                         return (
-                          <td key={`${row.key}-${role.id}`} className="px-4 py-3 text-center">
+                          <td key={`${row.key}-${role.id}`} className="bg-card px-4 py-3 text-center">
                             <button
                               type="button"
                               className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
@@ -2022,5 +2023,3 @@ function AdminTableSkeleton({ rows = 8, cols = 6 }) {
 }
 
 export default AdminControlCenterPage
-
-

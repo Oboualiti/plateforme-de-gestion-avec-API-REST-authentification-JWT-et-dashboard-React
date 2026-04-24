@@ -47,6 +47,7 @@ from .serializers import (
     MainBranchSerializer,
     OperationalUnitSerializer,
     RequestCommentCreateSerializer,
+    RequestDeadlineUpdateSerializer,
     RequestDetailSerializer,
     RequestMessageSerializer,
     RequestStatusUpdateSerializer,
@@ -673,6 +674,7 @@ class RequestStatusUpdateView(APIView):
         old_status = service_request.status
         requested_status = serializer.validated_data["status"]
         note = serializer.validated_data.get("note", "")
+        deadline_date = serializer.validated_data.get("deadline_date")
         allowed_transitions = get_allowed_status_transitions(request.user, service_request)
         if requested_status not in allowed_transitions:
             return Response(
@@ -685,6 +687,23 @@ class RequestStatusUpdateView(APIView):
             and not service_request.is_submitted_to_target
             and requested_status == ServiceRequest.Status.ACCEPTED
         )
+        can_actor_edit_deadline = can_edit_request_deadline(request.user, service_request)
+        if deadline_date and not can_actor_edit_deadline:
+            return Response(
+                {"detail": "Only target entity users can set request deadlines."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if (
+            requested_status == ServiceRequest.Status.ACCEPTED
+            and can_actor_edit_deadline
+            and not submit_to_target_on_approve
+            and not deadline_date
+            and not service_request.deadline_date
+        ):
+            return Response(
+                {"detail": "Please set an approximate deadline when accepting this request."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         was_pending_request = (
             old_status == ServiceRequest.Status.NEW and not service_request.is_submitted_to_target
         )
@@ -727,6 +746,9 @@ class RequestStatusUpdateView(APIView):
             service_request.rejection_reason = note
             service_request.resolution_note = note
             update_fields.extend(["rejection_reason", "resolution_note"])
+        if deadline_date:
+            service_request.deadline_date = deadline_date
+            update_fields.append("deadline_date")
         service_request.save(update_fields=update_fields)
         RequestStatusHistory.objects.create(
             request=service_request,
@@ -785,6 +807,65 @@ class RequestStatusUpdateView(APIView):
                 },
             )
         mirror_request_message_to_telegram(service_request, request_message)
+        service_request = load_request(request_id)
+        mark_request_stuck(service_request)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+
+class RequestDeadlineUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not get_visible_requests_queryset(request.user).filter(id=service_request.id).exists():
+            return Response(
+                {"detail": "You cannot access this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not can_edit_request_deadline(request.user, service_request):
+            return Response(
+                {"detail": "Only target entity users can edit the deadline."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = RequestDeadlineUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service_request.deadline_date = serializer.validated_data["deadline_date"]
+        service_request.save(update_fields=["deadline_date"])
+
+        message_text = (
+            "Approximate deadline updated to "
+            f"{service_request.deadline_date.isoformat()}."
+        )
+        request_message = RequestMessage.objects.create(
+            request=service_request,
+            sender=request.user,
+            message=message_text,
+        )
+        recipients = resolve_request_notification_recipients(service_request)
+        recipients = filter_recipients_by_request_visibility(service_request, recipients)
+        create_bulk_notifications(
+            users=recipients,
+            event_type=UserNotification.EventType.REQUEST_MESSAGE,
+            title=f"Deadline updated on {service_request.request_number}",
+            message=f"{request.user.username}: {message_text}",
+            link=f"/requests/{service_request.id}",
+            metadata={
+                "request_id": service_request.id,
+                "request_number": service_request.request_number,
+                "message_id": request_message.id,
+            },
+        )
+        mirror_request_message_to_telegram(service_request, request_message)
+
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
         return Response(
@@ -1154,6 +1235,15 @@ def can_manage_incoming_request(user, service_request):
     )
 
 
+def can_edit_request_deadline(user, service_request):
+    if not has_permission(user, "edit_request_deadline"):
+        return False
+    actor_role = get_primary_role_key(user)
+    if actor_role in {"super_admin", "senior"}:
+        return can_operate_submitted_request(user, service_request)
+    return can_manage_incoming_request(user, service_request)
+
+
 def get_request_company_id(service_request):
     if service_request.company_id:
         return service_request.company_id
@@ -1280,6 +1370,7 @@ def build_request_detail_context(request, service_request):
     return {
         "request": request,
         "can_manage_incoming_request": bool(allowed_status_transitions),
+        "can_edit_deadline": can_edit_request_deadline(request.user, service_request),
         "allowed_status_transitions": allowed_status_transitions,
         "can_assign_request": can_assign_request(request.user, service_request),
         "can_reassign_target_team": can_reassign_target_team(request.user, service_request),
@@ -1533,4 +1624,3 @@ def get_or_create_unit_for_entity(entity):
     if changed:
         unit.save()
     return unit
-

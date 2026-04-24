@@ -91,6 +91,7 @@ const PERMISSION_META_BY_KEY = {
   assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
   resolve_request: { title: 'Resolve Request', description: 'Mark as resolved', section: 'requests' },
   close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
+  edit_request_deadline: { title: 'Edit Request Deadline', description: 'Set and update approximate request deadlines', section: 'requests' },
   view_global_reports: { title: 'View Global Reports', description: 'Access global reporting', section: 'monitoring' },
   view_company_reports: { title: 'View Company Reports', description: 'Access company reporting', section: 'monitoring' },
   view_entity_reports: { title: 'View Entity Reports', description: 'Access entity reporting', section: 'monitoring' },
@@ -385,7 +386,7 @@ function CustomizeRolePermissionEditorPage() {
             const rows = rowsBySection[section] || []
             if (!rows.length) return null
             return (
-              <section key={section} className="rounded-sm border border-border/80">
+              <section key={section} className="rounded-sm border border-border/80 bg-card">
                 <div className="border-b bg-surface-2 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-foreground">
                   {SECTION_TITLE[section] || section}
                 </div>
@@ -395,7 +396,7 @@ function CustomizeRolePermissionEditorPage() {
                     const blockReason = getBlockReason(row.key)
                     const editable = !blockReason && !saving
                     return (
-                      <div key={row.key} className="flex items-start justify-between gap-3 px-3 py-2">
+                      <div key={row.key} className="flex items-start justify-between gap-3 bg-card px-3 py-2">
                         <div>
                           <p className="text-sm font-bold">{row.title}</p>
                           <p className="text-xs text-muted-foreground">{row.description}</p>

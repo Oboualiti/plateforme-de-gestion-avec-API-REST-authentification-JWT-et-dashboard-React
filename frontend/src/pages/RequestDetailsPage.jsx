@@ -17,6 +17,7 @@ import { Avatar } from '../components/Avatar'
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
+import { DeadlinePlanner } from '../components/ui/deadline-planner'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import { cn } from '../lib/utils'
@@ -110,10 +111,13 @@ function StatusNoteModal({
   open,
   targetStatus,
   note,
+  deadlineDate,
+  requireDeadline,
   required,
   error,
   loading,
   onChangeNote,
+  onChangeDeadlineDate,
   onCancel,
   onConfirm,
 }) {
@@ -139,6 +143,25 @@ function StatusNoteModal({
             className="w-full min-h-[110px] rounded-lg border-2 border-ink bg-card p-3 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-muted-foreground"
             placeholder={required ? 'Write the resolution note...' : 'Optional note...'}
           />
+          {requireDeadline ? (
+            <>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Approximate deadline *
+              </label>
+              <div className="flex justify-center">
+                <DeadlinePlanner
+                  selectedDate={deadlineDate ? new Date(deadlineDate) : undefined}
+                  numberOfMonths={1}
+                  onDateSelect={(date) => {
+                    if (date) {
+                      const formattedDate = date.toISOString().split('T')[0]
+                      onChangeDeadlineDate(formattedDate)
+                    }
+                  }}
+                />
+              </div>
+            </>
+          ) : null}
           {error ? <p className="text-xs font-semibold text-destructive">{error}</p> : null}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
@@ -170,9 +193,12 @@ function RequestDetailsPage() {
     open: false,
     targetStatus: '',
     note: '',
+    deadlineDate: '',
+    requireDeadline: false,
     required: false,
     error: '',
   })
+  const [deadlineForm, setDeadlineForm] = useState({ value: '', saving: false, error: '' })
   const discussionRef = useRef(null)
 
   const request = state.request
@@ -191,6 +217,8 @@ function RequestDetailsPage() {
     return [...new Set(options)]
   }, [allowedStatusTransitions, request?.status])
   const canAssignToMe = Boolean(request?.can_assign_to_me)
+  const canEditDeadline = Boolean(request?.can_edit_deadline)
+  const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const potentialAssignees = request?.potential_assignees || []
   const canManagerAssignTl = (isManager || isSenior)
     && !request?.current_assignee
@@ -250,6 +278,14 @@ function RequestDetailsPage() {
     }
   }, [canViewRequestDiscussion, activeTab])
 
+  useEffect(() => {
+    setDeadlineForm((current) => ({
+      ...current,
+      value: request?.deadline_date || '',
+      error: '',
+    }))
+  }, [request?.deadline_date])
+
   async function handleAction(promise) {
     setActionState({ busy: true, error: '' })
     try {
@@ -279,10 +315,13 @@ function RequestDetailsPage() {
   function requestStatusChange(status) {
     if (!status || status === request?.status) return
     const required = terminalStatuses.has(status)
+    const requireDeadline = status === 'ACCEPTED' && hasDeadlineEditAccess
     setStatusDialog({
       open: true,
       targetStatus: status,
       note: '',
+      deadlineDate: request?.deadline_date || '',
+      requireDeadline,
       required,
       error: '',
     })
@@ -294,6 +333,8 @@ function RequestDetailsPage() {
       open: false,
       targetStatus: '',
       note: '',
+      deadlineDate: '',
+      requireDeadline: false,
       required: false,
       error: '',
     })
@@ -308,13 +349,26 @@ function RequestDetailsPage() {
       }))
       return
     }
+    if (statusDialog.requireDeadline && !statusDialog.deadlineDate) {
+      setStatusDialog((current) => ({
+        ...current,
+        error: 'Approximate deadline is required when accepting this request.',
+      }))
+      return
+    }
+    const payload = { status: statusDialog.targetStatus, note }
+    if (statusDialog.deadlineDate) {
+      payload.deadline_date = statusDialog.deadlineDate
+    }
     await handleAction(
-      api.post(`/requests/${requestId}/status/`, { status: statusDialog.targetStatus, note }),
+      api.post(`/requests/${requestId}/status/`, payload),
     )
     setStatusDialog({
       open: false,
       targetStatus: '',
       note: '',
+      deadlineDate: '',
+      requireDeadline: false,
       required: false,
       error: '',
     })
@@ -340,6 +394,24 @@ function RequestDetailsPage() {
       setAiSummary({ loading: false, error: '', data: response.data })
     } catch (err) {
       setAiSummary({ loading: false, error: 'AI summarization failed.', data: null })
+    }
+  }
+
+  async function saveDeadline() {
+    if (!hasDeadlineEditAccess || !deadlineForm.value) return
+    setDeadlineForm((current) => ({ ...current, saving: true, error: '' }))
+    try {
+      const response = await api.post(`/requests/${requestId}/deadline/`, {
+        deadline_date: deadlineForm.value,
+      })
+      setState((current) => ({ ...current, request: response.data }))
+      setDeadlineForm((current) => ({ ...current, saving: false, error: '' }))
+    } catch (error) {
+      setDeadlineForm((current) => ({
+        ...current,
+        saving: false,
+        error: error.response?.data?.detail || 'Could not save deadline.',
+      }))
     }
   }
 
@@ -577,10 +649,88 @@ function RequestDetailsPage() {
               )}
             </div>
           </article>
+
+          {/* AI Intelligence */}
+          <article className="surface-card p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-primary" />
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">AI Synopsis</h3>
+              </div>
+              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="h-7 px-2">
+                {aiSummary.loading ? '...' : <Clock className="h-3 w-3" />}
+              </Button>
+            </div>
+            {aiSummary.data ? (
+              <div className="space-y-4">
+                <div className="rounded border border-primary/10 bg-primary/5 p-3">
+                  <p className="mb-1 text-[10px] font-bold uppercase text-primary">Briefing</p>
+                  <p className="text-[11px] font-medium leading-relaxed">{aiSummary.data.short_summary}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Status</p>
+                    <p className="text-xs font-bold">{aiSummary.data.current_progress || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Owner</p>
+                    <p className="truncate text-xs font-bold">{aiSummary.data.pending_from || 'System'}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Next Expected Step</p>
+                  <p className="text-xs font-medium text-primary">{aiSummary.data.next_action || 'Continuous monitoring'}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded border border-dashed border-border bg-muted/10 py-6 text-center">
+                <p className="text-[10px] font-bold uppercase text-muted-foreground">No intelligence data</p>
+                <Button variant="link" size="sm" onClick={loadAiSummary} className="mt-1 h-auto p-0 text-[10px] uppercase">Initialize</Button>
+              </div>
+            )}
+          </article>
         </div>
 
         {/* Operational Sidebar (Right) */}
         <aside className="space-y-6">
+          <article className="surface-card p-6 space-y-4">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Deadline Planner</h3>
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Approximate completion date
+              </label>
+              <div className="flex justify-center rounded-lg bg-card/20 p-1">
+                <DeadlinePlanner
+                  selectedDate={deadlineForm.value ? new Date(deadlineForm.value) : undefined}
+                  numberOfMonths={1}
+                  disabled={!hasDeadlineEditAccess}
+                  onDateSelect={(date) => {
+                    if (!date) return
+                    const formattedDate = date.toISOString().split('T')[0]
+                    setDeadlineForm((current) => ({ ...current, value: formattedDate, error: '' }))
+                  }}
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={saveDeadline}
+                disabled={!hasDeadlineEditAccess || deadlineForm.saving || !deadlineForm.value}
+              >
+                {deadlineForm.saving ? 'Saving...' : 'Save Deadline'}
+              </Button>
+            </div>
+            {!hasDeadlineEditAccess ? (
+              <p className="text-[10px] font-medium text-muted-foreground">
+                You need the "Edit Request Deadline" permission to edit this date.
+              </p>
+            ) : null}
+            {deadlineForm.error ? (
+              <p className="text-[10px] font-bold text-destructive">{deadlineForm.error}</p>
+            ) : null}
+          </article>
+
           {/* Decision Matrix */}
           <article className="surface-card p-6">
              <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-4">Operations</h3>
@@ -687,6 +837,10 @@ function RequestDetailsPage() {
                    <span className="text-muted-foreground font-medium">Last Interaction</span>
                    <span className="font-bold">{formatDateOnly(request.updated_at || request.created_at)}</span>
                 </div>
+                <div className="flex items-center justify-between text-xs">
+                   <span className="text-muted-foreground font-medium">Approx. Deadline</span>
+                   <span className="font-bold">{request.deadline_date ? formatDateOnly(request.deadline_date) : '-'}</span>
+                </div>
                 {request.completed_at && (
                   <div className="flex items-center justify-between text-xs pt-2 border-t border-border">
                      <span className="text-emerald-600 font-bold uppercase text-[10px]">Resolved At</span>
@@ -695,46 +849,6 @@ function RequestDetailsPage() {
                 )}
              </div>
           </article>
-
-          {/* AI Intelligence */}
-          <article className="surface-card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-primary" />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">AI Synopsis</h3>
-              </div>
-              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="h-7 px-2">
-                {aiSummary.loading ? '...' : <Clock className="h-3 w-3" />}
-              </Button>
-            </div>
-            {aiSummary.data ? (
-              <div className="space-y-4">
-                <div className="bg-primary/5 p-3 rounded border border-primary/10">
-                   <p className="text-[10px] font-bold text-primary uppercase mb-1">Briefing</p>
-                   <p className="text-[11px] font-medium leading-relaxed">{aiSummary.data.short_summary}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                   <div>
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Status</p>
-                      <p className="text-xs font-bold">{aiSummary.data.current_progress || '-'}</p>
-                   </div>
-                   <div>
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Owner</p>
-                      <p className="text-xs font-bold truncate">{aiSummary.data.pending_from || 'System'}</p>
-                   </div>
-                </div>
-                <div>
-                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Next Expected Step</p>
-                   <p className="text-xs font-medium text-primary">{aiSummary.data.next_action || 'Continuous monitoring'}</p>
-                </div>
-              </div>
-            ) : (
-                <div className="py-6 text-center bg-muted/10 rounded border border-dashed border-border">
-                   <p className="text-[10px] font-bold text-muted-foreground uppercase">No intelligence data</p>
-                   <Button variant="link" size="sm" onClick={loadAiSummary} className="h-auto p-0 text-[10px] uppercase mt-1">Initialize</Button>
-                </div>
-            )}
-          </article>
         </aside>
       </div>
 
@@ -742,11 +856,16 @@ function RequestDetailsPage() {
         open={statusDialog.open}
         targetStatus={statusDialog.targetStatus}
         note={statusDialog.note}
+        deadlineDate={statusDialog.deadlineDate}
+        requireDeadline={statusDialog.requireDeadline}
         required={statusDialog.required}
         error={statusDialog.error}
         loading={actionState.busy}
         onChangeNote={(value) =>
           setStatusDialog((current) => ({ ...current, note: value, error: '' }))
+        }
+        onChangeDeadlineDate={(value) =>
+          setStatusDialog((current) => ({ ...current, deadlineDate: value, error: '' }))
         }
         onCancel={closeStatusDialog}
         onConfirm={confirmStatusChange}
