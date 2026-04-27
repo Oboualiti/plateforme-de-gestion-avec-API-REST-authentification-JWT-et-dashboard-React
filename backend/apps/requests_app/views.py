@@ -557,6 +557,25 @@ class RequestListCreateView(APIView):
                     "request_number": service_request.request_number,
                 },
             )
+        else:
+            pending_approvers = get_pending_approval_team_leaders(
+                service_request,
+                exclude_user_id=request.user.id,
+            )
+            create_bulk_notifications(
+                users=pending_approvers,
+                event_type=UserNotification.EventType.REQUEST_CREATED,
+                title=f"Pending approval: {service_request.request_number}",
+                message=(
+                    f"{request.user.username} created a request pending your approval: "
+                    f"{service_request.title}"
+                ),
+                link=f"/requests/{service_request.id}",
+                metadata={
+                    "request_id": service_request.id,
+                    "request_number": service_request.request_number,
+                },
+            )
         return Response(
             RequestDetailSerializer(
                 load_request(service_request.id),
@@ -784,7 +803,31 @@ class RequestStatusUpdateView(APIView):
             sender=request.user,
             message=progress_message,
         )
-        recipients = resolve_request_notification_recipients(service_request)
+        decision_recipient_exclude = None
+        if was_pending_request and requested_status in {
+            ServiceRequest.Status.ACCEPTED,
+            ServiceRequest.Status.REJECTED,
+        }:
+            decision_label = "approved" if requested_status == ServiceRequest.Status.ACCEPTED else "rejected"
+            create_notification(
+                user=service_request.requester_user,
+                event_type=UserNotification.EventType.REQUEST_MESSAGE,
+                title=f"Request {decision_label}: {service_request.request_number}",
+                message=(
+                    f"{request.user.username} {decision_label} your request "
+                    f"{service_request.request_number}."
+                ),
+                link=f"/requests/{service_request.id}",
+                metadata={
+                    "request_id": service_request.id,
+                    "request_number": service_request.request_number,
+                },
+            )
+            decision_recipient_exclude = service_request.requester_user_id
+        recipients = resolve_request_notification_recipients(
+            service_request,
+            exclude_user_id=decision_recipient_exclude,
+        )
         recipients = filter_recipients_by_request_visibility(service_request, recipients)
         create_bulk_notifications(
             users=recipients,
@@ -798,8 +841,30 @@ class RequestStatusUpdateView(APIView):
                 "message_id": request_message.id,
             },
         )
+        if (
+            service_request.current_assignee_id
+            and service_request.current_assignee_id != request.user.id
+            and not recipients.filter(id=service_request.current_assignee_id).exists()
+        ):
+            owner_user = User.objects.filter(id=service_request.current_assignee_id, is_active=True).first()
+            if owner_user:
+                create_notification(
+                    user=owner_user,
+                    event_type=UserNotification.EventType.REQUEST_MESSAGE,
+                    title=f"Progress updated on {service_request.request_number}",
+                    message=f"{request.user.username}: {progress_message}",
+                    link=f"/requests/{service_request.id}",
+                    metadata={
+                        "request_id": service_request.id,
+                        "request_number": service_request.request_number,
+                        "message_id": request_message.id,
+                    },
+                )
         if submit_to_target_on_approve:
-            recipients = resolve_request_notification_recipients(service_request)
+            recipients = resolve_request_notification_recipients(
+                service_request,
+                exclude_user_id=decision_recipient_exclude,
+            )
             recipients = filter_recipients_by_request_visibility(service_request, recipients)
             create_bulk_notifications(
                 users=recipients,
@@ -873,6 +938,25 @@ class RequestDeadlineUpdateView(APIView):
                 "message_id": request_message.id,
             },
         )
+        if (
+            service_request.current_assignee_id
+            and service_request.current_assignee_id != request.user.id
+            and not recipients.filter(id=service_request.current_assignee_id).exists()
+        ):
+            owner_user = User.objects.filter(id=service_request.current_assignee_id, is_active=True).first()
+            if owner_user:
+                create_notification(
+                    user=owner_user,
+                    event_type=UserNotification.EventType.REQUEST_MESSAGE,
+                    title=f"Deadline updated on {service_request.request_number}",
+                    message=f"{request.user.username}: {message_text}",
+                    link=f"/requests/{service_request.id}",
+                    metadata={
+                        "request_id": service_request.id,
+                        "request_number": service_request.request_number,
+                        "message_id": request_message.id,
+                    },
+                )
         mirror_request_message_to_telegram(service_request, request_message)
 
         service_request = load_request(request_id)
@@ -1050,6 +1134,20 @@ class RequestAssignUserView(APIView):
             assignee=assignee,
             note=note,
         )
+        create_notification(
+            user=assignee,
+            event_type=UserNotification.EventType.REQUEST_MESSAGE,
+            title=f"Request assigned: {service_request.request_number}",
+            message=(
+                f"{request.user.username} assigned you request "
+                f"{service_request.request_number}."
+            ),
+            link=f"/requests/{service_request.id}",
+            metadata={
+                "request_id": service_request.id,
+                "request_number": service_request.request_number,
+            },
+        )
         assignee_role_keys = set(get_user_role_keys(assignee))
         if "team_leader" in assignee_role_keys:
             mirror_request_assignment_to_telegram(
@@ -1153,6 +1251,32 @@ class RequestTargetReassignView(APIView):
         )
 
 
+
+def get_pending_approval_team_leaders(service_request, exclude_user_id=None):
+    requester = service_request.requester_user
+    company_id = get_request_company_id(service_request) or requester.company_id
+    source_entity_id = service_request.source_entity_id or requester.entity_id
+
+    approver_ids = UserRole.objects.filter(role__key__in=["team_leader", "manager"]).values_list(
+        "user_id", flat=True
+    )
+    recipients = User.objects.filter(is_active=True, id__in=approver_ids)
+
+    if company_id:
+        recipients = recipients.filter(company_id=company_id)
+    if source_entity_id:
+        recipients = recipients.filter(entity_id=source_entity_id)
+
+    if requester.team_leader_id:
+        recipients = recipients | User.objects.filter(
+            id=requester.team_leader_id,
+            is_active=True,
+        )
+
+    if exclude_user_id:
+        recipients = recipients.exclude(id=exclude_user_id)
+
+    return recipients.distinct()
 def load_request(request_id):
     return (
         ServiceRequest.objects.select_related(

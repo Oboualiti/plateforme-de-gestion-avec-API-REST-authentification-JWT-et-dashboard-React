@@ -1,16 +1,26 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
-  Building2,
-  Calendar,
-  CheckCircle2,
-  MessageSquarePlus,
   ArrowRight,
-  User2,
-  Clock,
-  ExternalLink,
   Bot,
+  Calendar,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  FileText,
+  MoreHorizontal,
+  Paperclip,
+  Send,
+  Sparkles,
+  UserPlus,
+  Users,
+  Building2,
+  MessageSquarePlus,
+  ExternalLink,
+  Clock,
 } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -450,175 +460,298 @@ function RequestDetailsPage() {
   )
 
   return (
-    <main className="page-content pb-12 space-y-6">
-      <section className="surface-card min-h-[210px] bg-surface-1 dark:bg-gradient-to-r dark:from-surface-1 dark:via-surface-1 dark:to-surface-2 p-8">
-        <div className="flex min-h-[170px] flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0 space-y-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(-1)}
-              className="-ml-3 w-fit px-2 text-[12px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
-            </Button>
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">
+    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      {/* Top bar: back link */}
+      <button
+        onClick={() => navigate(-1)}
+        className="inline-flex items-center gap-1.5 text-sm font-extrabold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Requests
+      </button>
+
+      {/* Header row */}
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>Request</span>
+            <span className="text-muted-foreground/60">•</span>
+            <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px] tracking-tight text-foreground border-2 border-ink shadow-sm">
               {request.reference_code || `#${request.request_number}`}
-            </p>
-            <h1 className="text-5xl font-black uppercase tracking-[-0.02em] leading-none text-foreground">
-              {request.title || 'Untitled Request'}
-            </h1>
-
-
-          </div>
-          <div className="flex flex-col items-start gap-3 pb-1 lg:items-end">
-            <span className="inline-flex items-center rounded-md border-2 border-ink bg-primary px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
-              {statusLabelMap[request.status]}
             </span>
-            <span className="flex items-center text-xs font-extrabold uppercase tracking-[0.16em] text-muted-foreground">
-              <Calendar className="mr-1.5 h-3.5 w-3.5" /> {formatDateTime(request.created_at)}
-            </span>
+            <button className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Copy reference" onClick={() => navigator.clipboard.writeText(request.reference_code || request.request_number)}>
+              <Copy className="h-3.5 w-3.5" />
+            </button>
           </div>
-        </div>
-      </section>
-
-      {/* Process Stepper */}
-      <section className="animate-fade-in">
-        <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-          <span>Operational Lifecycle</span>
-          <span className="text-primary">{statusLabelMap[request.status]}</span>
-        </div>
-        <StatusStepper currentStatus={request.status} />
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main Workspace (Left) */}
-        <div className="space-y-6 lg:col-span-2">
-          {/* High-Level Context */}
-          <article className="surface-card p-8">
-             <div className="mb-6 flex flex-wrap gap-3">
-               <span className={badgeClass("bg-slate-100 text-slate-700")}>{request.type || 'Standard'}</span>
-               <span className="flex items-center text-[10px] font-bold text-muted-foreground uppercase ml-auto">
-                 <Calendar className="mr-1.5 h-3 w-3" /> Opened {formatDateTime(request.created_at)}
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground">{request.title || 'Untitled Request'}</h1>
+          <div className="flex flex-wrap items-center gap-2 pt-1 mt-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-ink bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-foreground shadow-sm">
+              <FileText className="h-3 w-3 text-muted-foreground" />
+              Type: {request.type || 'Standard'}
+            </span>
+            {request.priority && (
+               <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-ink bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-foreground shadow-sm">
+                 <span className={cn("h-1.5 w-1.5 rounded-full", request.priority === 'High' ? "bg-destructive" : request.priority === 'Medium' ? "bg-warning" : "bg-info")} />
+                 Priority: {request.priority}
                </span>
-             </div>
-             <div>
-               <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Request Context</h2>
-               <div className="prose prose-sm max-w-none text-foreground/90 whitespace-pre-line leading-relaxed">
-                 {request.description || "No detailed description provided."}
+            )}
+            <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-ink bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground shadow-sm">
+              <Calendar className="h-3 w-3" />
+              Opened {formatRelative(request.created_at)}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-3">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-primary border-2 border-ink shadow-brutal px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
+            {statusLabelMap[request.status]}
+          </span>
+          <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 text-xs mt-3">
+            <dt className="flex items-center gap-1.5 text-muted-foreground font-semibold">
+              <Calendar className="h-3 w-3" /> Created
+            </dt>
+            <dd className="text-right font-bold tabular-nums">{formatDateOnly(request.created_at)}</dd>
+            <dt className="flex items-center gap-1.5 text-muted-foreground font-semibold">
+              <Calendar className="h-3 w-3" /> Last interaction
+            </dt>
+            <dd className="text-right font-bold tabular-nums">{formatDateOnly(request.updated_at || request.created_at)}</dd>
+            <dt className="flex items-center gap-1.5 text-muted-foreground font-semibold">
+              <CalendarDays className="h-3 w-3" /> Approx. deadline
+            </dt>
+            <dd className="text-right font-extrabold tabular-nums text-primary">{request.deadline_date ? formatDateOnly(request.deadline_date) : '-'}</dd>
+          </dl>
+        </div>
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-12">
+        {/* Left column */}
+        <div className="space-y-6 lg:col-span-8">
+          {/* AI Summary */}
+          <article className="surface-card p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15 text-primary border border-ink">
+                <Bot className="h-4 w-4" />
+              </div>
+              <h2 className="text-sm font-extrabold uppercase text-foreground tracking-widest">AI Synopsis</h2>
+              <span className="rounded-md bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">Beta</span>
+              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="ml-auto h-7 px-2 border-2 border-ink shadow-sm bg-surface-2 text-[10px] uppercase font-extrabold">
+                {aiSummary.loading ? 'Parsing...' : <><Sparkles className="h-3 w-3 mr-1" /> Re-trigger</>}
+              </Button>
+            </div>
+            {aiSummary.data ? (
+              <div className="grid gap-5 sm:grid-cols-4">
+                <div className="sm:col-span-1">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Briefing</p>
+                  <p className="text-xs leading-relaxed text-foreground font-medium">{aiSummary.data.short_summary}</p>
+                </div>
+                <div className="sm:col-span-1">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Current progress</p>
+                  <p className="mb-1.5 text-xs text-foreground font-bold">{aiSummary.data.current_progress || '-'}</p>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const progressMap = {
+                        NEW: 25,
+                        ACCEPTED: 50,
+                        IN_PROGRESS: 75,
+                        COMPLETED: 100,
+                        REJECTED: 100,
+                        CLOSED: 100,
+                      };
+                      const percent = progressMap[request.status] || 0;
+                      return (
+                        <>
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted border border-ink/20">
+                            <div className={cn("h-full rounded-full", request.status === 'REJECTED' ? "bg-destructive" : "bg-primary")} style={{ width: `${percent}%` }} />
+                          </div>
+                          <span className="text-[11px] font-extrabold tabular-nums text-foreground">{percent}%</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <div className="sm:col-span-1">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Pending from</p>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const pf = aiSummary.data.pending_from || 'unknown';
+                      
+                      let name = '';
+                      if (pf === 'requester') name = request.requester_name || 'Requester';
+                      else if (pf === 'handler') name = request.assignee_name || 'Handler';
+                      else if (pf === 'both') {
+                        const rName = request.requester_name || 'Requester';
+                        const hName = request.assignee_name || 'Handler';
+                        name = `${rName} & ${hName}`;
+                      }
+                      else {
+                        // Fallback instead of TBD
+                        name = request.assignee_name || request.requester_name || 'System';
+                      }
+
+                      return (
+                        <>
+                          <Avatar name={name} size={24} />
+                          <span className="text-xs font-semibold truncate">{name}</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <div className="sm:col-span-1">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Next Expected Step</p>
+                  <p className="text-xs leading-relaxed font-bold text-primary">{aiSummary.data.next_action || 'Continuous monitoring'}</p>
+                </div>
+              </div>
+            ) : (
+               <div className="rounded-md border-2 border-dashed border-ink/30 bg-muted/10 py-6 text-center">
+                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">No intelligence data generated yet.</p>
+                 <Button size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="text-[10px] font-extrabold uppercase tracking-wider shadow-brutal border-2 border-ink bg-primary text-primary-foreground">
+                   {aiSummary.loading ? 'Initializing...' : 'Initialize Synthesis'}
+                 </Button>
                </div>
-             </div>
-             {request.attachment_url && (
-               <div className="mt-8 pt-6 border-t border-border">
-                  <a href={request.attachment_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2 text-xs font-semibold hover:bg-muted/50 transition">
-                    <ExternalLink className="h-3.5 w-3.5" /> View Original Attachment
-                  </a>
-               </div>
-             )}
+            )}
           </article>
 
-          {/* Discussion & Interaction Hub */}
-          <article className="surface-card overflow-hidden">
-            <div className="flex border-b border-border bg-muted/5">
-              <button 
+          {/* Lifecycle */}
+          <article className="surface-card p-5">
+            <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground pl-1">Request Lifecycle</p>
+            <StatusStepper currentStatus={request.status} />
+          </article>
+
+          {/* Request Context */}
+          <article className="surface-card p-5">
+            <div className="mb-3 flex items-center gap-2 text-muted-foreground pl-1">
+              <FileText className="h-4 w-4" />
+              <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-foreground">Request Context</h3>
+            </div>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90 font-medium pl-1">{request.description}</p>
+            {request.attachment_url && (
+              <a href={request.attachment_url} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 rounded-md border-2 border-ink bg-muted/30 px-4 py-2 text-[11px] uppercase tracking-wider font-extrabold hover:bg-muted shadow-brutal transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none ml-1">
+                <Paperclip className="h-3.5 w-3.5" /> View original attachment
+              </a>
+            )}
+          </article>
+
+          {/* Discussion / History Tab Box */}
+          <article className="surface-card overflow-hidden flex flex-col">
+            <div className="flex border-b-2 border-ink bg-surface-2 font-extrabold text-xs">
+              <button
                 onClick={() => canViewRequestDiscussion && setActiveTab('comments')}
                 disabled={!canViewRequestDiscussion}
-                className={cn("flex-1 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2", 
-                  activeTab === 'comments' ? "border-primary text-foreground bg-card" : "border-transparent text-muted-foreground hover:text-foreground",
-                  !canViewRequestDiscussion && "cursor-not-allowed opacity-50 hover:text-muted-foreground")}
+                className={cn(
+                  "relative flex-1 px-4 py-4 text-[10px] font-extrabold uppercase tracking-widest transition-colors border-r-2 border-ink z-10",
+                  activeTab === 'comments' ? "text-foreground bg-card border-b-0" : "text-muted-foreground hover:text-foreground",
+                  !canViewRequestDiscussion && "cursor-not-allowed opacity-50"
+                )}
               >
                 Discussion ({comments.length})
+                {activeTab === 'comments' && <span className="absolute inset-x-0 -bottom-[3px] h-[6px] bg-card z-20" />}
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('history')}
-                className={cn("flex-1 py-4 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2", 
-                  activeTab === 'history' ? "border-primary text-foreground bg-card" : "border-transparent text-muted-foreground hover:text-foreground")}
+                className={cn(
+                   "relative flex-1 px-4 py-4 text-[10px] font-extrabold uppercase tracking-widest transition-colors z-10",
+                   activeTab === 'history' ? "text-foreground bg-card" : "text-muted-foreground hover:text-foreground"
+                )}
               >
                 Activity Log ({historyItems.length})
+                {activeTab === 'history' && <span className="absolute inset-x-0 -bottom-[3px] h-[6px] bg-card z-20" />}
               </button>
             </div>
 
-            <div className="p-8">
-              {activeTab === 'comments' ? (
-                <div className="space-y-8">
+            <div className="p-6">
+               {activeTab === 'comments' ? (
+                <div className="space-y-6">
                   {!canViewRequestDiscussion ? (
                     <div className="py-8 text-center text-xs font-medium text-muted-foreground">
                       You do not have permission to view this discussion.
                     </div>
                   ) : (
                     <>
-                  <div ref={discussionRef} className="max-h-[500px] overflow-y-auto space-y-6 pr-4 custom-scrollbar">
-                    {comments.length === 0 ? (
-                      <div className="py-12 text-center text-muted-foreground">
-                         <MessageSquarePlus className="mx-auto h-8 w-8 mb-3 opacity-20" />
-                         <p className="text-xs font-bold uppercase tracking-widest">No messages yet</p>
+                      <div ref={discussionRef} className="max-h-[420px] overflow-y-auto space-y-5 pr-2 custom-scrollbar">
+                        {comments.length === 0 ? (
+                           <div className="py-12 text-center text-muted-foreground">
+                             <MessageSquarePlus className="mx-auto h-8 w-8 mb-3 opacity-20" />
+                             <p className="text-[10px] font-bold uppercase tracking-widest">No messages yet</p>
+                           </div>
+                        ) : (
+                          comments.map(c => (
+                            <div key={c.id} className="flex gap-4">
+                              <Avatar name={c.sender_name} size={32} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline justify-between gap-4 mb-1">
+                                   <div className="flex items-baseline gap-2 min-w-0">
+                                      <span className="text-sm font-extrabold text-foreground truncate">{c.sender_name}</span>
+                                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                                        {c.sender_entity_name ? `${c.sender_entity_name} • ` : ''}{c.sender_role_keys?.join(', ')}
+                                      </span>
+                                   </div>
+                                   <span className="text-[10px] font-bold text-muted-foreground shrink-0 uppercase tracking-widest">{formatRelative(c.created_at)}</span>
+                                </div>
+                                <div className="rounded-lg rounded-tl-none border-2 border-ink bg-surface-2 p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
+                                  {c.message}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
                       </div>
-                    ) : (
-                      comments.map(item => (
-                        <div key={item.id} className="flex gap-4">
-                          <Avatar name={item.sender_name} size={32} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-4 mb-1">
-                               <span className="text-sm font-bold text-foreground truncate">{item.sender_name}</span>
-                               <span className="text-[10px] font-medium text-muted-foreground">{formatRelative(item.created_at)}</span>
-                            </div>
-                            <div className="bg-muted/30 rounded-lg rounded-tl-none p-4 text-sm text-foreground/90 whitespace-pre-line border border-border/40">
-                              {item.message}
-                            </div>
-                            <div className="mt-1 text-[10px] text-muted-foreground">
-                               {item.sender_entity_name ? `${item.sender_entity_name} â€¢ ` : ''}{item.sender_role_keys?.join(', ')}
+
+                      {canCommentRequest ? (
+                        <form onSubmit={submitComment} className="mt-4 rounded-xl border-2 border-ink shadow-brutal bg-background overflow-hidden relative z-20">
+                          <div className="flex items-start gap-2 p-1">
+                             <textarea
+                              value={comment}
+                              onChange={e => setComment(e.target.value)}
+                              placeholder="Type your message..."
+                              className="flex-1 bg-transparent p-3 text-sm font-medium outline-none placeholder:text-muted-foreground resize-none min-h-[60px]"
+                             />
+                             <div className="flex flex-col gap-2 p-2 pt-3 pr-3">
+                               <Button
+                                 size="sm"
+                                 type="submit"
+                                 disabled={actionState.busy || (!comment.trim() && !commentAttachment)}
+                                 className="h-8 px-4 text-[10px] font-extrabold uppercase tracking-wider border-2 border-ink shadow-sm"
+                               >
+                                 <Send className="h-3 w-3 mr-1.5" /> Send
+                               </Button>
+                             </div>
+                          </div>
+                          <div className="border-t-2 border-ink bg-surface-2 px-4 py-2 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                               <input
+                                type="file"
+                                id="file-upload"
+                                className="hidden"
+                                onChange={e => setCommentAttachment(e.target.files?.[0])}
+                               />
+                               <label htmlFor="file-upload" className="cursor-pointer inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors">
+                                 <Paperclip className="h-3.5 w-3.5" />
+                                 {commentAttachment ? commentAttachment.name : 'Attach file (max 10MB)'}
+                               </label>
                             </div>
                           </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {canCommentRequest ? (
-                    <form onSubmit={submitComment} className="mt-8 border-t border-border pt-8">
-                      <textarea
-                        value={comment}
-                        onChange={e => setComment(e.target.value)}
-                        placeholder="Type your message..."
-                        className="w-full min-h-[100px] rounded-lg border-2 border-ink bg-card p-4 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none transition-all placeholder:text-muted-foreground"
-                      />
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                           <input 
-                            type="file" 
-                            id="file-upload" 
-                            className="hidden" 
-                            onChange={e => setCommentAttachment(e.target.files?.[0])}
-                           />
-                           <label htmlFor="file-upload" className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
-                             {commentAttachment ? `📎 ${commentAttachment.name}` : 'Attach File'}
-                           </label>
-                        </div>
-                        <Button size="sm" type="submit" disabled={actionState.busy || (!comment.trim() && !commentAttachment)}>
-                          Post Response
-                        </Button>
-                      </div>
-                    </form>
-                  ) : (
-                    <div className="mt-8 border-t border-border pt-6 text-xs font-medium text-muted-foreground">
-                      You do not have permission to comment in this discussion.
-                    </div>
-                  )}
+                        </form>
+                      ) : (
+                         <div className="mt-8 border-t-2 border-ink pt-6 text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest text-center">
+                           You do not have permission to comment in this discussion.
+                         </div>
+                      )}
                     </>
                   )}
                 </div>
-              ) : (
+               ) : (
                 <>
-                  <ol className="relative space-y-6 border-l border-border pl-6">
+                  <ol className="relative space-y-6 border-l-2 border-ink pl-6 ml-2">
                     {paginatedHistory.map((item, i) => (
-                      <li key={i}>
-                        <span className="absolute -left-[27px] mt-1 flex h-3 w-3 items-center justify-center rounded-full bg-background ring-2 ring-primary" />
+                      <li key={i} className="relative">
+                        <span className="absolute -left-[33px] mt-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary border-2 border-ink" />
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-foreground leading-none">{item.title}</span>
-                          <span className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                          <span className="text-sm font-extrabold text-foreground leading-none">{item.title}</span>
+                          <span className="text-[12px] font-medium text-foreground/80 mt-1.5 leading-relaxed">
                             {item.description}
                           </span>
-                          <span className="mt-2 text-[10px] font-medium text-muted-foreground/40 uppercase tracking-tight">
+                          <span className="mt-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                              {formatDateTime(item.timestamp)}
                           </span>
                         </div>
@@ -627,26 +760,26 @@ function RequestDetailsPage() {
                   </ol>
 
                   {totalHistoryPages > 1 && (
-                    <div className="mt-8 flex items-center justify-between border-t border-border pt-6">
+                    <div className="mt-8 flex items-center justify-between border-t-2 border-ink pt-6">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         Page {historyPage} of {totalHistoryPages}
                       </span>
                       <div className="flex gap-2">
-                         <Button 
-                          variant="outline" 
-                          size="sm" 
+                         <Button
+                          variant="outline"
+                          size="sm"
                           disabled={historyPage === 1}
                           onClick={() => setHistoryPage(p => p - 1)}
-                          className="h-8 px-3 text-[10px] uppercase"
+                          className="h-8 px-3 text-[10px] uppercase border-2 border-ink shadow-brutal active:translate-y-0.5 active:translate-x-0.5"
                          >
                            Previous
                          </Button>
-                         <Button 
-                          variant="outline" 
-                          size="sm" 
+                         <Button
+                          variant="outline"
+                          size="sm"
                           disabled={historyPage === totalHistoryPages}
                           onClick={() => setHistoryPage(p => p + 1)}
-                          className="h-8 px-3 text-[10px] uppercase"
+                          className="h-8 px-3 text-[10px] uppercase border-2 border-ink shadow-brutal active:translate-y-0.5 active:translate-x-0.5"
                          >
                            Next
                          </Button>
@@ -654,60 +787,22 @@ function RequestDetailsPage() {
                     </div>
                   )}
                 </>
-              )}
+               )}
             </div>
-          </article>
-
-          {/* AI Intelligence */}
-          <article className="surface-card p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-primary" />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">AI Synopsis</h3>
-              </div>
-              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="h-7 px-2">
-                {aiSummary.loading ? '...' : <Clock className="h-3 w-3" />}
-              </Button>
-            </div>
-            {aiSummary.data ? (
-              <div className="space-y-4">
-                <div className="rounded border border-primary/10 bg-primary/5 p-3">
-                  <p className="mb-1 text-[10px] font-bold uppercase text-primary">Briefing</p>
-                  <p className="text-[11px] font-medium leading-relaxed">{aiSummary.data.short_summary}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Status</p>
-                    <p className="text-xs font-bold">{aiSummary.data.current_progress || '-'}</p>
-                  </div>
-                  <div>
-                    <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Owner</p>
-                    <p className="truncate text-xs font-bold">{aiSummary.data.pending_from || 'System'}</p>
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Next Expected Step</p>
-                  <p className="text-xs font-medium text-primary">{aiSummary.data.next_action || 'Continuous monitoring'}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded border border-dashed border-border bg-muted/10 py-6 text-center">
-                <p className="text-[10px] font-bold uppercase text-muted-foreground">No intelligence data</p>
-                <Button variant="link" size="sm" onClick={loadAiSummary} className="mt-1 h-auto p-0 text-[10px] uppercase">Initialize</Button>
-              </div>
-            )}
           </article>
         </div>
 
-        {/* Operational Sidebar (Right) */}
-        <aside className="space-y-6">
-          <article className="surface-card p-6 space-y-4">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Deadline Planner</h3>
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Approximate completion date
-              </label>
-              <div className="flex justify-center rounded-lg bg-card/20 p-1">
+        {/* Sidebar */}
+        <aside className="space-y-6 lg:col-span-4">
+          <div className="lg:sticky lg:top-6 space-y-6">
+            {/* Deadline planner */}
+            <article className="surface-card p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-[11px] font-extrabold uppercase tracking-widest">Deadline Planner</h3>
+              </div>
+              <p className="mb-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Approximate completion date</p>
+              <div className="rounded-xl border-2 border-ink bg-card p-2 shadow-sm mb-4">
                 <DeadlinePlanner
                   selectedDate={deadlineForm.value ? new Date(deadlineForm.value) : undefined}
                   numberOfMonths={1}
@@ -721,142 +816,134 @@ function RequestDetailsPage() {
               </div>
               <Button
                 size="sm"
-                variant="outline"
-                className="w-full"
+                className="w-full text-[11px] uppercase tracking-wider font-extrabold border-2 border-ink shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none"
                 onClick={saveDeadline}
                 disabled={!hasDeadlineEditAccess || deadlineForm.saving || !deadlineForm.value}
               >
                 {deadlineForm.saving ? 'Saving...' : 'Save Deadline'}
               </Button>
-            </div>
-            {!hasDeadlineEditAccess ? (
-              <p className="text-[10px] font-medium text-muted-foreground">
-                You need the "Edit Request Deadline" permission to edit this date.
-              </p>
-            ) : null}
-            {deadlineForm.error ? (
-              <p className="text-[10px] font-bold text-destructive">{deadlineForm.error}</p>
-            ) : null}
-          </article>
+              {!hasDeadlineEditAccess ? (
+                <p className="mt-3 text-[10px] font-bold text-muted-foreground text-center">
+                  Requires "Edit Request Deadline" permission.
+                </p>
+              ) : null}
+              {deadlineForm.error ? (
+                <p className="mt-3 text-[10px] font-bold text-destructive text-center uppercase">{deadlineForm.error}</p>
+              ) : null}
+            </article>
 
-          {/* Decision Matrix */}
-          <article className="surface-card p-6">
-             <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-4">Operations</h3>
-             <div className="space-y-4">
-                <div className="space-y-1.5">
-                   <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Transition Status</label>
-                   <Select 
-                      value={request.status} 
-                      onChange={e => requestStatusChange(e.target.value)}
-                      disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
-                      className="w-full"
-                   >
-                      {statusOptions.map(s => (
-                        <option key={s} value={s}>{statusLabelMap[s]}</option>
-                      ))}
-                   </Select>
-                </div>
-
-                {canAssignToMe && (
-                   <Button variant="outline" className="w-full" onClick={handleAssignToMe} disabled={actionState.busy}>
-                      Assign to me
-                   </Button>
-                )}
-
-                {canManagerAssignTl && (
-                  <div className="space-y-3 pt-4 border-t border-border">
-                    <div className="space-y-1.5">
-                       <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Assign Team Leader</label>
-                       <Select 
-                          value={assignmentForm.userId}
-                          onChange={e => setAssignmentForm(curr => ({ ...curr, userId: e.target.value }))}
-                       >
-                          <option value="">Select individual...</option>
-                          {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
-                       </Select>
+            {/* Operations */}
+            <article className="surface-card p-5">
+              <h3 className="mb-4 text-[11px] font-extrabold uppercase tracking-widest pl-1">Operations</h3>
+              <div className="space-y-4">
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground pl-1">Transition Status</label>
+                    <div className="relative">
+                      <Select
+                         value={request.status}
+                         onChange={e => requestStatusChange(e.target.value)}
+                         disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
+                         className="w-full font-bold border-2 border-ink shadow-sm bg-surface-2"
+                      >
+                         {statusOptions.map(s => (
+                           <option key={s} value={s}>{statusLabelMap[s]}</option>
+                         ))}
+                      </Select>
                     </div>
-                    <textarea 
-                       placeholder="Assignment note..."
-                       className="w-full h-20 rounded-md border-2 border-ink bg-card p-2 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
-                       value={assignmentForm.note}
-                       onChange={e => setAssignmentForm(curr => ({ ...curr, note: e.target.value }))}
-                    />
-                    <Button size="sm" className="w-full" onClick={handleAssignToUser} disabled={!assignmentForm.userId || actionState.busy}>
-                       Assign Team Leader
-                    </Button>
+                    <p className="text-[10px] text-muted-foreground font-medium mt-1 pl-1">Update the status to reflect current progress.</p>
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-3 pt-2">
+                   <Button
+                      variant="outline"
+                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border-2 border-ink shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
+                      onClick={handleAssignToMe}
+                      disabled={!canAssignToMe || actionState.busy}
+                   >
+                     <UserPlus className="h-3 w-3 mr-1.5" /> Assign to me
+                   </Button>
+                   <Button
+                      variant="outline"
+                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border-2 border-ink shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
+                      onClick={() => document.getElementById('assign-tl-select')?.focus()}
+                      disabled={!canManagerAssignTl}
+                   >
+                     <Users className="h-3 w-3 mr-1.5" /> Assign TL
+                   </Button>
+                 </div>
+
+                 {canManagerAssignTl && (
+                   <div className="space-y-3 pt-4 border-t-2 border-ink">
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground pl-1">Team Leader Delegation</label>
+                        <Select
+                           id="assign-tl-select"
+                           value={assignmentForm.userId}
+                           onChange={e => setAssignmentForm(curr => ({ ...curr, userId: e.target.value }))}
+                           className="w-full font-bold border-2 border-ink shadow-sm bg-surface-2"
+                        >
+                           <option value="">Select individual...</option>
+                           {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                        </Select>
+                     </div>
+                     <textarea
+                        placeholder="Assignment note..."
+                        className="w-full h-16 rounded-md border-2 border-ink bg-card p-3 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
+                        value={assignmentForm.note}
+                        onChange={e => setAssignmentForm(curr => ({ ...curr, note: e.target.value }))}
+                     />
+                     <Button size="sm" className="w-full text-[10px] uppercase tracking-wider font-extrabold border-2 border-ink shadow-brutal active:translate-y-0.5 active:translate-x-0.5 active:shadow-none" onClick={handleAssignToUser} disabled={!assignmentForm.userId || actionState.busy}>
+                        Confirm Assignment
+                     </Button>
+                   </div>
+                 )}
+              </div>
+              {actionState.error && <p className="mt-4 text-[10px] font-bold text-destructive uppercase tracking-widest text-center">{actionState.error}</p>}
+            </article>
+
+            {/* Routing */}
+            <article className="surface-card p-5">
+              <h3 className="mb-4 text-[11px] font-extrabold uppercase tracking-widest pl-1">Routing Info</h3>
+              <div className="space-y-4">
+                <div className="px-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Company / Entity</p>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-extrabold truncate text-foreground">{request.company_name || 'N/A'}</p>
                   </div>
-                )}
-             </div>
-             {actionState.error && <p className="mt-3 text-[10px] font-bold text-destructive uppercase text-center">{actionState.error}</p>}
-          </article>
-
-          {/* Routing Metadata */}
-          <article className="surface-card p-6">
-             <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-5">Routing Info</h3>
-             <div className="space-y-4">
-                <div className="flex gap-3">
-                   <Building2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                   <div>
-                      <p className="text-[10px] font-bold uppercase text-muted-foreground">Entity Origin</p>
-                      <p className="text-sm font-bold truncate">{request.company_name}</p>
-                   </div>
                 </div>
-                <div className="flex items-center gap-3 rounded-md bg-muted/20 p-3">
-                   <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Source</p>
-                      <p className="text-xs font-bold truncate">{request.source_entity_name}</p>
-                   </div>
-                   <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                   <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Target</p>
-                      <p className="text-xs font-bold truncate">{request.target_entity_name}</p>
-                   </div>
-                </div>
-             </div>
-          </article>
-
-          {/* Stakeholders */}
-          <article className="surface-card p-6 space-y-4">
-             <div className="flex items-center gap-3">
-                <Avatar name={request.requester_name} size={32} />
-                <div>
-                   <p className="text-sm font-bold truncate">{request.requester_name}</p>
-                   <p className="text-[10px] font-medium text-muted-foreground uppercase">Requester</p>
-                </div>
-             </div>
-             <div className="flex items-center gap-3">
-                <Avatar name={request.assignee_name || 'Unassigned'} size={32} color={request.assignee_name ? null : "#ccc"} />
-                <div>
-                   <p className="text-sm font-bold truncate">{request.assignee_name || 'Not assigned'}</p>
-                   <p className="text-[10px] font-medium text-muted-foreground uppercase">Current Custodian</p>
-                </div>
-             </div>
-          </article>
-
-          {/* Timeline & Deadlines */}
-          <article className="surface-card p-6 space-y-4">
-             <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Temporal Data</h3>
-             <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                   <span className="text-muted-foreground font-medium">Created</span>
-                   <span className="font-bold">{formatDateOnly(request.created_at)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                   <span className="text-muted-foreground font-medium">Last Interaction</span>
-                   <span className="font-bold">{formatDateOnly(request.updated_at || request.created_at)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                   <span className="text-muted-foreground font-medium">Approx. Deadline</span>
-                   <span className="font-bold">{request.deadline_date ? formatDateOnly(request.deadline_date) : '-'}</span>
-                </div>
-                {request.completed_at && (
-                  <div className="flex items-center justify-between text-xs pt-2 border-t border-border">
-                     <span className="text-emerald-600 font-bold uppercase text-[10px]">Resolved At</span>
-                     <span className="font-bold text-emerald-600 font-mono tracking-tighter">{formatDateTime(request.completed_at)}</span>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border-2 border-ink bg-surface-2 p-4 shadow-sm">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Source</p>
+                    <p className="truncate text-xs font-extrabold text-foreground">{request.source_entity_name || 'N/A'}</p>
+                    <p className="truncate text-[10px] font-bold text-muted-foreground mt-1 uppercase tracking-wide">
+                      {request.requester_name || '-'} • Requester
+                    </p>
                   </div>
-                )}
-             </div>
-          </article>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 opacity-50" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Target</p>
+                    <p className="truncate text-xs font-extrabold text-foreground">{request.target_entity_name || 'N/A'}</p>
+                    <p className="truncate text-[10px] font-bold text-muted-foreground mt-1 uppercase tracking-wide">
+                      {request.assignee_name || 'Not assigned'} • Owner
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            {/* Quick AI Synopsis card if initialized */}
+            {aiSummary.data && (
+               <article className="surface-card p-5 shadow-sm">
+                 <div className="mb-3 flex items-center gap-2">
+                   <Bot className="h-4 w-4 text-primary" />
+                   <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-foreground">Active Step Info</h3>
+                 </div>
+                 <p className="text-xs font-bold leading-relaxed text-muted-foreground">{aiSummary.data.next_action}</p>
+               </article>
+            )}
+
+          </div>
         </aside>
       </div>
 
@@ -883,7 +970,6 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
-
 
 
 
