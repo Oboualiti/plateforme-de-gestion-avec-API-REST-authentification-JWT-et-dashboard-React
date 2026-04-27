@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -43,6 +43,17 @@ const statusLabelMap = {
 
 const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
 const stepperStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED']
+const priorityLabelMap = {
+  HIGH: 'High',
+  MEDIUM: 'Medium',
+  LOW: 'Low',
+}
+
+const priorityBadgeClassMap = {
+  HIGH: 'bg-rose-100 text-rose-700',
+  MEDIUM: 'bg-amber-100 text-amber-800',
+  LOW: 'bg-emerald-100 text-emerald-700',
+}
 
 function badgeClass(baseClass) {
   return `inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${baseClass}`
@@ -218,6 +229,7 @@ function RequestDetailsPage() {
   const isManager = roleKeys.includes('manager')
   const isSenior = roleKeys.includes('senior')
   const isTeamLeader = roleKeys.includes('team_leader')
+  const isUser = roleKeys.includes('user')
   const canViewRequestDiscussion = Boolean(
     request?.can_view_request_discussion ?? effectivePermissionKeys.has('view_request_discussion'),
   )
@@ -230,7 +242,7 @@ function RequestDetailsPage() {
   }, [allowedStatusTransitions, request?.status])
   const canEditDeadline = Boolean(request?.can_edit_deadline)
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
-  const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader
+  const canAssignToMe = Boolean(request?.can_assign_to_me) && (isTeamLeader || isUser)
   const potentialAssignees = request?.potential_assignees || []
   const assignableUsers = useMemo(() => {
     if (!isSuperAdmin) return potentialAssignees
@@ -970,6 +982,5 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
-
 
 

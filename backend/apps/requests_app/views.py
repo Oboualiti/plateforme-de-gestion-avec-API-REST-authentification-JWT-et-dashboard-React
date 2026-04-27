@@ -531,6 +531,9 @@ class RequestListCreateView(APIView):
             description=serializer.validated_data.get("description", ""),
             attachment=serializer.validated_data.get("attachment"),
             category=serializer.validated_data["type"],
+            priority=serializer.validated_data.get(
+                "priority", ServiceRequest.Priority.MEDIUM
+            ),
             requester_user=request.user,
             company=selected_company,
             source_entity=selected_source_entity,
@@ -1442,7 +1445,7 @@ def get_allowed_status_transitions(user, service_request):
         service_request.status == ServiceRequest.Status.NEW
         and not service_request.is_submitted_to_target
     ):
-        if has_permission(user, "approve_request") and can_approve_request_from_requester_hierarchy(
+        if has_permission(user, "resolve_request") and can_approve_request_from_requester_hierarchy(
             user, service_request
         ):
             return {ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.REJECTED}
@@ -1451,16 +1454,17 @@ def get_allowed_status_transitions(user, service_request):
     if not can_operate_submitted_request(user, service_request):
         return set()
 
-    if has_permission(user, "approve_request"):
-        allowed.update(
-            {
-                ServiceRequest.Status.ACCEPTED,
-                ServiceRequest.Status.IN_PROGRESS,
-                ServiceRequest.Status.REJECTED,
-            }
-        )
-    if has_permission(user, "resolve_request"):
-        allowed.add(ServiceRequest.Status.COMPLETED)
+    if not has_permission(user, "resolve_request"):
+        return set()
+
+    allowed.update(
+        {
+            ServiceRequest.Status.ACCEPTED,
+            ServiceRequest.Status.IN_PROGRESS,
+            ServiceRequest.Status.REJECTED,
+            ServiceRequest.Status.COMPLETED,
+        }
+    )
     if has_permission(user, "close_request"):
         allowed.add(ServiceRequest.Status.CLOSED)
     return allowed
@@ -1469,9 +1473,6 @@ def get_allowed_status_transitions(user, service_request):
 def can_approve_request_from_requester_hierarchy(actor, service_request):
     actor_role = get_primary_role_key(actor)
     requester = service_request.requester_user
-
-    if not has_permission(actor, "approve_request"):
-        return False
     if actor_role == "super_admin":
         return True
     if actor_role == "senior":
@@ -1683,10 +1684,6 @@ def apply_scope_filters(queryset, user, scope):
     # Operational/request-list scopes should only contain requests that were
     # submitted to target teams. This also covers the default "/requests"
     # case where scope is empty.
-    # Super Admin is global and can inspect all requests, including those not
-    # yet submitted to target teams.
-    if normalized_scope in {"", "all"} and get_primary_role_key(user) == "super_admin":
-        return queryset
     if normalized_scope in {"", "team", "entity", "company", "team-all", "all"}:
         return queryset.filter(is_submitted_to_target=True)
     return queryset

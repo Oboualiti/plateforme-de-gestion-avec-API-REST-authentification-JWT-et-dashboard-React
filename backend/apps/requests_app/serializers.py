@@ -17,6 +17,13 @@ REQUEST_TYPE_CHOICES = [
     ("SCRIPT", "Script"),
     ("TOOL", "Tool"),
     ("APP_PROJECT", "App/Project"),
+    ("OTHER", "Other"),
+]
+
+REQUEST_CREATE_PRIORITY_CHOICES = [
+    (ServiceRequest.Priority.HIGH, "High"),
+    (ServiceRequest.Priority.MEDIUM, "Medium"),
+    (ServiceRequest.Priority.LOW, "Low"),
 ]
 
 
@@ -76,6 +83,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     assignee_role = serializers.SerializerMethodField()
     is_submitted_to_target = serializers.BooleanField(read_only=True)
     is_pending_approval = serializers.SerializerMethodField()
+    priority_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -85,6 +93,8 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "reference_code",
             "title",
             "type",
+            "priority",
+            "priority_label",
             "status",
             "created_at",
             "completed_at",
@@ -124,6 +134,9 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
     def get_is_pending_approval(self, obj):
         return (not obj.is_submitted_to_target) and obj.status == ServiceRequest.Status.NEW
+
+    def get_priority_label(self, obj):
+        return obj.get_priority_display()
 
 
 class RequestCommentSerializer(serializers.ModelSerializer):
@@ -274,6 +287,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     is_pending_approval = serializers.SerializerMethodField()
     can_edit_deadline = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
+    priority_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -286,6 +300,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "attachment",
             "attachment_url",
             "type",
+            "priority",
+            "priority_label",
             "status",
             "created_at",
             "accepted_at",
@@ -397,6 +413,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.attachment.url)
         return obj.attachment.url
 
+    def get_priority_label(self, obj):
+        return obj.get_priority_display()
+
     def get_activity_timeline(self, obj):
         events = [
             {
@@ -486,6 +505,11 @@ class RequestCreateSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     attachment = serializers.FileField(required=False, allow_null=True)
     type = serializers.ChoiceField(choices=REQUEST_TYPE_CHOICES)
+    priority = serializers.ChoiceField(
+        choices=REQUEST_CREATE_PRIORITY_CHOICES,
+        required=False,
+        default=ServiceRequest.Priority.MEDIUM,
+    )
     target_team = serializers.IntegerField()
     company_id = serializers.IntegerField(required=False)
     source_entity_id = serializers.IntegerField(required=False)

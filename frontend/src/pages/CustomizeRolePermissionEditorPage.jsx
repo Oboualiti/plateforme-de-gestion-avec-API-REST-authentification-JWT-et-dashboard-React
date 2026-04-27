@@ -89,7 +89,7 @@ const PERMISSION_META_BY_KEY = {
   view_own_requests: { title: 'View Own Requests', description: 'View own submitted requests', section: 'requests' },
   approve_request: { title: 'Approve Request', description: 'Approve requests in pending workflow', section: 'requests' },
   assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
-  resolve_request: { title: 'Resolve Request', description: 'Mark as resolved', section: 'requests' },
+  resolve_request: { title: 'Update Request Status', description: 'Control status changes (accepted / in progress / rejected / completed)', section: 'requests' },
   close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
   edit_request_deadline: { title: 'Edit Request Deadline', description: 'Set and update approximate request deadlines', section: 'requests' },
   view_global_reports: { title: 'View Global Reports', description: 'Access global reporting', section: 'monitoring' },
@@ -153,6 +153,14 @@ function applyLogScopePolicyForRole(roleKey, permissionKeys) {
     next.add('view_logs_scope_entity')
   }
 
+  return Array.from(next)
+}
+
+function applyRequestStatusPolicy(permissionKeys) {
+  const next = new Set(permissionKeys || [])
+  if (!next.has('resolve_request')) {
+    next.delete('close_request')
+  }
   return Array.from(next)
 }
 
@@ -291,7 +299,7 @@ function CustomizeRolePermissionEditorPage() {
           if (!getBlockReason(childKey)) nextSet.add(childKey)
         })
       }
-      return applyLogScopePolicyForRole(selectedRole?.key, Array.from(nextSet))
+      return applyRequestStatusPolicy(applyLogScopePolicyForRole(selectedRole?.key, Array.from(nextSet)))
     })
   }
 
@@ -300,7 +308,7 @@ function CustomizeRolePermissionEditorPage() {
     setSaving(true)
     setMessage('')
     try {
-      const selected = applyLogScopePolicyForRole(selectedRole?.key, draft).filter((key) => allowedPermissionSet.has(key))
+      const selected = applyRequestStatusPolicy(applyLogScopePolicyForRole(selectedRole?.key, draft)).filter((key) => allowedPermissionSet.has(key))
       const safeSelection = isSuperAdmin ? selected : selected.filter((key) => effectivePermissionKeys.has(key))
       await api.patch(`/admin/roles/${selectedRole.id}/defaults/`, { permission_keys: safeSelection })
       setSaved(safeSelection)

@@ -130,8 +130,8 @@ PERMISSION_DEFINITIONS = [
     },
     {
         "key": "resolve_request",
-        "name": "Resolve Request",
-        "description": "Mark work as completed or resolved.",
+        "name": "Update Request Status",
+        "description": "Update request status (accepted, in progress, rejected, completed).",
         "category": "actions",
     },
     {
@@ -271,6 +271,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_own_requests",
         "approve_request",
         "assign_request",
+        "resolve_request",
         "close_request",
         "edit_request_deadline",
         "view_request_discussion",
@@ -289,6 +290,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_own_requests",
         "approve_request",
         "assign_request",
+        "resolve_request",
         "edit_request_deadline",
         "view_user_audit_logs",
         "view_org_audit_logs",
@@ -297,7 +299,6 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
     "user": {
         "create_request",
         "view_own_requests",
-        "close_request",
         "view_request_discussion",
         "comment_request",
     },

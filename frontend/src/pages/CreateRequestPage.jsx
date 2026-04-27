@@ -6,7 +6,8 @@ import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
-const requestTypes = ['INFO', 'SCRIPT', 'TOOL', 'APP_PROJECT']
+const requestTypes = ['INFO', 'SCRIPT', 'TOOL', 'APP_PROJECT', 'OTHER']
+const requestPriorities = ['HIGH', 'MEDIUM', 'LOW']
 
 function CreateRequestPage() {
   const navigate = useNavigate()
@@ -15,6 +16,7 @@ function CreateRequestPage() {
     title: '',
     description: '',
     type: 'INFO',
+    priority: 'MEDIUM',
     target_team: '',
     company_id: '',
     source_entity_id: '',
@@ -188,6 +190,7 @@ function CreateRequestPage() {
       payload.append('title', form.title)
       payload.append('description', form.description)
       payload.append('type', form.type)
+      payload.append('priority', form.priority)
       payload.append('target_team', String(Number(form.target_team)))
       if (attachment) {
         payload.append('attachment', attachment)
@@ -267,6 +270,24 @@ function CreateRequestPage() {
                   {requestTypes.map((option) => (
                     <option key={option} value={option}>
                       {option}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="priority" className="text-sm font-medium text-foreground">Priority</label>
+                <Select
+                  id="priority"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={form.priority}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, priority: event.target.value }))
+                  }
+                >
+                  {requestPriorities.map((option) => (
+                    <option key={option} value={option}>
+                      {option.charAt(0) + option.slice(1).toLowerCase()}
                     </option>
                   ))}
                 </Select>

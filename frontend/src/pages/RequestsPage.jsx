@@ -31,8 +31,18 @@ const statusToneMap = {
   CLOSED: 'bg-slate-200 text-slate-700 border-slate-500',
 }
 
+const priorityToneMap = {
+  HIGH: 'bg-rose-100 text-rose-700 border-rose-400',
+  MEDIUM: 'bg-amber-100 text-amber-800 border-amber-400',
+  LOW: 'bg-emerald-100 text-emerald-700 border-emerald-400',
+}
+
 function statusPillClass(status) {
   return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${statusToneMap[status] || 'bg-slate-100 text-slate-700 border-slate-400'}`
+}
+
+function priorityPillClass(priority) {
+  return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${priorityToneMap[priority] || 'bg-slate-100 text-slate-700 border-slate-400'}`
 }
 
 function typePillClass(type) {
@@ -447,6 +457,7 @@ function RequestsPage() {
                   <th className="px-4 py-3 text-left font-medium">Title</th>
                   <th className="px-4 py-3 text-left font-medium">Source - Target</th>
                   <th className="px-4 py-3 text-left font-medium">Type</th>
+                  <th className="px-4 py-3 text-left font-medium">Priority</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
                   <th className="px-4 py-3 text-left font-medium">Assignee</th>
                   <th className="px-4 py-3 text-left font-medium">Updated</th>
@@ -458,6 +469,7 @@ function RequestsPage() {
                     <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-4 w-44" /></td>
+                    <td className="px-4 py-3"><Skeleton className="h-5 w-20 rounded-full" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-5 w-20 rounded-full" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-5 w-24 rounded-full" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
@@ -492,6 +504,7 @@ function RequestsPage() {
                   <th className="px-4 py-3 text-left font-medium">Title</th>
                   <th className="px-4 py-3 text-left font-medium">Source - Target</th>
                   <th className="px-4 py-3 text-left font-medium">Type</th>
+                  <th className="px-4 py-3 text-left font-medium">Priority</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
                   {(!isPendingScope || !canDecidePending) && <th className="px-4 py-3 text-left font-medium">Assignee</th>}
                   <th className="px-4 py-3 text-left font-medium">Updated</th>
@@ -519,6 +532,11 @@ function RequestsPage() {
                     <td className="px-4 py-3">
                       <span className={typePillClass(item.type)}>
                         {item.type || 'INFO'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={priorityPillClass(item.priority)}>
+                        {(item.priority_label || item.priority || 'MEDIUM').toUpperCase()}
                       </span>
                     </td>
                     <td className="px-4 py-3">

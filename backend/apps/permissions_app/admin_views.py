@@ -118,6 +118,13 @@ def normalize_log_scope_permission_keys(role_key, permission_keys):
     return sorted(keys)
 
 
+def normalize_request_status_permission_keys(permission_keys):
+    keys = set(permission_keys or [])
+    if "resolve_request" not in keys:
+        keys.discard("close_request")
+    return sorted(keys)
+
+
 HIDDEN_ROLE_PERMISSION_KEYS = {"view_audit_logs"}
 def get_saved_default_permission_keys(role):
     custom_keys = set(
@@ -132,7 +139,7 @@ def get_saved_default_permission_keys(role):
     if role_keys:
         return role_keys
 
-    return set(ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set()))
+    return set(normalize_request_status_permission_keys(ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())))
 
 
 class AdminBaseView(APIView):
@@ -975,6 +982,7 @@ class AdminRoleDetailView(AdminBaseView):
         serializer.is_valid(raise_exception=True)
         permission_keys = self._expand_permission_keys(serializer.validated_data["permission_keys"])
         permission_keys = normalize_log_scope_permission_keys(role.key, permission_keys)
+        permission_keys = normalize_request_status_permission_keys(permission_keys)
         company_id = serializer.validated_data.get("company_id")
         entity_id = serializer.validated_data.get("entity_id")
         entity_type = serializer.validated_data.get("entity_type")
@@ -1257,7 +1265,7 @@ class AdminRoleDetailView(AdminBaseView):
         if not can_manage_target_role:
             return Response({"detail": hierarchy_error or ROLE_PERMISSION_HIERARCHY_ERROR}, status=status.HTTP_403_FORBIDDEN)
         # Restore must use saved custom defaults (if provided) as the baseline.
-        default_permission_keys = get_saved_default_permission_keys(role)
+        default_permission_keys = set(normalize_request_status_permission_keys(get_saved_default_permission_keys(role)))
 
         # Super Admin restores global role defaults.
         if actor_role == "super_admin":
@@ -1506,6 +1514,7 @@ class AdminRoleDefaultDetailView(AdminBaseView):
         serializer = RolePermissionMappingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         permission_keys = normalize_log_scope_permission_keys(role.key, serializer.validated_data["permission_keys"])
+        permission_keys = normalize_request_status_permission_keys(permission_keys)
 
         known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
         unknown_permission_keys = sorted(set(permission_keys) - known_permission_keys)

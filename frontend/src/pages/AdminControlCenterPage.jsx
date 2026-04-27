@@ -1651,7 +1651,7 @@ const permissionMetaByKey = {
   view_own_requests: { title: 'View Own Requests', description: 'View own submitted requests', section: 'requests' },
   approve_request: { title: 'Approve Request', description: 'Approve requests in pending workflow', section: 'requests' },
   assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
-  resolve_request: { title: 'Resolve Request', description: 'Mark as resolved', section: 'requests' },
+  resolve_request: { title: 'Update Request Status', description: 'Control status changes (accepted / in progress / rejected / completed)', section: 'requests' },
   close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
   edit_request_deadline: { title: 'Edit Request Deadline', description: 'Set and update approximate request deadlines', section: 'requests' },
   view_request_discussion: { title: 'View Request Discussion', description: 'View request discussion messages', section: 'requests' },
@@ -1767,6 +1767,14 @@ function applyLogScopePolicyForRole(roleKey, permissionKeys) {
   return Array.from(next)
 }
 
+function applyRequestStatusPolicy(permissionKeys) {
+  const next = new Set(permissionKeys || [])
+  if (!next.has('resolve_request')) {
+    next.delete('close_request')
+  }
+  return Array.from(next)
+}
+
 function toTitleCaseFromKey(key) {
   return key
     .split('_')
@@ -1846,7 +1854,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
   }
 
   function buildSavePayload(role, permissionKeys) {
-    const normalized = applyLogScopePolicyForRole(role.key, permissionKeys)
+    const normalized = applyRequestStatusPolicy(applyLogScopePolicyForRole(role.key, permissionKeys))
     if (isSuperAdmin) {
       return normalized.filter((key) => allowedPermissionKeySet.has(key))
     }
@@ -1878,7 +1886,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
       impliedKeys.forEach((key) => nextSet.add(key))
     }
 
-    const next = applyLogScopePolicyForRole(role.key, Array.from(nextSet))
+    const next = applyRequestStatusPolicy(applyLogScopePolicyForRole(role.key, Array.from(nextSet)))
 
     setDraftByRoleId((current) => ({ ...current, [role.id]: next }))
     setSavingByRoleId((current) => ({ ...current, [role.id]: true }))

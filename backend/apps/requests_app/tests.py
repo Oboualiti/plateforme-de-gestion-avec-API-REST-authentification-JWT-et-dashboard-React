@@ -185,7 +185,7 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertNotIn(self.senior_user.id, assignee_ids)
         self.assertIn(self.support_team_leader.id, assignee_ids)
 
-    def test_super_admin_sees_pending_and_submitted_requests_in_default_scope(self):
+    def test_super_admin_default_scope_hides_pending_and_pending_scope_shows_it(self):
         self.client.force_authenticate(user=self.super_admin)
         url = reverse("requests-list-create")
         response = self.client.get(url, format="json")
@@ -193,8 +193,13 @@ class RequestPermissionWorkflowTests(APITestCase):
 
         results = response.data.get("results", [])
         request_ids = {item["id"] for item in results}
-        self.assertIn(self.pending_request.id, request_ids)
+        self.assertNotIn(self.pending_request.id, request_ids)
         self.assertIn(self.submitted_request.id, request_ids)
+
+        pending_response = self.client.get(f"{url}?scope=pending", format="json")
+        self.assertEqual(pending_response.status_code, status.HTTP_200_OK)
+        pending_ids = {item["id"] for item in pending_response.data.get("results", [])}
+        self.assertIn(self.pending_request.id, pending_ids)
 
     def test_target_entity_accept_requires_deadline(self):
         self.client.force_authenticate(user=self.support_manager)

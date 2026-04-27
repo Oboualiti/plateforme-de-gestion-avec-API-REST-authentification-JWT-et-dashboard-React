@@ -656,6 +656,20 @@ class ManageUserDetailView(BaseManageUsersView):
 
 
 class ManageUserPermissionOverrideView(BaseManageUsersView):
+    @staticmethod
+    def enforce_status_permission_dependency(user, reason="Auto-adjusted by status permission policy."):
+        effective_keys = set(get_effective_permission_keys(user))
+        if "resolve_request" in effective_keys:
+            return
+        close_permission = AppPermission.objects.filter(key="close_request").first()
+        if close_permission is None:
+            return
+        UserPermissionOverride.objects.update_or_create(
+            user=user,
+            permission=close_permission,
+            defaults={"is_allowed": False, "reason": reason},
+        )
+
     def build_payload(self, request, target):
         actor_level = get_user_max_role_level(request.user)
         can_edit = can_manage_target_user(request.user, target)
@@ -690,6 +704,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.apply(target, True)
+        self.enforce_status_permission_dependency(target)
         target = self.get_target_user(user_id)
         log_admin_action(
             actor=request.user,
@@ -718,6 +733,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.apply(target, False)
+        self.enforce_status_permission_dependency(target)
         target = self.get_target_user(user_id)
         log_admin_action(
             actor=request.user,
