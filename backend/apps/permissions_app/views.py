@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 from apps.entities.models import Entity
 from apps.companies.models import Company
 from apps.audit_logs.services import log_admin_action
+from apps.notifications.models import UserNotification
+from apps.notifications.services import create_notification
 from apps.permissions_app.models import AppPermission, UserRole
 from apps.roles.models import Role
 from apps.users.models import User
@@ -342,6 +344,14 @@ class ManageableUserCrudView(BaseManageUsersView):
             target_id=user.id,
             target_label=user.username,
         )
+        create_notification(
+            user=user,
+            event_type=UserNotification.EventType.GENERAL,
+            title="Your account details were updated",
+            message=f"{request.user.username} updated your account details.",
+            link="/profile",
+            metadata={"updated_by_user_id": request.user.id},
+        )
         payload = ManageableUserListSerializer(
             user, context={"actor_level": get_user_max_role_level(request.user)}
         ).data
@@ -630,6 +640,17 @@ class ManageUserDetailView(BaseManageUsersView):
             target_id=target.id,
             target_label=target.username,
             metadata={"role_keys": request.data.get("role_keys", [])},
+        )
+        create_notification(
+            user=target,
+            event_type=UserNotification.EventType.GENERAL,
+            title="Your role was updated",
+            message=f"{request.user.username} updated your role.",
+            link="/profile",
+            metadata={
+                "updated_by_user_id": request.user.id,
+                "role_keys": request.data.get("role_keys", []),
+            },
         )
         return Response(self.build_payload(request, target))
 

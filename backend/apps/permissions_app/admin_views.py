@@ -13,7 +13,8 @@ from apps.audit_logs.models import AdminAuditLog
 from apps.audit_logs.services import log_admin_action
 from apps.companies.models import Company
 from apps.entities.models import Entity
-from apps.notifications.models import NotificationPreference
+from apps.notifications.models import NotificationPreference, UserNotification
+from apps.notifications.services import create_notification
 from apps.permissions_app.models import AppPermission, RoleDefaultPermission, RolePermission, UserPermissionOverride, UserRole
 from apps.permissions_app.services import (
     ROLE_HIERARCHY,
@@ -642,6 +643,14 @@ class AdminHierarchyCompanyAssignView(AdminBaseView):
                 senior.company = company
                 senior.save(update_fields=["company"])
                 UserRole.objects.update_or_create(user=senior, defaults={"role": senior_role})
+                create_notification(
+                    user=senior,
+                    event_type=UserNotification.EventType.GENERAL,
+                    title="You were assigned as Senior",
+                    message=f"{request.user.username} assigned you as Senior for {company.name}.",
+                    link="/profile",
+                    metadata={"assigned_by_user_id": request.user.id, "company_id": company.id},
+                )
             log_admin_action(actor=request.user, module="hierarchy", action="assign_senior", target_model="Company", target_id=company.id, target_label=company.name, metadata={"senior_user_id": senior_user_id})
         return Response({"detail": "Hierarchy updated."})
 
@@ -667,6 +676,14 @@ class AdminHierarchyEntityAssignView(AdminBaseView):
                 manager.entity = entity
                 manager.save(update_fields=["company", "entity"])
                 UserRole.objects.update_or_create(user=manager, defaults={"role": manager_role})
+                create_notification(
+                    user=manager,
+                    event_type=UserNotification.EventType.GENERAL,
+                    title="You were assigned as Manager",
+                    message=f"{request.user.username} assigned you as Manager for {entity.name}.",
+                    link="/profile",
+                    metadata={"assigned_by_user_id": request.user.id, "entity_id": entity.id},
+                )
             unit = OperationalUnit.objects.filter(code=entity.code).first()
             if unit:
                 unit.manager_id = manager_user_id
@@ -1628,6 +1645,14 @@ class AdminRequestDetailView(AdminBaseView):
                     assigned_by=request.user,
                     assignee=assignee,
                     note=serializer.validated_data.get("note", "Manual admin assignment"),
+                )
+                create_notification(
+                    user=assignee,
+                    event_type=UserNotification.EventType.REQUEST_MESSAGE,
+                    title="Request assigned to you",
+                    message=f"{request.user.username} assigned request {service_request.request_number} to you.",
+                    link=f"/requests/{service_request.id}",
+                    metadata={"request_id": service_request.id, "assigned_by_user_id": request.user.id},
                 )
         if "status" in serializer.validated_data:
             old_status = service_request.status

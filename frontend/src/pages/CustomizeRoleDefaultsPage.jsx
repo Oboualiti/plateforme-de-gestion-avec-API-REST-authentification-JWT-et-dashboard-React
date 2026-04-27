@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -116,9 +116,11 @@ function CustomizeRoleDefaultsPage() {
   const sortedRoles = useMemo(() => {
     const roles = state.data?.roles || []
     const hideUpperRolesInEntityScope = Boolean(roleScopeFilter.entity_type || roleScopeFilter.entity_id)
-    const visibleRoles = hideUpperRolesInEntityScope
-      ? roles.filter((role) => !['super_admin', 'senior'].includes(role.key))
-      : roles
+    const visibleRoles = roles.filter((role) => {
+      if (role.key === 'super_admin') return false
+      if (hideUpperRolesInEntityScope && role.key === 'senior') return false
+      return true
+    })
     return [...visibleRoles].sort((a, b) => {
       const aOrder = ROLE_ORDER[a.key] ?? 99
       const bOrder = ROLE_ORDER[b.key] ?? 99
@@ -227,3 +229,5 @@ function CustomizeRoleDefaultsPage() {
 }
 
 export default CustomizeRoleDefaultsPage
+
+

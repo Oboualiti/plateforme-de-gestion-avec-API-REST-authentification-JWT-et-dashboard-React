@@ -20,6 +20,7 @@ from apps.companies.models import Company
 from apps.notifications.models import UserNotification
 from apps.notifications.services import (
     create_bulk_notifications,
+    create_notification,
     resolve_request_notification_recipients,
 )
 from apps.permissions_app.models import UserRole
@@ -1132,6 +1133,15 @@ class RequestTargetReassignView(APIView):
             new_target_entity=new_target_entity,
             changed_by=request.user,
             note=serializer.validated_data.get("note", ""),
+        )
+        recipients = resolve_request_notification_recipients(service_request, exclude_user_id=request.user.id)
+        create_bulk_notifications(
+            users=filter_recipients_by_request_visibility(service_request, recipients),
+            event_type=UserNotification.EventType.REQUEST_MESSAGE,
+            title="Request reassigned to your team",
+            message=f"Request {service_request.request_number} was reassigned to {new_target_entity.name}.",
+            link=f"/requests/{service_request.id}",
+            metadata={"request_id": service_request.id, "target_entity_id": new_target_entity.id},
         )
         service_request = load_request(request_id)
         mark_request_stuck(service_request)

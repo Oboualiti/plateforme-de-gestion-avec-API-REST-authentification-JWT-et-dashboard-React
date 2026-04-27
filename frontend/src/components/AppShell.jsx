@@ -161,25 +161,13 @@ function UserMenu() {
 }
 
 function getNotificationTitle(item) {
-  const rawTitle = String(item?.title || '').trim();
-  const rawMessage = String(item?.message || '').trim();
-  const haystack = `${rawTitle} ${rawMessage}`.toLowerCase();
-
-  if (haystack.includes('accepted')) return 'Request accepted';
-  if (haystack.includes('comment')) return 'New comment';
-  if (haystack.includes('progress updated') || haystack.includes('status')) return 'Status update';
-  if (haystack.includes('assigned')) return 'Request assigned';
-
-  const compact = rawTitle.replace(/\s+on\s+REQ-.*/i, '').trim();
-  return compact || 'Notification';
+  const title = String(item?.title || "").trim();
+  return title || "Notification";
 }
 
 function getNotificationSubtitle(item) {
-  let text = String(item?.message || '').trim();
-  text = text.replace(/^\w+:\s*/i, '');
-  text = text.replace(/\bNote:\s*.*$/i, '').trim();
-  text = text.replace(/^Progress updated:\s*/i, '').trim();
-  if (!text) return 'Tap to view details.';
+  const text = String(item?.message || "").trim();
+  if (!text) return "Tap to view details.";
   if (text.length > 80) return `${text.slice(0, 77)}...`;
   return text;
 }
@@ -215,14 +203,32 @@ function NotificationsBell() {
   }
 
   useEffect(() => {
-    loadNotifications();
+    void loadNotifications();
 
     function handleChanged() {
-      loadNotifications();
+      void loadNotifications();
     }
 
+    function handleFocusRefresh() {
+      void loadNotifications();
+    }
+
+    const pollId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadNotifications();
+      }
+    }, 15000);
+
     window.addEventListener("notifications:changed", handleChanged);
-    return () => window.removeEventListener("notifications:changed", handleChanged);
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleFocusRefresh);
+
+    return () => {
+      window.removeEventListener("notifications:changed", handleChanged);
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleFocusRefresh);
+      window.clearInterval(pollId);
+    };
   }, [canViewRequestDiscussion]);
 
   async function openNotification(item) {
@@ -521,6 +527,7 @@ export function AppShell({ children }) {
     </div>
   );
 }
+
 
 
 
