@@ -185,15 +185,29 @@ function getNotificationSubtitle(item) {
 }
 function NotificationsBell() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
+  const canViewRequestDiscussion = Boolean(
+    user?.effective_permission_keys?.includes("view_request_discussion")
+  );
+
+  function filterVisibleNotifications(list) {
+    if (canViewRequestDiscussion) return list;
+    return (list || []).filter((item) => {
+      const eventType = String(item?.event_type || "").toUpperCase();
+      const hasMessageId = Boolean(item?.metadata?.message_id);
+      return eventType !== "REQUEST_MESSAGE" && !hasMessageId;
+    });
+  }
 
   async function loadNotifications() {
     try {
       const unreadResp = await api.get("/notifications/", { params: { unread_only: "true" } });
       const unreadItems = Array.isArray(unreadResp.data) ? unreadResp.data : [];
-      setItems(unreadItems.slice(0, 6));
-      setUnread(unreadItems.length);
+      const visibleItems = filterVisibleNotifications(unreadItems);
+      setItems(visibleItems.slice(0, 6));
+      setUnread(visibleItems.length);
     } catch {
       setItems([]);
       setUnread(0);
@@ -209,7 +223,7 @@ function NotificationsBell() {
 
     window.addEventListener("notifications:changed", handleChanged);
     return () => window.removeEventListener("notifications:changed", handleChanged);
-  }, []);
+  }, [canViewRequestDiscussion]);
 
   async function openNotification(item) {
     try {
@@ -507,7 +521,6 @@ export function AppShell({ children }) {
     </div>
   );
 }
-
 
 
 

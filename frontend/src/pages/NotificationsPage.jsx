@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import PageHeader from '../components/layout/PageHeader'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
 function NotificationsPage() {
+  const { user } = useAuth()
   const [state, setState] = useState({
     loading: true,
     error: '',
@@ -11,6 +13,18 @@ function NotificationsPage() {
     unreadOnly: false,
   })
   const [busy, setBusy] = useState(false)
+  const canViewRequestDiscussion = Boolean(
+    user?.effective_permission_keys?.includes('view_request_discussion'),
+  )
+
+  function filterVisibleNotifications(list) {
+    if (canViewRequestDiscussion) return list
+    return (list || []).filter((item) => {
+      const eventType = String(item?.event_type || '').toUpperCase()
+      const hasMessageId = Boolean(item?.metadata?.message_id)
+      return eventType !== 'REQUEST_MESSAGE' && !hasMessageId
+    })
+  }
 
   async function loadNotifications(unreadOnly = state.unreadOnly) {
     setState((current) => ({ ...current, loading: true, error: '', unreadOnly }))
@@ -18,10 +32,11 @@ function NotificationsPage() {
       const response = await api.get('/notifications/', {
         params: { unread_only: unreadOnly ? 'true' : undefined },
       })
+      const visibleNotifications = filterVisibleNotifications(response.data || [])
       setState((current) => ({
         ...current,
         loading: false,
-        notifications: response.data || [],
+        notifications: visibleNotifications,
         unreadOnly,
       }))
     } catch (error) {
@@ -51,7 +66,7 @@ function NotificationsPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [canViewRequestDiscussion])
 
   async function markAsRead(notificationId) {
     setBusy(true)

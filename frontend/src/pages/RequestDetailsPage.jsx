@@ -759,7 +759,7 @@ function RequestDetailsPage() {
 
                 {canAssignToMe && (
                    <Button variant="outline" className="w-full" onClick={handleAssignToMe} disabled={actionState.busy}>
-                      Accept Ownership
+                      Assign to me
                    </Button>
                 )}
 
@@ -883,7 +883,6 @@ function RequestDetailsPage() {
 }
 
 export default RequestDetailsPage
-
 
 
 

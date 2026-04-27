@@ -111,7 +111,7 @@ function formatDue(value) {
   return 'Overdue by ' + diffDays + ' day' + (diffDays === 1 ? '' : 's')
 }
 function Dashboard() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, refreshUser } = useAuth()
   const [dashboardState, setDashboardState] = useState({ loading: true, error: '', data: null })
   const [requestState, setRequestState] = useState({ loading: true, error: '', items: [] })
 
@@ -121,6 +121,15 @@ function Dashboard() {
   const scopeLabel = getScopeLabel(primaryRole, user)
   const canAccessReports = ADMIN_REPORT_ROLES.has(primaryRole)
   const canReadGlobalDashboard = primaryRole === 'super_admin'
+  const effectivePermissionKeys = useMemo(
+    () => new Set(user?.effective_permission_keys || []),
+    [user?.effective_permission_keys],
+  )
+  const canCreateRequest = Boolean(user?.request_creation_allowed) && effectivePermissionKeys.has('create_request')
+
+  useEffect(() => {
+    refreshUser().catch(() => {})
+  }, [refreshUser])
 
   useEffect(() => {
     let active = true
@@ -290,13 +299,13 @@ function Dashboard() {
         <PageHeader
           title={`Dashboard`}
           description={`${roleLabel} · ${scopeLabel} — personal operational overview.`}
-          actions={
+          actions={canCreateRequest ? (
             <Button asChild>
               <Link to="/requests/create">
                 <PlusCircle className="mr-1 h-4 w-4" /> New request
               </Link>
             </Button>
-          }
+          ) : null}
         />
 
         {/* Compact Operational Summary */}
@@ -484,13 +493,13 @@ function Dashboard() {
         <PageHeader
           title={`Dashboard`}
           description={`${roleLabel} · ${scopeLabel} — team operational workspace.`}
-          actions={
+          actions={canCreateRequest ? (
             <Button asChild>
               <Link to="/requests/create">
                 <PlusCircle className="mr-1 h-4 w-4" /> New request
               </Link>
             </Button>
-          }
+          ) : null}
         />
 
         {/* Compact Operational Summary */}
@@ -1105,8 +1114,6 @@ function Dashboard() {
 }
 
 export default Dashboard
-
-
 
 
 

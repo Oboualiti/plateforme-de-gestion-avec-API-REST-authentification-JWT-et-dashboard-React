@@ -60,7 +60,11 @@ from .serializers import (
     ServiceRequestSerializer,
     UnitMembershipSerializer,
 )
-from .telegram import mirror_request_message_to_telegram
+from .telegram import (
+    mirror_request_assignment_to_telegram,
+    mirror_request_created_to_telegram,
+    mirror_request_message_to_telegram,
+)
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -198,6 +202,7 @@ class RequestAiImproveView(OpenRouterMixin, APIView):
         prompt = (
             "You are helping enterprise users improve internal service requests.\n"
             "Input may be in Darija, French, English, or mixed language.\n"
+            "Always write all output text fields in clear professional English.\n"
             "Return ONLY valid JSON with keys:\n"
             "suggested_title (string), improved_description (string), suggested_type (one of "
             f"{allowed_types}), suggested_target_team_name (string), missing_information (array of strings), "
@@ -210,6 +215,7 @@ class RequestAiImproveView(OpenRouterMixin, APIView):
             f"Current type: {current_type or '-'}\n"
             f"Allowed types: {', '.join(allowed_types)}\n"
             f"Available target teams: {target_guidance}\n"
+            "Output language requirement: English only.\n"
             "If information is missing, list it in missing_information."
         )
 
@@ -293,6 +299,7 @@ class RequestAiSummaryView(OpenRouterMixin, APIView):
 
         prompt = (
             "You summarize enterprise support request discussions.\n"
+            "Always write all output fields in clear professional English.\n"
             "Return ONLY valid JSON with keys:\n"
             "short_summary (string), current_progress (string), latest_blocker (string), "
             "already_done (array of strings), still_needed (array of strings), "
@@ -531,6 +538,7 @@ class RequestListCreateView(APIView):
             target_unit=target_unit,
             is_submitted_to_target=submit_to_target_now,
         )
+        mirror_request_created_to_telegram(service_request)
         if submit_to_target_now:
             recipients = resolve_request_notification_recipients(service_request)
             recipients = filter_recipients_by_request_visibility(service_request, recipients)
@@ -932,6 +940,13 @@ class RequestAssignToMeView(APIView):
             assignee=request.user,
             note="Assigned to self",
         )
+        if actor_role == "team_leader":
+            mirror_request_assignment_to_telegram(
+                service_request=service_request,
+                assigned_by=request.user,
+                assignee=request.user,
+                note="Assigned to self",
+            )
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
         return Response(
@@ -1034,6 +1049,14 @@ class RequestAssignUserView(APIView):
             assignee=assignee,
             note=note,
         )
+        assignee_role_keys = set(get_user_role_keys(assignee))
+        if "team_leader" in assignee_role_keys:
+            mirror_request_assignment_to_telegram(
+                service_request=service_request,
+                assigned_by=request.user,
+                assignee=assignee,
+                note=note,
+            )
 
         service_request = load_request(request_id)
         mark_request_stuck(service_request)

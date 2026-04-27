@@ -216,9 +216,10 @@ function RequestsPage() {
   async function loadRequests() {
     try {
       await refreshUser()
+      const isTeamScope = resolvedScope === 'team'
       const params = {
-        page: resolvedScope === 'team' ? 1 : pagination.page,
-        page_size: resolvedScope === 'team' ? 200 : pagination.pageSize,
+        page: isTeamScope ? 1 : pagination.page,
+        page_size: isTeamScope ? 200 : pagination.pageSize,
         scope: resolvedScope !== 'all' ? resolvedScope : undefined,
         search: filters.search || undefined,
         company_id: isGlobalAdmin ? filters.company_id || undefined : actorCompanyId || undefined,
@@ -230,12 +231,32 @@ function RequestsPage() {
       const payload = response.data || {}
       const rawResults = Array.isArray(payload.results) ? payload.results : []
       const results = applyScopeFilter(rawResults)
+
+      if (isTeamScope) {
+        const totalCount = results.length
+        const totalPages = Math.max(1, Math.ceil(totalCount / pagination.pageSize))
+        const safePage = Math.min(Math.max(1, pagination.page), totalPages)
+        const startIndex = (safePage - 1) * pagination.pageSize
+        const endIndex = startIndex + pagination.pageSize
+        const pagedResults = results.slice(startIndex, endIndex)
+
+        setState({ loading: false, error: '', requests: pagedResults })
+        setPagination((current) => ({
+          ...current,
+          page: safePage,
+          count: totalCount,
+          next: safePage < totalPages ? `local-page-${safePage + 1}` : null,
+          previous: safePage > 1 ? `local-page-${safePage - 1}` : null,
+        }))
+        return
+      }
+
       setState({ loading: false, error: '', requests: results })
       setPagination((current) => ({
         ...current,
-        count: resolvedScope === 'team' ? results.length : Number(payload.count || 0),
-        next: resolvedScope === 'team' ? null : payload.next || null,
-        previous: resolvedScope === 'team' ? null : payload.previous || null,
+        count: Number(payload.count || 0),
+        next: payload.next || null,
+        previous: payload.previous || null,
       }))
     } catch (error) {
       setState({

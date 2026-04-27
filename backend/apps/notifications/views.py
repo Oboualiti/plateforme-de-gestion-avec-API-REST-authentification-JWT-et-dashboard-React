@@ -3,9 +3,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.permissions_app.services import has_permission
+
 from .models import UserNotification
 from .serializers import UserNotificationSerializer
 from .services import mark_notification_read
+
+
+def _visible_notifications_queryset(user):
+    queryset = UserNotification.objects.filter(user=user)
+    if not has_permission(user, "view_request_discussion"):
+        queryset = queryset.exclude(
+            event_type=UserNotification.EventType.REQUEST_MESSAGE
+        )
+    return queryset
 
 
 class NotificationListView(APIView):
@@ -17,7 +28,7 @@ class NotificationListView(APIView):
             "true",
             "yes",
         }
-        queryset = UserNotification.objects.filter(user=request.user)
+        queryset = _visible_notifications_queryset(request.user)
         if unread_only:
             queryset = queryset.filter(is_read=False)
         queryset = queryset.order_by("-created_at")[:100]
@@ -28,8 +39,8 @@ class NotificationUnreadCountView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        unread_count = UserNotification.objects.filter(
-            user=request.user, is_read=False
+        unread_count = _visible_notifications_queryset(request.user).filter(
+            is_read=False
         ).count()
         return Response({"unread_count": unread_count})
 
@@ -38,8 +49,8 @@ class NotificationReadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, notification_id):
-        notification = UserNotification.objects.filter(
-            id=notification_id, user=request.user
+        notification = _visible_notifications_queryset(request.user).filter(
+            id=notification_id
         ).first()
         if notification is None:
             return Response({"detail": "Notification not found."}, status=404)
@@ -51,7 +62,9 @@ class NotificationReadAllView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        updated = UserNotification.objects.filter(user=request.user, is_read=False).update(
+        updated = _visible_notifications_queryset(request.user).filter(
+            is_read=False
+        ).update(
             is_read=True,
             read_at=timezone.now(),
         )

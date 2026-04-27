@@ -1,5 +1,6 @@
 from django.utils import timezone
 
+from apps.permissions_app.services import has_permission
 from apps.users.models import User
 
 from .models import UserNotification
@@ -38,6 +39,11 @@ def create_bulk_notifications(
     notification_items = []
     for user in users:
         if user is None:
+            continue
+        if (
+            event_type == UserNotification.EventType.REQUEST_MESSAGE
+            and not has_permission(user, "view_request_discussion")
+        ):
             continue
         notification_items.append(
             UserNotification(
