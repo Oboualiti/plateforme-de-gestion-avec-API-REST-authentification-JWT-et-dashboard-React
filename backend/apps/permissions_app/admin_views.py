@@ -1,5 +1,12 @@
-﻿from datetime import timedelta
+from datetime import timedelta
+import hashlib
+import json
+import logging
+import time
 
+from django.conf import settings
+from django.core.cache import cache
+from django.db import connection
 from django.db.models.deletion import ProtectedError
 from django.db.models import Count, Q, Value
 from django.db.models.functions import Coalesce, TruncDate
@@ -97,6 +104,7 @@ LOG_SCOPE_GLOBAL_KEY = "view_logs_scope_global"
 LOG_SCOPE_COMPANY_KEY = "view_logs_scope_company"
 LOG_SCOPE_ENTITY_KEY = "view_logs_scope_entity"
 LOG_SCOPE_TEAM_KEY = "view_logs_scope_team"
+logger = logging.getLogger(__name__)
 
 
 def normalize_log_scope_permission_keys(role_key, permission_keys):
@@ -184,19 +192,24 @@ class AdminBaseView(APIView):
             Q(id__in=visible_ids) | Q(id=user.id)
         )
 
-    def scoped_requests(self, user):
-        return get_visible_requests_queryset(user)
+    def scoped_users_count_fast(self, user):
+        if has_any_permission(user, {"manage_users_global", "view_users_global"}):
+            return User.objects.filter(is_active=True).count()
+        if has_any_permission(user, {"manage_users_company", "view_users_company"}) and user.company_id:
+            return User.objects.filter(is_active=True, company_id=user.company_id).count()
+        if has_any_permission(user, {"manage_users_entity", "view_users_entity"}) and user.entity_id:
+            return User.objects.filter(is_active=True, entity_id=user.entity_id).count()
+        return 1 if user.is_active else 0
+
+    def scoped_requests(self, user, include_related=True, include_ordering=True):
+        return get_visible_requests_queryset(
+            user,
+            include_related=include_related,
+            include_ordering=include_ordering,
+        )
 
     def scoped_report_requests(self, user):
-        queryset = ServiceRequest.objects.select_related(
-            "company",
-            "source_entity",
-            "target_entity",
-            "requester_user",
-            "requester_user__company",
-            "requester_user__entity",
-            "current_assignee",
-        )
+        queryset = ServiceRequest.objects.all()
 
         if has_permission(user, "view_global_reports"):
             return queryset
@@ -216,7 +229,31 @@ class AdminBaseView(APIView):
 
         if not visibility_filter.children:
             return queryset.none()
-        return queryset.filter(visibility_filter).distinct()
+        return queryset.filter(visibility_filter)
+
+    def build_stats_cache_key(self, *, area, user, extra=None):
+        payload = {
+            "area": area,
+            "user_id": user.id,
+            "company_id": user.company_id,
+            "entity_id": user.entity_id,
+            "role": get_primary_role_key(user),
+            "permissions": sorted(get_effective_permission_keys(user)),
+            "extra": extra or {},
+        }
+        digest = hashlib.md5(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        return f"admin_stats:{area}:{user.id}:{digest}"
+
+    def maybe_profile_meta(self, *, request, started_at):
+        if not settings.DEBUG:
+            return None
+        if str(request.query_params.get("profile", "")).lower() not in {"1", "true", "yes"}:
+            return None
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        query_count = len(getattr(connection, "queries", []))
+        return {"duration_ms": round(duration_ms, 2), "query_count": query_count}
 
     def scoped_audit_logs(self, user):
         queryset = AdminAuditLog.objects.select_related("actor", "actor__company", "actor__entity").order_by("-created_at")
@@ -296,32 +333,70 @@ class AdminDashboardView(AdminBaseView):
     module_key = "dashboard"
 
     def get(self, request):
-        request_qs = self.scoped_requests(request.user)
-        user_qs = self.scoped_users(request.user)
+        started_at = time.perf_counter()
+        cache_extra = {
+            "date_from": request.query_params.get("date_from"),
+            "date_to": request.query_params.get("date_to"),
+        }
+        cache_key = self.build_stats_cache_key(
+            area="dashboard",
+            user=request.user,
+            extra=cache_extra,
+        )
+        cached_payload = cache.get(cache_key)
+        if cached_payload is not None:
+            return Response(cached_payload)
+
+        request_qs = self.scoped_requests(
+            request.user,
+            include_related=False,
+            include_ordering=False,
+        )
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if date_from:
+            request_qs = request_qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            request_qs = request_qs.filter(created_at__date__lte=date_to)
         open_statuses = [ServiceRequest.Status.NEW, ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.IN_PROGRESS]
         stale_cutoff = timezone.now() - timedelta(days=7)
         recent_logs = self.scoped_audit_logs(request.user)
-
-        return Response(
-            {
-                "totals": {
-                    "users": user_qs.count(),
-                    "requests": request_qs.count(),
-                    "companies": self.scoped_companies(request.user).count(),
-                    "entities": self.scoped_entities(request.user).count(),
-                },
-                "requests_by_status": list(request_qs.values("status").annotate(total=Count("id")).order_by("status")),
-                "requests_by_company": list(request_qs.values("company__name").annotate(total=Count("id")).order_by("-total", "company__name")),
-                "requests_by_entity": list(request_qs.values("target_entity__name").annotate(total=Count("id")).order_by("-total", "target_entity__name")[:10]),
-                "queue": {
-                    "pending": request_qs.filter(status=ServiceRequest.Status.NEW).count(),
-                    "open": request_qs.filter(status__in=open_statuses).count(),
-                    "stuck": request_qs.filter(status__in=open_statuses, created_at__lt=stale_cutoff).count(),
-                    "unassigned": request_qs.filter(status__in=open_statuses, current_assignee__isnull=True).count(),
-                },
-                "recent_activity": AuditLogSerializer(recent_logs[:8], many=True).data,
-            }
+        queue_counts = request_qs.aggregate(
+            pending=Count("id", filter=Q(status=ServiceRequest.Status.NEW)),
+            open=Count("id", filter=Q(status__in=open_statuses)),
+            stuck=Count(
+                "id",
+                filter=Q(status__in=open_statuses, created_at__lt=stale_cutoff),
+            ),
+            unassigned=Count(
+                "id",
+                filter=Q(status__in=open_statuses, current_assignee__isnull=True),
+            ),
         )
+
+        payload = {
+            "totals": {
+                "users": self.scoped_users_count_fast(request.user),
+                "requests": request_qs.count(),
+                "companies": self.scoped_companies(request.user).count(),
+                "entities": self.scoped_entities(request.user).count(),
+            },
+            "requests_by_status": list(request_qs.values("status").annotate(total=Count("id")).order_by("status")),
+            "requests_by_company": list(
+                request_qs.values("company__name").annotate(total=Count("id")).order_by("-total", "company__name")[:50]
+            ),
+            "requests_by_entity": list(
+                request_qs.values("target_entity__name").annotate(total=Count("id")).order_by("-total", "target_entity__name")[:20]
+            ),
+            "queue": queue_counts,
+            "recent_activity": AuditLogSerializer(recent_logs[:8], many=True).data,
+        }
+        profile_meta = self.maybe_profile_meta(request=request, started_at=started_at)
+        if profile_meta:
+            payload["_profile"] = profile_meta
+            logger.debug("AdminDashboard profile: %s", profile_meta)
+        cache.set(cache_key, payload, timeout=60)
+        return Response(payload)
 
 
 class AdminCompaniesView(AdminBaseView):
@@ -1804,26 +1879,74 @@ class AdminReportsView(AdminBaseView):
     module_key = "reports"
 
     def get(self, request):
+        started_at = time.perf_counter()
+        cache_extra = {
+            "date_from": request.query_params.get("date_from"),
+            "date_to": request.query_params.get("date_to"),
+        }
+        cache_key = self.build_stats_cache_key(
+            area="reports",
+            user=request.user,
+            extra=cache_extra,
+        )
+        cached_payload = cache.get(cache_key)
+        if cached_payload is not None:
+            return Response(cached_payload)
+
         queryset = self.scoped_report_requests(request.user)
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        open_vs_resolved = queryset.aggregate(
+            open=Count(
+                "id",
+                filter=Q(
+                    status__in=[
+                        ServiceRequest.Status.NEW,
+                        ServiceRequest.Status.ACCEPTED,
+                        ServiceRequest.Status.IN_PROGRESS,
+                    ]
+                ),
+            ),
+            resolved=Count(
+                "id",
+                filter=Q(
+                    status__in=[
+                        ServiceRequest.Status.COMPLETED,
+                        ServiceRequest.Status.CLOSED,
+                    ]
+                ),
+            ),
+        )
         volume_by_company = (
             queryset.annotate(
                 company_name=Coalesce("company__name", "requester_user__company__name", Value("No company"))
             )
             .values("company_name")
             .annotate(total=Count("id"))
-            .order_by("-total", "company_name")
+            .order_by("-total", "company_name")[:100]
         )
-        return Response(
-            {
-                "request_volume_by_company": list(volume_by_company),
-                "request_volume_by_entity": list(queryset.values("target_entity__name").annotate(total=Count("id")).order_by("-total")),
-                "requests_by_type": list(queryset.values("category").annotate(total=Count("id")).order_by("-total")),
-                "requests_by_status": list(queryset.values("status").annotate(total=Count("id")).order_by("-total")),
-                "open_vs_resolved": {
-                    "open": queryset.filter(status__in=[ServiceRequest.Status.NEW, ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.IN_PROGRESS]).count(),
-                    "resolved": queryset.filter(status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED]).count(),
-                },
-                "team_workload": list(queryset.values("current_assignee__username").annotate(total=Count("id")).order_by("-total")),
-                "trend_summaries": list(queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id")).order_by("-day")[:14]),
-            }
-        )
+        payload = {
+            "request_volume_by_company": list(volume_by_company),
+            "request_volume_by_entity": list(
+                queryset.values("target_entity__name").annotate(total=Count("id")).order_by("-total")[:100]
+            ),
+            "requests_by_type": list(queryset.values("category").annotate(total=Count("id")).order_by("-total")),
+            "requests_by_status": list(queryset.values("status").annotate(total=Count("id")).order_by("-total")),
+            "open_vs_resolved": open_vs_resolved,
+            "team_workload": list(
+                queryset.values("current_assignee__username").annotate(total=Count("id")).order_by("-total")[:100]
+            ),
+            "trend_summaries": list(
+                queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id")).order_by("-day")[:31]
+            ),
+        }
+        profile_meta = self.maybe_profile_meta(request=request, started_at=started_at)
+        if profile_meta:
+            payload["_profile"] = profile_meta
+            logger.debug("AdminReports profile: %s", profile_meta)
+        cache.set(cache_key, payload, timeout=90)
+        return Response(payload)

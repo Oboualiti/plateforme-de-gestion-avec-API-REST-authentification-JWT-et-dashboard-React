@@ -610,28 +610,37 @@ function PermissionDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {user.permissions.map((permission) => (
-                <tr key={permission.key} className="bg-card">
-                  <td className="px-4 py-3 align-top">
-                    <div className="text-base font-bold leading-tight">{permission.name}</div>
-                    <div className="text-sm text-muted-foreground">{permission.key}</div>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
-                        permission.effective
-                          ? 'border-transparent text-emerald-600'
-                          : 'border-muted-foreground/40 text-muted-foreground'
-                      } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
-                      onClick={() => updatePermission(permission.key, !permission.effective)}
-                      disabled={!canEdit}
-                      aria-label={`${permission.effective ? 'Revoke' : 'Grant'} ${permission.name}`}
-                    >
-                      {permission.effective ? '\u2713' : '-'}
-                    </button>
-                  </td>
-                </tr>
+              {groupedPermissions.map((group) => (
+                <Fragment key={group.sectionKey}>
+                  <tr className="bg-surface-2">
+                    <td colSpan={2} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
+                      {group.sectionLabel}
+                    </td>
+                  </tr>
+                  {group.items.map((permission) => (
+                    <tr key={permission.key} className="bg-card">
+                      <td className="px-4 py-3 align-top">
+                        <div className="text-base font-bold leading-tight">{permission.name}</div>
+                        <div className="text-sm text-muted-foreground">{permission.key}</div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
+                            permission.effective
+                              ? 'border-transparent text-emerald-600'
+                              : 'border-muted-foreground/40 text-muted-foreground'
+                          } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                          onClick={() => updatePermission(permission.key, !permission.effective)}
+                          disabled={!canEdit}
+                          aria-label={`${permission.effective ? 'Revoke' : 'Grant'} ${permission.name}`}
+                        >
+                          {permission.effective ? '\u2713' : '-'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -642,7 +651,6 @@ function PermissionDetailPage() {
 }
 
 export default PermissionDetailPage
-
 
 
 

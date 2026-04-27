@@ -21,7 +21,8 @@ import {
   FileText, 
   BarChart3,
   Users,
-  Briefcase
+  Briefcase,
+  CircleHelp
 } from 'lucide-react'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -71,6 +72,10 @@ function toDate(value) {
   if (!value) return null
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function getRequestDeadline(item) {
+  return item?.deadline_date || item?.deadlineDate || item?.deadline || item?.approximate_deadline || item?.due_date || item?.dueDate || null
 }
 
 function formatDay(date) {
@@ -137,6 +142,18 @@ const STATUS_BAR_CLASS = {
 }
 
 const AVATAR_TONE = ['bg-[#f2c200]', 'bg-[#f2c200]', 'bg-[#f2c200]', 'bg-[#f2c200]', 'bg-[#f2c200]']
+
+function HelpTip({ text }) {
+  return (
+    <span className="group relative inline-flex items-center">
+      <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/70 transition-colors group-hover:text-primary" />
+      <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-56 -translate-x-1/2 rounded-md border border-border bg-card px-2 py-1.5 text-[11px] font-medium text-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+        {text}
+      </span>
+    </span>
+  )
+}
+
 function ReportsPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', reports: null, dashboard: null, requests: [] })
@@ -171,7 +188,7 @@ function ReportsPage() {
       const [reportsRes, dashboardRes, requestsRes] = await Promise.allSettled([
         api.get('/admin/reports/'),
         isSuperAdmin ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }),
-        api.get('/requests/', { params: { page: 1, page_size: 400, scope } }),
+        api.get('/requests/', { params: { page: 1, page_size: 200, scope, skip_count: 1 } }),
       ])
 
       if (!active) return
@@ -232,7 +249,7 @@ function ReportsPage() {
     const avgTurnaround = avgDays ? `${avgDays.toFixed(1)}d` : '0.0d'
 
     const overdue = items.filter((item) => {
-      const due = toDate(item.due_date || item.dueDate)
+      const due = toDate(getRequestDeadline(item))
       return due && due.getTime() < Date.now() && !RESOLVED_SET.has(item.status)
     }).length
 
@@ -451,7 +468,10 @@ function ReportsPage() {
         <Card className="surface-card border-border/70 bg-card">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Total Requests</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Total Requests</p>
+                <HelpTip text="Total number of requests recorded in the selected scope." />
+              </div>
               <div className="p-1 rounded bg-muted text-muted-foreground">
                 <Inbox className="h-4 w-4" />
               </div>
@@ -464,7 +484,10 @@ function ReportsPage() {
         <Card className="surface-card border-warning/40 bg-warning/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Open Queue</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Open Queue</p>
+                <HelpTip text="Requests currently in active workflow and not yet resolved." />
+              </div>
               <div className="p-1 rounded bg-warning/20 text-warning">
                 <Activity className="h-4 w-4" />
               </div>
@@ -477,7 +500,10 @@ function ReportsPage() {
         <Card className="surface-card border-success/40 bg-success/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved</p>
+                <HelpTip text="Requests that reached completed or closed status." />
+              </div>
               <div className="p-1 rounded bg-success/20 text-success">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
@@ -490,7 +516,10 @@ function ReportsPage() {
         <Card className="surface-card border-border/70 bg-card">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Avg Turnaround</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Avg Turnaround</p>
+                <HelpTip text="Average time taken to resolve requests from creation to completion." />
+              </div>
               <div className="p-1 rounded bg-muted text-muted-foreground">
                 <Clock className="h-4 w-4" />
               </div>
@@ -505,7 +534,10 @@ function ReportsPage() {
         <Card className="surface-card border-warning/40 bg-warning/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Unassigned</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Unassigned</p>
+                <HelpTip text="Open requests that still have no owner assigned." />
+              </div>
               <div className="p-1 rounded bg-warning/20 text-warning">
                 <Users className="h-4 w-4" />
               </div>
@@ -518,7 +550,10 @@ function ReportsPage() {
         <Card className="surface-card border-destructive/40 bg-destructive/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">Overdue</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">Overdue</p>
+                <HelpTip text="Open requests with a deadline date that has already passed." />
+              </div>
               <div className="p-1 rounded bg-destructive/20 text-destructive">
                 <AlertCircle className="h-4 w-4" />
               </div>
@@ -531,7 +566,10 @@ function ReportsPage() {
         <Card className="surface-card border-success/40 bg-success/12">
           <CardContent className="p-4">
             <div className="flex justify-between items-start">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolution Rate</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolution Rate</p>
+                <HelpTip text="Percentage of resolved requests out of total requests in scope." />
+              </div>
               <div className="p-1 rounded bg-success/20 text-success">
                 <Target className="h-4 w-4" />
               </div>
@@ -546,7 +584,10 @@ function ReportsPage() {
         <Card className="lg:col-span-2 shadow-elev-sm">
           <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Request Flow (Last 7 Days)</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground">Request Flow (Last 7 Days)</h3>
+                <HelpTip text="Daily trend comparing newly created requests versus resolved requests." />
+              </div>
               <p className="text-sm text-muted-foreground">Created vs resolved volume to monitor backlog trends.</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => exportCsv('request-flow-7-days.csv', parsed.trend)} disabled={!canExportData}>
@@ -580,34 +621,49 @@ function ReportsPage() {
 
         <Card className="shadow-elev-sm flex flex-col">
           <CardHeader className="border-b bg-muted/20 pb-4">
-            <h3 className="text-lg font-semibold text-foreground">Control Metrics</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-foreground">Control Metrics</h3>
+              <HelpTip text="Key operational health indicators for fast decision support." />
+            </div>
             <p className="text-sm text-muted-foreground">Quick health signals for review.</p>
           </CardHeader>
           <CardContent className="flex-1 p-5 grid grid-cols-1 gap-4">
             <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Resolution rate</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-muted-foreground">Resolution rate</p>
+                  <HelpTip text="Share of requests successfully resolved in scope." />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">Already delivered</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.resolutionRate}%</p>
             </div>
             <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Unassigned work</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-muted-foreground">Unassigned work</p>
+                  <HelpTip text="Current requests waiting for someone to take ownership." />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">Needs ownership</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.unassigned}</p>
             </div>
             <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Workload pressure</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-muted-foreground">Workload pressure</p>
+                  <HelpTip text="Gap between demand (open queue) and resolved output." />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">Demand vs completions</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.workloadPressure}</p>
             </div>
             <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-elev-sm">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Tracked units</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium text-muted-foreground">Tracked units</p>
+                  <HelpTip text="Number of teams/entities currently represented in volume analytics." />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">Active sources</p>
               </div>
               <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.requestVolumeRows.length}</p>
@@ -620,7 +676,10 @@ function ReportsPage() {
         <Card className="shadow-elev-sm">
           <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Request Type Mix</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground">Request Type Mix</h3>
+                <HelpTip text="Distribution of requests by category/type to understand work composition." />
+              </div>
               <p className="text-sm text-muted-foreground">Distribution of work categories.</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => exportCsv('request-type-mix.csv', parsed.requestTypeMix)} disabled={!canExportData}>
@@ -661,7 +720,10 @@ function ReportsPage() {
         <Card className="shadow-elev-sm">
           <CardHeader className="flex-row items-center justify-between border-b bg-muted/20 pb-4">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Demand Concentration</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground">Demand Concentration</h3>
+                <HelpTip text="Shows which teams or units are carrying the highest request volume." />
+              </div>
               <p className="text-sm text-muted-foreground">Where workload is accumulating.</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => exportCsv('request-volume-distribution.csv', parsed.requestVolumeRows)} disabled={!canExportData}>
@@ -704,7 +766,10 @@ function ReportsPage() {
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <Card className="shadow-elev-sm">
             <CardHeader className="border-b bg-muted/20 pb-4">
-              <h3 className="text-lg font-semibold text-foreground">Recent Movement</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground">Recent Movement</h3>
+                <HelpTip text="Most recent request updates with actor, target, and current status." />
+              </div>
               <p className="text-sm text-muted-foreground">Latest activity across your scope.</p>
             </CardHeader>
             <CardContent className="p-0">
@@ -742,7 +807,10 @@ function ReportsPage() {
 
           <Card className="shadow-elev-sm">
             <CardHeader className="border-b bg-muted/20 pb-4">
-              <h3 className="text-lg font-semibold text-foreground">Ownership Distribution</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground">Ownership Distribution</h3>
+                <HelpTip text="How open requests are split across assignees to reveal balance or overload." />
+              </div>
               <p className="text-sm text-muted-foreground">Active workload by assignee.</p>
             </CardHeader>
             <CardContent className="p-5 pt-6 space-y-4">
@@ -794,7 +862,6 @@ function ReportsPage() {
 }
 
 export default ReportsPage
-
 
 
 

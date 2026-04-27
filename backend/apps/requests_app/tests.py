@@ -201,6 +201,20 @@ class RequestPermissionWorkflowTests(APITestCase):
         pending_ids = {item["id"] for item in pending_response.data.get("results", [])}
         self.assertIn(self.pending_request.id, pending_ids)
 
+    def test_requests_list_includes_deadline_date(self):
+        self.submitted_request.deadline_date = date(2026, 4, 20)
+        self.submitted_request.save(update_fields=["deadline_date"])
+
+        self.client.force_authenticate(user=self.super_admin)
+        url = reverse("requests-list-create")
+        response = self.client.get(url, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data.get("results", [])
+        row = next((item for item in results if item.get("id") == self.submitted_request.id), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row.get("deadline_date"), "2026-04-20")
+
     def test_target_entity_accept_requires_deadline(self):
         self.client.force_authenticate(user=self.support_manager)
         url = reverse("requests-status", kwargs={"request_id": self.submitted_request.id})

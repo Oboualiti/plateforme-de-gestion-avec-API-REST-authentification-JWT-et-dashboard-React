@@ -144,6 +144,26 @@ class ServiceRequest(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["status"], name="req_status_idx"),
+            models.Index(fields=["created_at"], name="req_created_at_idx"),
+            models.Index(fields=["deadline_date"], name="req_deadline_idx"),
+            models.Index(fields=["priority"], name="req_priority_idx"),
+            models.Index(fields=["status", "created_at"], name="req_status_created_idx"),
+            models.Index(fields=["company", "status"], name="req_company_status_idx"),
+            models.Index(fields=["source_entity", "status"], name="req_source_status_idx"),
+            models.Index(fields=["target_entity", "status"], name="req_target_status_idx"),
+            models.Index(fields=["current_assignee", "status"], name="req_assignee_status_idx"),
+            models.Index(fields=["requester_user", "status"], name="req_requester_status_idx"),
+            models.Index(fields=["company", "created_at"], name="req_company_created_idx"),
+            models.Index(fields=["target_entity", "created_at"], name="req_target_created_idx"),
+            models.Index(
+                fields=["requester_user", "created_at"],
+                name="req_requester_created_idx",
+            ),
+        ]
+
     def __str__(self):
         return self.request_number
 

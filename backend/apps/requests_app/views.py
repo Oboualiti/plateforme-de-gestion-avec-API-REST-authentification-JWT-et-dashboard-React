@@ -1,12 +1,14 @@
 import json
 import os
 import re
+import hashlib
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -394,9 +396,52 @@ class RequestListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = get_visible_requests_queryset(request.user)
+        queryset = get_visible_requests_queryset(request.user, include_related=True)
         queryset = apply_scope_filters(queryset, request.user, request.query_params.get("scope"))
         queryset = apply_request_filters(queryset, request.query_params)
+        skip_count = str(request.query_params.get("skip_count", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+
+        if skip_count:
+            try:
+                page_size = int(request.query_params.get("page_size", 20))
+            except (TypeError, ValueError):
+                page_size = 20
+            page_size = max(1, min(page_size, 1000))
+            cache_scope = {
+                "user_id": request.user.id,
+                "scope": request.query_params.get("scope", ""),
+                "search": request.query_params.get("search", ""),
+                "company_id": request.query_params.get("company_id", ""),
+                "source_entity_id": request.query_params.get("source_entity_id", ""),
+                "target_entity_id": request.query_params.get("target_entity_id", ""),
+                "type": request.query_params.get("type", ""),
+                "status": request.query_params.get("status", ""),
+                "stuck": request.query_params.get("stuck", ""),
+                "page_size": page_size,
+            }
+            cache_digest = hashlib.md5(
+                json.dumps(cache_scope, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            cache_key = f"requests:list:skip:{cache_digest}"
+            cached_payload = cache.get(cache_key)
+            if cached_payload is not None:
+                return Response(cached_payload)
+
+            rows = list(queryset[:page_size])
+            mark_requests_stuck(rows)
+            serializer = RequestSummarySerializer(rows, many=True)
+            payload = {
+                "count": None,
+                "next": None,
+                "previous": None,
+                "results": serializer.data,
+            }
+            cache.set(cache_key, payload, timeout=30)
+            return Response(payload)
 
         paginator = StandardResultsSetPagination()
         page = paginator.paginate_queryset(queryset, request)
@@ -1309,9 +1354,10 @@ def load_request(request_id):
     )
 
 
-def get_visible_requests_queryset(user):
-    base_queryset = (
-        ServiceRequest.objects.select_related(
+def get_visible_requests_queryset(user, include_related=False, include_ordering=True):
+    base_queryset = ServiceRequest.objects.all()
+    if include_related:
+        base_queryset = base_queryset.select_related(
             "company",
             "source_entity",
             "target_entity",
@@ -1321,24 +1367,13 @@ def get_visible_requests_queryset(user):
             "requester_unit",
             "current_assignee",
         )
-        .prefetch_related(
-            "messages__sender",
-            "messages__sender__entity",
-            "status_history__changed_by",
-            "status_history__changed_by__entity",
-            "assignment_history__assigned_by",
-            "assignment_history__assignee",
-            "team_reassignment_history__old_target_entity",
-            "team_reassignment_history__new_target_entity",
-            "team_reassignment_history__changed_by",
-        )
-        .order_by("-created_at")
-    )
+    if include_ordering:
+        base_queryset = base_queryset.order_by("-created_at")
 
     # Super Admin always has global visibility over requests, regardless of
     # customized permission matrix toggles.
     if get_primary_role_key(user) == "super_admin":
-        return base_queryset.distinct()
+        return base_queryset
 
     effective_permissions = set(get_effective_permission_keys(user))
     visibility_filter = Q(pk__in=[])
@@ -1381,7 +1416,10 @@ def get_visible_requests_queryset(user):
         visibility_filter |= Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
 
     pending_visibility = get_pending_approval_visibility_filter(user)
-    return base_queryset.filter(visibility_filter, Q(is_submitted_to_target=True) | pending_visibility).distinct()
+    return base_queryset.filter(
+        visibility_filter,
+        Q(is_submitted_to_target=True) | pending_visibility,
+    )
 
 
 def can_manage_incoming_request(user, service_request):

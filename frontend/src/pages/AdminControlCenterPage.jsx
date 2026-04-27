@@ -1691,6 +1691,14 @@ const LOG_PERMISSION_ORDER = [
   'view_user_audit_logs',
 ]
 
+const REQUEST_PERMISSION_ORDER = [
+  'close_request',
+  'resolve_request',
+  'edit_request_deadline',
+  'comment_request',
+  'view_request_discussion',
+]
+
 const PERMISSION_IMPLICATIONS = {
   manage_companies: [
     'manage_entities',
@@ -1801,6 +1809,13 @@ function buildPermissionRows(allPermissionKeys) {
     })
     .sort((a, b) => {
       if (a.section !== b.section) return sectionIndex(a.section) - sectionIndex(b.section)
+      if (a.section === 'requests') {
+        const ai = REQUEST_PERMISSION_ORDER.indexOf(a.key)
+        const bi = REQUEST_PERMISSION_ORDER.indexOf(b.key)
+        const aOrder = ai === -1 ? 999 : ai
+        const bOrder = bi === -1 ? 999 : bi
+        if (aOrder !== bOrder) return aOrder - bOrder
+      }
       if (a.section === 'logs') {
         const ai = LOG_PERMISSION_ORDER.indexOf(a.key)
         const bi = LOG_PERMISSION_ORDER.indexOf(b.key)
@@ -1913,6 +1928,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
                 key={`restore-${role.id}`}
                 variant="ghost"
                 size="sm"
+                className="hover:bg-primary hover:text-primary-foreground"
                 onClick={() => onRestoreRole(role.id)}
                 disabled={!editable || saving}
                 title={restoreBlockReason || undefined}

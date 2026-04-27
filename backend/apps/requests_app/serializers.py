@@ -97,6 +97,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "priority_label",
             "status",
             "created_at",
+            "deadline_date",
             "completed_at",
             "closed_at",
             "company_name",

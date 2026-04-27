@@ -17,7 +17,8 @@ import {
   Target, 
   FileText, 
   BarChart3,
-  Briefcase
+  Briefcase,
+  CircleHelp
 } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -82,6 +83,10 @@ function toDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function getRequestDeadline(item) {
+  return item?.deadline_date || item?.deadlineDate || item?.deadline || item?.approximate_deadline || item?.due_date || item?.dueDate || null
+}
+
 function formatRelative(value) {
   const date = toDate(value)
   if (!date) return '-'
@@ -109,6 +114,17 @@ function formatDue(value) {
   const diffDays = Math.round(Math.abs(diffMs) / dayMs)
   if (diffMs > 0) return 'Due in ' + diffDays + ' day' + (diffDays === 1 ? '' : 's')
   return 'Overdue by ' + diffDays + ' day' + (diffDays === 1 ? '' : 's')
+}
+
+function HelpTip({ text }) {
+  return (
+    <span className="group relative inline-flex items-center">
+      <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/70 transition-colors group-hover:text-primary" />
+      <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-56 -translate-x-1/2 rounded-md border border-border bg-card px-2 py-1.5 text-[11px] font-medium text-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+        {text}
+      </span>
+    </span>
+  )
 }
 function Dashboard() {
   const { user, loading: authLoading, refreshUser } = useAuth()
@@ -140,7 +156,7 @@ function Dashboard() {
 
       const [dashboardResult, requestsResult] = await Promise.allSettled([
         canReadGlobalDashboard ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }),
-        api.get('/requests/', { params: { page: 1, page_size: 400, scope } }),
+        api.get('/requests/', { params: { page: 1, page_size: 200, scope, skip_count: 1 } }),
       ])
 
       if (!active) return
@@ -178,7 +194,7 @@ function Dashboard() {
     const resolved = items.filter((item) => RESOLVED_SET.has(item.status)).length
     const unassigned = items.filter((item) => !item.assignee_name && !item.current_assignee__username).length
     const overdue = items.filter((item) => {
-      const due = toDate(item.due_date || item.dueDate)
+      const due = toDate(getRequestDeadline(item))
       return due && due.getTime() < Date.now() && !RESOLVED_SET.has(item.status)
     }).length
 
@@ -209,8 +225,8 @@ function Dashboard() {
     })
 
     const itemsWithDueDate = sortedRecent
-      .filter((item) => toDate(item.due_date || item.dueDate))
-      .sort((a, b) => +(toDate(a.due_date || a.dueDate) || 0) - +(toDate(b.due_date || b.dueDate) || 0))
+      .filter((item) => toDate(getRequestDeadline(item)))
+      .sort((a, b) => +(toDate(getRequestDeadline(a)) || 0) - +(toDate(getRequestDeadline(b)) || 0))
 
     const priorityWatch =
       itemsWithDueDate.find((item) => item.status === 'IN_PROGRESS') ||
@@ -311,20 +327,32 @@ function Dashboard() {
         {/* Compact Operational Summary */}
         <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
           <div>
-            <p className="eyebrow">Active Scope</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Active Scope</p>
+              <HelpTip text="Shows which organization scope this dashboard currently summarizes." />
+            </div>
             <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
           </div>
           <div className="h-10 w-px bg-ink/10" />
           <div>
-            <p className="eyebrow">Open Queue</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Open Queue</p>
+              <HelpTip text="Total active requests that are not yet resolved in this scope." />
+            </div>
             <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
           </div>
           <div>
-            <p className="eyebrow">Unassigned</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Unassigned</p>
+              <HelpTip text="Open requests that still have no current assignee." />
+            </div>
             <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.unassigned}</p>
           </div>
           <div>
-            <p className="eyebrow">Overdue</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Overdue</p>
+              <HelpTip text="Open requests with due dates that already passed." />
+            </div>
             <p className="mt-1 text-xl font-bold tabular-nums text-destructive">{metrics.overdue}</p>
           </div>
           <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
@@ -432,7 +460,10 @@ function Dashboard() {
           <Card className="border-ink/5 shadow-none">
             <CardHeader className="pb-2">
               <p className="eyebrow">Operational Feed</p>
-              <h3 className="text-lg font-bold">Recent Activity</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold">Recent Activity</h3>
+                <HelpTip text="Latest requests updated in this scope, including requester, status, and last activity time." />
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-ink/5">
@@ -505,20 +536,32 @@ function Dashboard() {
         {/* Compact Operational Summary */}
         <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
           <div>
-            <p className="eyebrow">Active Scope</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Active Scope</p>
+              <HelpTip text="Shows which organization scope this dashboard currently summarizes." />
+            </div>
             <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
           </div>
           <div className="h-10 w-px bg-ink/10" />
           <div>
-            <p className="eyebrow">Open Queue</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Open Queue</p>
+              <HelpTip text="Total active requests that are not yet resolved in this scope." />
+            </div>
             <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
           </div>
           <div>
-            <p className="eyebrow">Unassigned</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Unassigned</p>
+              <HelpTip text="Open requests that still have no current assignee." />
+            </div>
             <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.unassigned}</p>
           </div>
           <div>
-            <p className="eyebrow">Overdue</p>
+            <div className="flex items-center gap-1">
+              <p className="eyebrow">Overdue</p>
+              <HelpTip text="Open requests with due dates that already passed." />
+            </div>
             <p className="mt-1 text-xl font-bold tabular-nums text-destructive">{metrics.overdue}</p>
           </div>
           <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
@@ -532,7 +575,10 @@ function Dashboard() {
           <Card className="surface-card border-border/70 bg-card">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Team Queue</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Team Queue</p>
+                  <HelpTip text="All open requests currently under your team scope." />
+                </div>
                 <div className="p-1 rounded bg-muted text-muted-foreground">
                   <ClipboardList className="h-4 w-4" />
                 </div>
@@ -545,7 +591,10 @@ function Dashboard() {
           <Card className="surface-card border-border/70 bg-card">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Units in Focus</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Units in Focus</p>
+                  <HelpTip text="Number of entities currently generating workload in your scope." />
+                </div>
                 <div className="p-1 rounded bg-muted text-muted-foreground">
                   <Building2 className="h-4 w-4" />
                 </div>
@@ -558,7 +607,10 @@ function Dashboard() {
           <Card className="surface-card border-warning/40 bg-warning/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Need Attention</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Need Attention</p>
+                  <HelpTip text="Combined count of unassigned and overdue requests." />
+                </div>
                 <div className="p-1 rounded bg-warning/20 text-warning">
                   <AlertCircle className="h-4 w-4" />
                 </div>
@@ -571,7 +623,10 @@ function Dashboard() {
           <Card className="surface-card border-success/40 bg-success/12">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved in Scope</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved in Scope</p>
+                  <HelpTip text="Requests completed or closed in the current scope." />
+                </div>
                 <div className="p-1 rounded bg-success/20 text-success">
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
@@ -663,7 +718,10 @@ function Dashboard() {
           <Card className="border-ink/5 shadow-none">
             <CardHeader className="pb-2">
               <p className="eyebrow">Operational Feed</p>
-              <h3 className="text-lg font-bold">Recent Activity</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold">Recent Activity</h3>
+                <HelpTip text="Latest requests updated in this scope, including requester, status, and last activity time." />
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-ink/5">
@@ -710,7 +768,10 @@ function Dashboard() {
           {/* Ownership Distribution */}
           <Card className="border-ink/10 shadow-none">
             <CardHeader className="border-b bg-muted/20 pb-4">
-              <CardTitle className="text-lg font-semibold text-foreground">Ownership Distribution</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg font-semibold text-foreground">Ownership Distribution</CardTitle>
+                <HelpTip text="Shows how open requests are distributed across assignees to highlight workload balance." />
+              </div>
               <CardDescription className="text-sm text-muted-foreground">Request load by team member.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
@@ -794,7 +855,10 @@ function Dashboard() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="eyebrow">Active entities</p>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">Active entities</p>
+                    <HelpTip text="Number of target entities currently receiving requests in this scope." />
+                  </div>
                   <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.activeEntities}</p>
                   <p className="mt-1 text-sm text-muted-foreground">Online scope footprint</p>
                 </div>
@@ -807,7 +871,10 @@ function Dashboard() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="eyebrow">Company members</p>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">Company members</p>
+                    <HelpTip text="Count of distinct active users appearing across requests in this scope." />
+                  </div>
                   <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.companyMembers}</p>
                   <p className="mt-1 text-sm text-muted-foreground">Active platform accounts</p>
                 </div>
@@ -820,7 +887,10 @@ function Dashboard() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="eyebrow text-warning">Open requests</p>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow text-warning">Open requests</p>
+                    <HelpTip text="All unresolved requests currently in progress or waiting action." />
+                  </div>
                   <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{metrics.unassigned} pending assignment</p>
                 </div>
@@ -835,7 +905,10 @@ function Dashboard() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="eyebrow text-success">Resolution rate</p>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow text-success">Resolution rate</p>
+                    <HelpTip text="Percentage of requests resolved (completed or closed) out of total requests." />
+                  </div>
                   <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
                   <p className="mt-1 text-sm text-muted-foreground">{metrics.resolved} closed in scope</p>
                 </div>
@@ -853,7 +926,10 @@ function Dashboard() {
             <CardHeader className="flex-row items-center justify-between pb-2">
               <div>
                 <p className="eyebrow">Flow Analysis</p>
-                <h3 className="text-lg font-bold">Request Lifecycle</h3>
+                <div className="flex items-center gap-1">
+                  <h3 className="text-lg font-bold">Request Lifecycle</h3>
+                  <HelpTip text="Status distribution of requests to show where work is currently concentrated." />
+                </div>
               </div>
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/requests">Full queue</Link>
@@ -887,7 +963,10 @@ function Dashboard() {
           <Card className="border-ink/5 shadow-none">
             <CardHeader className="pb-2">
               <p className="eyebrow">Operational Pressure</p>
-              <h3 className="text-lg font-bold">Workload Concentration</h3>
+              <div className="flex items-center gap-1">
+                <h3 className="text-lg font-bold">Workload Concentration</h3>
+                <HelpTip text="Shows which entities carry the highest request volume right now." />
+              </div>
             </CardHeader>
             <CardContent className="p-5 pt-0">
               <div className="divide-y divide-ink/5">
@@ -925,7 +1004,10 @@ function Dashboard() {
           <Card className="border-ink/5 shadow-none">
             <CardHeader className="pb-2">
               <p className="eyebrow">Operational Feed</p>
-              <h3 className="text-lg font-bold">Recent Activity</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold">Recent Activity</h3>
+                <HelpTip text="Latest requests updated in this scope, including requester, status, and last activity time." />
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-ink/5">
@@ -972,7 +1054,10 @@ function Dashboard() {
           <Card className="border-ink/5 shadow-none">
             <CardHeader className="pb-2">
               <p className="eyebrow">Workforce Coverage</p>
-              <h3 className="text-lg font-bold">Ownership Distribution</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold">Ownership Distribution</h3>
+                <HelpTip text="Shows how open requests are distributed across assignees to highlight workload balance." />
+              </div>
             </CardHeader>
             <CardContent className="p-5 pt-0">
               <div className="space-y-4">
@@ -1026,20 +1111,32 @@ function Dashboard() {
 
       <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">
         <div>
-          <p className="eyebrow">Active Scope</p>
+          <div className="flex items-center gap-1">
+            <p className="eyebrow">Active Scope</p>
+            <HelpTip text="Shows which organization scope this dashboard currently summarizes." />
+          </div>
           <p className="mt-1 text-xl font-bold">{scopeLabel}</p>
         </div>
         <div className="h-10 w-px bg-ink/10" />
         <div>
-          <p className="eyebrow">Open Queue</p>
+          <div className="flex items-center gap-1">
+            <p className="eyebrow">Open Queue</p>
+            <HelpTip text="Total active requests that are not yet resolved in this scope." />
+          </div>
           <p className="mt-1 text-xl font-bold tabular-nums">{metrics.openRequests}</p>
         </div>
         <div>
-          <p className="eyebrow">Unassigned</p>
+          <div className="flex items-center gap-1">
+            <p className="eyebrow">Unassigned</p>
+            <HelpTip text="Open requests that still have no current assignee." />
+          </div>
           <p className="mt-1 text-xl font-bold tabular-nums text-warning">{metrics.unassigned}</p>
         </div>
         <div>
-          <p className="eyebrow">Overdue</p>
+          <div className="flex items-center gap-1">
+            <p className="eyebrow">Overdue</p>
+            <HelpTip text="Open requests with due dates that already passed." />
+          </div>
           <p className="mt-1 text-xl font-bold tabular-nums text-destructive">{metrics.overdue}</p>
         </div>
         <div className="ml-auto flex items-center gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 text-success">
@@ -1053,7 +1150,10 @@ function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="eyebrow">Total requests</p>
+                <div className="flex items-center gap-1">
+                  <p className="eyebrow">Total requests</p>
+                  <HelpTip text="Total number of requests recorded in the current scope." />
+                </div>
                 <p className="mt-2 text-4xl font-bold tabular-nums">{metrics.totalRequests}</p>
                 <p className="mt-1 text-sm text-muted-foreground">Recorded demand in scope</p>
               </div>
@@ -1079,7 +1179,10 @@ function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="eyebrow text-warning">Open requests</p>
+                <div className="flex items-center gap-1">
+                  <p className="eyebrow text-warning">Open requests</p>
+                  <HelpTip text="All unresolved requests currently in progress or waiting action." />
+                </div>
                 <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{metrics.unassigned} pending assignment</p>
               </div>
@@ -1094,7 +1197,10 @@ function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="eyebrow text-success">Resolution rate</p>
+                <div className="flex items-center gap-1">
+                  <p className="eyebrow text-success">Resolution rate</p>
+                  <HelpTip text="Percentage of requests resolved (completed or closed) out of total requests." />
+                </div>
                 <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
                 <p className="mt-1 text-sm text-muted-foreground">{metrics.resolved} closed items</p>
               </div>
@@ -1114,10 +1220,6 @@ function Dashboard() {
 }
 
 export default Dashboard
-
-
-
-
 
 
 
