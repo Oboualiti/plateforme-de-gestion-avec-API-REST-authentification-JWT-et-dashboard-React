@@ -1,7 +1,9 @@
 from django.db.models import Q
 from django.http import HttpResponse
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.exceptions import NotFound
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -88,6 +90,12 @@ class BaseManageUsersView(APIView):
                 request,
                 message="You cannot view this user based on your scope or hierarchy.",
             )
+
+
+class ManageableUsersPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
 
 
 class GlobalSearchView(APIView):
@@ -199,15 +207,48 @@ class GlobalSearchView(APIView):
 
 class ManageableUserListView(BaseManageUsersView):
     def get(self, request):
+        search = (request.query_params.get("search") or "").strip()
+        role_filter = (request.query_params.get("role") or "").strip()
+        company_filter = request.query_params.get("company") or request.query_params.get("company_id")
+        entity_filter = request.query_params.get("entity") or request.query_params.get("entity_id")
+        status_filter = (request.query_params.get("status") or "").strip().lower()
+
         queryset = (
             get_visible_users_queryset(request.user)
             .select_related("company", "entity")
             .prefetch_related("assigned_roles__role")
         )
+
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search)
+                | Q(email__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+            )
+        if role_filter:
+            queryset = queryset.filter(assigned_roles__role__key=role_filter)
+        if company_filter:
+            queryset = queryset.filter(company_id=company_filter)
+        if entity_filter:
+            queryset = queryset.filter(entity_id=entity_filter)
+        if status_filter in {"active", "inactive"}:
+            queryset = queryset.filter(is_active=(status_filter == "active"))
+
+        queryset = queryset.distinct().order_by("username")
+        paginator = ManageableUsersPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        actor_level = get_user_max_role_level(request.user)
+        serialized_rows = ManageableUserListSerializer(
+            page if page is not None else queryset,
+            many=True,
+            context={"actor_level": actor_level},
+        ).data
+
         data = {
             "scope": get_manage_scope(request.user),
             "current_entity_name": getattr(request.user.entity, "name", ""),
-            "current_user_level": get_user_max_role_level(request.user),
+            "current_user_level": actor_level,
             "current_user_roles": [
                 {
                     "key": role_key,
@@ -216,12 +257,17 @@ class ManageableUserListView(BaseManageUsersView):
                 for role_key in request.user.assigned_roles.values_list("role__key", flat=True)
             ],
             "effective_permission_keys": get_effective_permission_keys(request.user),
-            "results": ManageableUserListSerializer(
-                queryset,
-                many=True,
-                context={"actor_level": get_user_max_role_level(request.user)},
-            ).data,
+            "results": serialized_rows,
         }
+        if page is not None:
+            return Response(
+                {
+                    "count": paginator.page.paginator.count,
+                    "next": paginator.get_next_link(),
+                    "previous": paginator.get_previous_link(),
+                    **data,
+                }
+            )
         return Response(data)
 
     def post(self, request):
@@ -251,6 +297,14 @@ class ManageableUserListView(BaseManageUsersView):
 class ManageableUserFormOptionsView(BaseManageUsersView):
     def get(self, request):
         actor = request.user
+        cache_key = (
+            f"users:manageable:options:{actor.id}:"
+            f"{actor.company_id}:{actor.entity_id}:{','.join(sorted(actor.assigned_roles.values_list('role__key', flat=True)))}"
+        )
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
         actor_level = get_user_max_role_level(actor)
         role_options = [
             {"key": key, "name": key.replace("_", " ").title(), "level": level}
@@ -316,14 +370,14 @@ class ManageableUserFormOptionsView(BaseManageUsersView):
             }
             for item in tl_queryset.order_by("username")
         ]
-        return Response(
-            {
-                "role_options": role_options,
-                "company_options": companies,
-                "entity_options": entities,
-                "team_leader_options": team_leaders,
-            }
-        )
+        payload = {
+            "role_options": role_options,
+            "company_options": companies,
+            "entity_options": entities,
+            "team_leader_options": team_leaders,
+        }
+        cache.set(cache_key, payload, timeout=600)
+        return Response(payload)
 
 
 class ManageableUserCrudView(BaseManageUsersView):

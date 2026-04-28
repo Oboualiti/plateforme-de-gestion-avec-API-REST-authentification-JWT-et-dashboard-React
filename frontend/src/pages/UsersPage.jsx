@@ -8,8 +8,8 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
-import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { useDeleteManageableUser, useManageableUsers, useManageableUsersOptions } from '../lib/usersQueries'
 
 const ROLE_LABELS = {
   super_admin: 'Super Admin',
@@ -86,26 +86,16 @@ function DeleteConfirmModal({ open, username, loading, onCancel, onConfirm }) {
 
 function UsersPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
-
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [users, setUsers] = useState([])
   const [pagination, setPagination] = useState({
     page: 1,
-    pageSize: 20,
-    total: 0,
-    next: null,
-    previous: null,
+    pageSize: 50,
   })
-  const [refreshKey, setRefreshKey] = useState(0)
-  const [companies, setCompanies] = useState([])
-  const [entities, setEntities] = useState([])
   const [q, setQ] = useState('')
   const [qInput, setQInput] = useState('')
   const [role, setRole] = useState('all')
   const [companyId, setCompanyId] = useState('all')
   const [entityId, setEntityId] = useState('all')
+  const [status, setStatus] = useState('all')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState('')
   const [deleteConfirmState, setDeleteConfirmState] = useState({
@@ -115,135 +105,43 @@ function UsersPage() {
     loading: false,
   })
   const importInputRef = useRef(null)
-  const hasLoadedOnceRef = useRef(false)
-
-  function applyLocalFilters(items) {
-    const search = q.trim().toLowerCase()
-    return (items || []).filter((u) => {
-      const primaryRole = u.role || u.roles?.[0]?.key || 'user'
-      if (role !== 'all' && primaryRole !== role) return false
-      if (companyId !== 'all' && Number(u.company_id) !== Number(companyId)) return false
-      if (entityId !== 'all' && Number(u.entity_id) !== Number(entityId)) return false
-      if (!search) return true
-
-      const username = (u.username || '').toLowerCase()
-      const email = (u.email || '').toLowerCase()
-      const fullName = `${u.first_name || ''} ${u.last_name || ''}`.trim().toLowerCase()
-      return username.includes(search) || email.includes(search) || fullName.includes(search)
-    })
-  }
-
-  useEffect(() => {
-    let active = true
-    async function loadOptions() {
-      try {
-        const optionsRes = await api.get('/admin/users/manageable/options/')
-        if (!active) return
-        const optionsData = optionsRes.data || {}
-        const companiesData = optionsData.company_options || []
-        const entitiesData = optionsData.entity_options || []
-
-        setCompanies(Array.isArray(companiesData) ? companiesData : [])
-        setEntities(Array.isArray(entitiesData) ? entitiesData : [])
-      } catch (err) {
-        if (!active) return
-        setError(err?.response?.data?.detail || 'Failed to load user options.')
-        setCompanies([])
-        setEntities([])
-      }
-    }
-    loadOptions()
-    return () => {
-      active = false
-    }
-  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setQ(qInput)
-    }, 180)
+    }, 400)
 
     return () => {
       window.clearTimeout(timer)
     }
   }, [qInput])
 
-  useEffect(() => {
-    let active = true
-    async function loadUsers() {
-      if (!hasLoadedOnceRef.current) {
-        setLoading(true)
-      }
-      try {
-        const params = {
-          page: pagination.page,
-          page_size: pagination.pageSize,
-        }
-        if (q.trim()) params.search = q.trim()
-        if (role !== 'all') params.role = role
-        if (companyId !== 'all') params.company_id = Number(companyId)
-        if (entityId !== 'all') params.entity_id = Number(entityId)
+  const usersQueryParams = useMemo(
+    () => ({
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      search: q,
+      role,
+      companyId,
+      entityId,
+      status,
+    }),
+    [pagination.page, pagination.pageSize, q, role, companyId, entityId, status],
+  )
 
-        const usersRes = await api.get('/admin/users/manageable/', { params })
-        if (!active) return
+  const optionsQuery = useManageableUsersOptions()
+  const usersQuery = useManageableUsers(usersQueryParams)
+  const deleteUserMutation = useDeleteManageableUser()
 
-        const payload = usersRes.data
-        if (Array.isArray(payload)) {
-          const filteredLocal = applyLocalFilters(payload)
-          const start = (pagination.page - 1) * pagination.pageSize
-          const end = start + pagination.pageSize
-          setUsers(filteredLocal.slice(start, end))
-          setPagination((current) => ({
-            ...current,
-            total: filteredLocal.length,
-            next: end < filteredLocal.length ? 'local-next' : null,
-            previous: start > 0 ? 'local-prev' : null,
-          }))
-        } else {
-          const usersData = Array.isArray(payload?.results) ? payload.results : []
-          const hasServerPagination =
-            typeof payload?.count === 'number' ||
-            payload?.next !== undefined ||
-            payload?.previous !== undefined
-
-          if (hasServerPagination && typeof payload?.count === 'number') {
-            setUsers(usersData)
-            setPagination((current) => ({
-              ...current,
-              total: Number(payload.count || 0),
-              next: payload?.next || null,
-              previous: payload?.previous || null,
-            }))
-          } else {
-            const filteredLocal = applyLocalFilters(usersData)
-            const start = (pagination.page - 1) * pagination.pageSize
-            const end = start + pagination.pageSize
-            setUsers(filteredLocal.slice(start, end))
-            setPagination((current) => ({
-              ...current,
-              total: filteredLocal.length,
-              next: end < filteredLocal.length ? 'local-next' : null,
-              previous: start > 0 ? 'local-prev' : null,
-            }))
-          }
-        }
-        setError('')
-      } catch (err) {
-        if (!active) return
-        setError(err?.response?.data?.detail || 'Failed to load users.')
-        setUsers([])
-      } finally {
-        if (active) {
-          setLoading(false)
-          hasLoadedOnceRef.current = true
-        }
-      }
-    }
-    loadUsers()
-    return () => {
-      active = false
-    }
-  }, [pagination.page, pagination.pageSize, q, role, companyId, entityId, refreshKey])
+  const loading = usersQuery.isLoading || optionsQuery.isLoading
+  const isFetching = usersQuery.isFetching
+  const error = usersQuery.error?.response?.data?.detail || optionsQuery.error?.response?.data?.detail || ''
+  const users = usersQuery.data?.rows || []
+  const total = usersQuery.data?.count || 0
+  const hasNext = Boolean(usersQuery.data?.next)
+  const hasPrevious = Boolean(usersQuery.data?.previous)
+  const companies = optionsQuery.data?.companies || []
+  const entities = optionsQuery.data?.entities || []
 
   function openDeleteConfirm(userId, username) {
     setDeleteConfirmState({
@@ -260,11 +158,10 @@ function UsersPage() {
   }
 
   async function confirmDeleteUser() {
-    if (!deleteConfirmState.userId || deleteConfirmState.loading) return
+    if (!deleteConfirmState.userId || deleteConfirmState.loading || deleteUserMutation.isPending) return
     setDeleteConfirmState((current) => ({ ...current, loading: true }))
     try {
-      await api.delete(`/admin/users/manageable/${deleteConfirmState.userId}/`)
-      setRefreshKey((current) => current + 1)
+      await deleteUserMutation.mutateAsync(deleteConfirmState.userId)
       setDeleteConfirmState({ open: false, userId: null, username: '', loading: false })
     } catch (err) {
       setDeleteConfirmState((current) => ({ ...current, loading: false }))
@@ -303,7 +200,7 @@ function UsersPage() {
       })
       const created = response.data?.created_users || []
       if (created.length) {
-        setRefreshKey((current) => current + 1)
+        await usersQuery.refetch()
       }
     } catch (err) {
       window.alert(err?.response?.data?.detail || 'Could not import users.')
@@ -317,17 +214,8 @@ function UsersPage() {
     () => entities.filter((item) => companyId === 'all' || Number(item.company_id) === Number(companyId)),
     [entities, companyId],
   )
-  const visibleUsers = useMemo(() => {
-    const search = qInput.trim().toLowerCase()
-    if (!search) return users
-    return users.filter((item) => {
-      const username = (item.username || '').toLowerCase()
-      const email = (item.email || '').toLowerCase()
-      const fullName = `${item.first_name || ''} ${item.last_name || ''}`.trim().toLowerCase()
-      return username.includes(search) || email.includes(search) || fullName.includes(search)
-    })
-  }, [users, qInput])
-  const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.pageSize))
+  const visibleUsers = useMemo(() => users, [users])
+  const totalPages = Math.max(1, Math.ceil((total || 0) / pagination.pageSize))
 
   if (loading) {
     return (
@@ -376,6 +264,11 @@ function UsersPage() {
         <div className="surface-card p-6 text-center text-destructive">{error}</div>
       ) : (
         <div className="surface-card">
+          {isFetching ? (
+            <div className="px-4 pt-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Refreshing...
+            </div>
+          ) : null}
           <div className="filter-bar flex-nowrap overflow-x-auto">
             <div className="relative min-w-[280px] flex-1">
               <Input
@@ -425,6 +318,14 @@ function UsersPage() {
                   {entity.name}
                 </option>
               ))}
+            </Select>
+            <Select className="app-select !w-[170px] shrink-0" value={status} onChange={(event) => {
+              setStatus(event.target.value)
+              setPagination((current) => ({ ...current, page: 1 }))
+            }}>
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
             </Select>
           </div>
 
@@ -510,14 +411,14 @@ function UsersPage() {
 
           <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs">
             <p className="text-muted-foreground">
-              Showing page {pagination.page} of {totalPages} ({pagination.total} users)
+              Showing page {pagination.page} of {totalPages} ({total} users)
             </p>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={!pagination.previous || pagination.page <= 1 || loading}
+                disabled={!hasPrevious || pagination.page <= 1 || loading}
                 onClick={() => setPagination((current) => ({ ...current, page: Math.max(1, current.page - 1) }))}
               >
                 Previous
@@ -526,7 +427,7 @@ function UsersPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={!pagination.next || pagination.page >= totalPages || loading}
+                disabled={!hasNext || pagination.page >= totalPages || loading}
                 onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))}
               >
                 Next
@@ -548,4 +449,3 @@ function UsersPage() {
 }
 
 export default UsersPage
-

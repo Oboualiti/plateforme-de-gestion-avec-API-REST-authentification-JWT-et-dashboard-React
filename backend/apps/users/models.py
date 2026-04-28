@@ -56,3 +56,11 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.get_full_name() or self.username
+
+    class Meta(AbstractUser.Meta):
+        indexes = [
+            models.Index(fields=["is_active"], name="user_active_idx"),
+            models.Index(fields=["company", "is_active"], name="user_company_active_idx"),
+            models.Index(fields=["entity", "is_active"], name="user_entity_active_idx"),
+            models.Index(fields=["date_joined"], name="user_joined_idx"),
+        ]

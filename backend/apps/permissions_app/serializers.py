@@ -58,18 +58,26 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
             "can_edit",
         ]
 
-    def get_roles(self, obj):
-        return [
+    def _get_roles_cached(self, obj):
+        cached = getattr(obj, "_roles_cache", None)
+        if cached is not None:
+            return cached
+        roles = [
             {
                 "key": assignment.role.key,
                 "name": assignment.role.name,
                 "level": ROLE_HIERARCHY.get(assignment.role.key, 0),
             }
-            for assignment in obj.assigned_roles.select_related("role").all()
+            for assignment in obj.assigned_roles.all()
         ]
+        setattr(obj, "_roles_cache", roles)
+        return roles
+
+    def get_roles(self, obj):
+        return self._get_roles_cached(obj)
 
     def get_max_role_level(self, obj):
-        roles = [ROLE_HIERARCHY.get(item["key"], 0) for item in self.get_roles(obj)]
+        roles = [ROLE_HIERARCHY.get(item["key"], 0) for item in self._get_roles_cached(obj)]
         return max(roles, default=0)
 
     def get_can_edit(self, obj):
@@ -77,7 +85,7 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
         return self.get_max_role_level(obj) < actor_level
 
     def get_role(self, obj):
-        roles = self.get_roles(obj)
+        roles = self._get_roles_cached(obj)
         if not roles:
             return "user"
         return max(roles, key=lambda r: r.get("level", 0)).get("key", "user")

@@ -58,7 +58,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
             ...(canCreateRequests
-              ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
             ...(has("view_own_requests")
               ? [{ label: "My Requests", to: "/requests?scope=mine", icon: ListChecks }]
@@ -99,7 +99,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
             ...(canManageUsers
               ? [{ label: "Team Members", to: "/team", icon: UsersRound }]
@@ -133,7 +133,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Entity Requests", to: "/requests?scope=entity", icon: ListChecks }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
@@ -164,7 +164,7 @@ export function getNavForRole(role, user = null) {
             ...(has("view_company_requests")
               ? [{ label: "Company Requests", to: "/requests?scope=company", icon: ListChecks }]
               : []),
-            { label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox },
+            { label: "Pending Requests", to: "/pending-requests", icon: Inbox },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -212,7 +212,7 @@ export function getNavForRole(role, user = null) {
             ...(hasAny(["view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests", "view_own_requests"])
               ? [{ label: "Requests", to: "/requests", icon: Briefcase }]
               : []),
-            ...(canAccessPending ? [{ label: "Pending Requests", to: "/requests?scope=pending", icon: Inbox }] : []),
+            ...(canAccessPending ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }] : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],

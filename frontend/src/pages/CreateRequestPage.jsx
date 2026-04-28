@@ -202,7 +202,7 @@ function CreateRequestPage() {
         payload.append('source_entity_id', String(Number(form.source_entity_id)))
       }
       await api.post('/requests/', payload)
-      navigate(isNormalUser ? '/requests?scope=pending' : '/requests', { replace: true })
+      navigate(isNormalUser ? '/pending-requests' : '/requests', { replace: true })
     } catch (nextError) {
       setError(nextError.response?.data?.detail || 'Could not create request.')
     } finally {

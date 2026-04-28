@@ -60,10 +60,10 @@ function formatUpdated(value) {
   return date.toLocaleString()
 }
 
-function RequestsPage() {
+function RequestsPage({ forcedScope = '' }) {
   const { user, refreshUser } = useAuth()
   const [searchParams] = useSearchParams()
-  const scope = searchParams.get('scope') || 'all'
+  const scope = forcedScope || searchParams.get('scope') || 'all'
   const resolvedScope = scope === 'mine' ? 'all' : scope
   const initialSearch = searchParams.get('search') || ''
 
@@ -515,14 +515,22 @@ function RequestsPage() {
                 {state.requests.map((item) => (
                   <tr key={item.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                      <Link to={`/requests/${item.id}`} className="hover:text-primary hover:underline">
-                        {item.reference_code || item.request_number || '-'}
-                      </Link>
+                      {isPendingScope ? (
+                        <span>{item.reference_code || item.request_number || '-'}</span>
+                      ) : (
+                        <Link to={`/requests/${item.id}`} className="hover:text-primary hover:underline">
+                          {item.reference_code || item.request_number || '-'}
+                        </Link>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <Link to={`/requests/${item.id}`} className="font-medium text-foreground hover:text-primary">
-                        {item.title || '-'}
-                      </Link>
+                      {isPendingScope ? (
+                        <span className="font-medium text-foreground">{item.title || '-'}</span>
+                      ) : (
+                        <Link to={`/requests/${item.id}`} className="font-medium text-foreground hover:text-primary">
+                          {item.title || '-'}
+                        </Link>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       <span className="font-medium text-foreground">{item.source_entity_name || '-'}</span>
@@ -541,7 +549,9 @@ function RequestsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={statusPillClass(item.status)}>
-                        {statusLabelMap[item.status] || item.status || '-'}
+                        {isPendingScope && item.status === 'NEW'
+                          ? 'Pending'
+                          : (statusLabelMap[item.status] || item.status || '-')}
                       </span>
                     </td>
                     {(!isPendingScope || !canDecidePending) && (

@@ -1,6 +1,6 @@
 from django.utils import timezone
 
-from django.db.models import Q
+from django.db.models import Q, Case, When, Value, IntegerField, Max
 
 from apps.entities.models import Entity
 from apps.permissions_app.models import (
@@ -209,29 +209,21 @@ def get_visible_users_queryset(user):
         return user.__class__.objects.none()
 
     actor_level = get_role_visibility_floor(user)
-    role_key = get_primary_role_key(user)
-    visible_ids = []
-    queryset = (
+    role_level_case = Case(
+        *[
+            When(assigned_roles__role__key=role_key, then=Value(level))
+            for role_key, level in ROLE_HIERARCHY.items()
+        ],
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    return (
         user.__class__.objects.exclude(id=user.id)
         .filter(scope_filter)
-        .prefetch_related("assigned_roles__role", "permission_overrides__permission")
+        .annotate(max_role_level=Max(role_level_case))
+        .filter(max_role_level__lte=actor_level)
         .order_by("username")
     )
-    for candidate in queryset:
-        candidate_level = get_user_max_role_level(candidate)
-        if candidate_level <= actor_level:
-            if role_key == "manager":
-                if candidate_level <= ROLE_HIERARCHY["manager"]:
-                    visible_ids.append(candidate.id)
-            elif role_key == "senior":
-                if candidate_level <= ROLE_HIERARCHY["senior"]:
-                    visible_ids.append(candidate.id)
-            elif role_key == "super_admin":
-                visible_ids.append(candidate.id)
-            else:
-                if has_any_permission(user, {"manage_users_entity", "view_users_entity"}):
-                    visible_ids.append(candidate.id)
-    return user.__class__.objects.filter(id__in=visible_ids).order_by("username")
 
 
 def get_manageable_users_queryset(user):
@@ -346,4 +338,3 @@ def can_create_requests(user):
 
 def get_default_permissions_for_role(role_key):
     return sorted(DEFAULT_ROLE_PERMISSION_MATRIX.get(role_key, set()))
-

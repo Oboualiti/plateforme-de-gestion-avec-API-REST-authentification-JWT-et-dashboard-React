@@ -152,6 +152,7 @@ function AppRoutes() {
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/team" element={<PermissionManagementPage />} />
           <Route path="/requests" element={<RequestsPage />} />
+          <Route path="/pending-requests" element={<RequestsPage forcedScope="pending" />} />
           <Route path="/requests/:requestId" element={<RequestDetailsPage />} />
         </Route>
       </Route>
@@ -220,5 +221,4 @@ function AppRoutes() {
 }
 
 export default AppRoutes
-
 
