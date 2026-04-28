@@ -195,7 +195,9 @@ function AppRoutes() {
           <Route path="/admin/users/:userId" element={<PermissionDetailPage />} />
           <Route path="/admin/dashboard" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/monitoring" element={<Navigate to="/admin/reports" replace />} />
-          <Route path="/admin/reports" element={<ReportsPage />} />
+          <Route element={<ProtectedRoute requireReportsPageAccess redirectTo="/dashboard" />}>
+            <Route path="/admin/reports" element={<ReportsPage />} />
+          </Route>
           <Route path="/admin/roles/customize" element={<CustomizeRoleDefaultsPage />} />
           <Route path="/admin/roles/customize/:roleId" element={<CustomizeRolePermissionEditorPage />} />
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />
@@ -209,4 +211,3 @@ function AppRoutes() {
 }
 
 export default AppRoutes
-

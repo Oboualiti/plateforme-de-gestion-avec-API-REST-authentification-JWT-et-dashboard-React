@@ -35,7 +35,7 @@ export function getNavForRole(role, user = null) {
     );
   const canTrackOwnPending = has("view_own_requests") && canCreateRequests;
   const canAccessPending = canApprovePending || canTrackOwnPending;
-  const canAccessReports = hasAny(["view_global_reports", "view_company_reports", "view_entity_reports"]);
+  const canAccessReports = Boolean(user?.reports_page_access_allowed);
   const canExportReports = has("export_data");
   const canManageUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
   const canAccessUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);

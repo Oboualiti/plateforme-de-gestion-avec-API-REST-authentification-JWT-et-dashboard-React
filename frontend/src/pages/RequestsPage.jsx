@@ -66,6 +66,7 @@ function RequestsPage({ forcedScope = '' }) {
   const scope = forcedScope || searchParams.get('scope') || 'all'
   const resolvedScope = scope === 'mine' ? 'all' : scope
   const initialSearch = searchParams.get('search') || ''
+  const initialAssignee = searchParams.get('assignee') || ''
 
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
   const [filters, setFilters] = useState({
@@ -74,6 +75,7 @@ function RequestsPage({ forcedScope = '' }) {
     source_entity_id: '',
     target_entity_id: '',
     status: '',
+    assignee: initialAssignee,
   })
   const [options, setOptions] = useState({
     companies: [],
@@ -146,8 +148,11 @@ function RequestsPage({ forcedScope = '' }) {
 
   useEffect(() => {
     const nextSearch = searchParams.get('search') || ''
+    const nextAssignee = searchParams.get('assignee') || ''
     setFilters((current) => (
-      current.search === nextSearch ? current : { ...current, search: nextSearch }
+      current.search === nextSearch && current.assignee === nextAssignee
+        ? current
+        : { ...current, search: nextSearch, assignee: nextAssignee }
     ))
     setPagination((current) => (current.page === 1 ? current : { ...current, page: 1 }))
   }, [searchParams])
@@ -236,6 +241,7 @@ function RequestsPage({ forcedScope = '' }) {
         source_entity_id: filters.source_entity_id || undefined,
         target_entity_id: filters.target_entity_id || undefined,
         status: filters.status || undefined,
+        assignee: filters.assignee || undefined,
       }
       const response = await api.get('/requests/', { params })
       const payload = response.data || {}
@@ -293,7 +299,7 @@ function RequestsPage({ forcedScope = '' }) {
   }
 
   useEffect(() => {
-    setState((current) => ({ ...current, loading: true, error: '' }))
+    setState({ loading: true, error: '', requests: [] })
     loadRequests()
   }, [filters, pagination.page, resolvedScope, refreshUser])
 
@@ -334,6 +340,7 @@ function RequestsPage({ forcedScope = '' }) {
       source_entity_id: '',
       target_entity_id: '',
       status: '',
+      assignee: '',
     })
     setPagination((current) => ({ ...current, page: 1 }))
   }
@@ -439,11 +446,22 @@ function RequestsPage({ forcedScope = '' }) {
 
         <div className="mt-3 flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
-            {state.loading ? 'Updating...' : `${pagination.count || 0} result(s)`}
+            {`${pagination.count || 0} result(s)`}
+            {filters.assignee && filters.assignee !== 'unassigned' ? ` assigned to ${filters.assignee}` : ''}
           </p>
-          <Button variant="outline" size="sm" onClick={resetFilters}>
-            Clear filters
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={filters.assignee === 'unassigned' ? 'default' : 'outline'}
+              onClick={() => handleFilterChange('assignee', filters.assignee === 'unassigned' ? '' : 'unassigned')}
+            >
+              Unassigned only
+            </Button>
+            <Button variant="outline" size="sm" onClick={resetFilters}>
+              Clear filters
+            </Button>
+          </div>
         </div>
       </div>
 

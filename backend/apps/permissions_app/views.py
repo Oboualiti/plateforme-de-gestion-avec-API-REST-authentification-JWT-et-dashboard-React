@@ -13,7 +13,7 @@ from apps.companies.models import Company
 from apps.audit_logs.services import log_admin_action
 from apps.notifications.models import UserNotification
 from apps.notifications.services import create_notification
-from apps.permissions_app.models import AppPermission, UserRole
+from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
 from apps.roles.models import Role
 from apps.users.models import User
 from apps.requests_app.views import get_visible_requests_queryset

@@ -34,8 +34,6 @@ import { useScopedRequests } from '../lib/requestsQueries'
 
 const STATUS_ORDER = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CLOSED']
 const RESOLVED_SET = new Set(['COMPLETED', 'CLOSED'])
-const ADMIN_REPORT_ROLES = new Set(['super_admin', 'senior', 'manager', 'team_leader'])
-
 const STATUS_META = {
   NEW: { label: 'New', tone: 'bg-slate-100 text-slate-800 border-slate-500', bar: 'bg-warning' },
   ACCEPTED: { label: 'Accepted', tone: 'bg-blue-100 text-blue-800 border-blue-500', bar: 'bg-info' },
@@ -49,7 +47,12 @@ function getPrimaryRole(user) {
   return user?.role_keys?.[0] || user?.role || 'user'
 }
 
-function getScopeForRole(role) {
+function getScopeForRole(role, analyticsScope) {
+  if (analyticsScope === 'global') return 'all'
+  if (analyticsScope === 'company') return 'company'
+  if (analyticsScope === 'entity') return 'entity'
+  if (analyticsScope === 'team') return 'team-all'
+  if (analyticsScope === 'own') return 'mine'
   if (role === 'super_admin') return 'all'
   if (role === 'senior') return 'company'
   if (role === 'manager') return 'entity'
@@ -58,6 +61,11 @@ function getScopeForRole(role) {
 }
 
 function getScopeLabel(role, user) {
+  if (user?.analytics_scope === 'global') return 'Global platform'
+  if (user?.analytics_scope === 'company') return user?.company_name || 'Company scope'
+  if (user?.analytics_scope === 'entity') return user?.entity_name || 'Entity scope'
+  if (user?.analytics_scope === 'team') return user?.entity_name || 'Team scope'
+  if (user?.analytics_scope === 'own') return user?.company_name || 'Personal scope'
   if (role === 'super_admin') return 'Global platform'
   if (role === 'senior') return user?.company_name || 'Company scope'
   if (role === 'manager') return user?.entity_name || 'Entity scope'
@@ -133,19 +141,28 @@ function Dashboard() {
 
   const primaryRole = getPrimaryRole(user)
   const roleLabel = ROLE_LABELS[primaryRole] || 'User'
-  const scope = getScopeForRole(primaryRole)
+  const dashboardProfile = user?.dashboard_profile || 'requester'
+  const isResolverProfile = dashboardProfile === 'resolver'
+  const isScopedResolverProfile = dashboardProfile === 'team_resolver' || dashboardProfile === 'entity_resolver'
+  const scope = getScopeForRole(primaryRole, user?.analytics_scope)
   const scopeLabel = getScopeLabel(primaryRole, user)
-  const canAccessReports = ADMIN_REPORT_ROLES.has(primaryRole)
-  const canReadGlobalDashboard = primaryRole === 'super_admin'
+  const canShowGlobalDashboardTotals = user?.analytics_scope === 'global'
   const effectivePermissionKeys = useMemo(
     () => new Set(user?.effective_permission_keys || []),
     [user?.effective_permission_keys],
   )
   const canCreateRequest = Boolean(user?.request_creation_allowed) && effectivePermissionKeys.has('create_request')
   const requestsQuery = useScopedRequests(scope, { enabled: Boolean(user) })
+  const ownRequestsQuery = useScopedRequests('mine', { enabled: Boolean(user && primaryRole === 'user') })
+  const resolverRequestsQuery = useScopedRequests('all', { enabled: Boolean(user && primaryRole === 'user' && isResolverProfile) })
   const requestState = {
-    loading: requestsQuery.isLoading,
-    error: requestsQuery.error?.response?.data?.detail || (requestsQuery.error ? 'Could not load requests.' : ''),
+    loading: requestsQuery.isLoading
+      || (primaryRole === 'user' && ownRequestsQuery.isLoading)
+      || (primaryRole === 'user' && isResolverProfile && resolverRequestsQuery.isLoading),
+    error: requestsQuery.error?.response?.data?.detail
+      || ownRequestsQuery.error?.response?.data?.detail
+      || resolverRequestsQuery.error?.response?.data?.detail
+      || (requestsQuery.error || ownRequestsQuery.error || resolverRequestsQuery.error ? 'Could not load requests.' : ''),
     items: requestsQuery.data?.items || [],
   }
 
@@ -160,7 +177,7 @@ function Dashboard() {
       setDashboardState({ loading: true, error: '', data: null })
 
       try {
-        const dashboardResult = await (canReadGlobalDashboard ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }))
+        const dashboardResult = await api.get('/admin/dashboard/')
         if (active) {
           setDashboardState({ loading: false, error: '', data: dashboardResult.data || null })
         }
@@ -175,19 +192,50 @@ function Dashboard() {
     return () => {
       active = false
     }
-  }, [canReadGlobalDashboard, user])
+  }, [user])
 
   const metrics = useMemo(() => {
     const summary = requestsQuery.data?.summary || {}
+    const dashboard = dashboardState.data || {}
+    const dashboardStatusRows = Array.isArray(dashboard.requests_by_status) ? dashboard.requests_by_status : []
+    const dashboardStatusCounts = dashboardStatusRows.reduce((acc, item) => {
+      acc[item.status] = Number(item.total || 0)
+      return acc
+    }, {})
+    const dashboardOwnership = Array.isArray(dashboard.team_workload)
+      ? dashboard.team_workload
+        .filter((item) => item.current_assignee__username)
+        .map((item) => ({
+          name: item.current_assignee__username,
+          role: 'User',
+          count: Number(item.total || 0),
+        }))
+      : []
+    const dashboardConcentration = Array.isArray(dashboard.requests_by_entity)
+      ? dashboard.requests_by_entity
+        .map((item) => ({
+          name: item.target_entity__name
+            || item.current_assignee__entity__name
+            || item.requester_user__entity__name
+            || item.company__name,
+          total: item.total,
+        }))
+        .filter((item) => item.name)
+        .map((item) => ({
+          code: item.name,
+          name: item.name,
+          count: Number(item.total || 0),
+        }))
+      : []
     const statusCount = STATUS_ORDER.reduce((acc, key) => {
-      acc[key] = Number(summary.status_counts?.[key] || 0)
+      acc[key] = Number(dashboardStatusCounts[key] ?? summary.status_counts?.[key] ?? 0)
       return acc
     }, {})
 
-    const totalRequests = Number(summary.total_requests || 0)
-    const openRequests = Number(summary.open_requests || 0)
-    const resolved = Number(summary.resolved || 0)
-    const unassigned = Number(summary.unassigned || 0)
+    const totalRequests = Number(dashboard.totals?.requests ?? summary.total_requests ?? 0)
+    const openRequests = Number(dashboard.queue?.open ?? summary.open_requests ?? 0)
+    const resolved = Number((statusCount.COMPLETED || 0) + (statusCount.CLOSED || 0) || summary.resolved || 0)
+    const unassigned = Number(dashboard.queue?.unassigned ?? summary.unassigned ?? 0)
     const overdue = Number(summary.overdue || 0)
     const submittedByMe = Number(summary.submitted_by_me || 0)
     const attentionCount = Number(summary.attention_count || 0)
@@ -206,14 +254,52 @@ function Dashboard() {
       createdByTeam,
       resolutionRate,
       priorityWatch: summary.priority_watch || null,
-      concentration: Array.isArray(summary.concentration) ? summary.concentration : [],
-      ownership: Array.isArray(summary.ownership) ? summary.ownership : [],
+      concentration: dashboardConcentration.length ? dashboardConcentration : (Array.isArray(summary.concentration) ? summary.concentration : []),
+      ownership: dashboardOwnership.length ? dashboardOwnership : (Array.isArray(summary.ownership) ? summary.ownership : []),
       activeEntities: Number(summary.active_entities || 0),
       companyMembers: Number(summary.company_members || 0),
       recent: Array.isArray(summary.recent) ? summary.recent : [],
       recentCompact: Array.isArray(summary.recent_compact) ? summary.recent_compact : [],
     }
-  }, [requestsQuery.data?.summary])
+  }, [dashboardState.data, requestsQuery.data?.summary])
+
+  const userCardMetrics = useMemo(() => {
+    const ownItems = ownRequestsQuery.data?.items || []
+    const resolverItems = resolverRequestsQuery.data?.items || []
+    const workflowItems = isResolverProfile ? resolverItems : ownItems
+    const assignedItems = resolverItems.filter((item) => (
+      item.current_assignee === user?.id || item.assignee_name === user?.username
+    ))
+    const openItems = workflowItems.filter((item) => !RESOLVED_SET.has(item.status) && item.status !== 'REJECTED')
+    const activeAssignedItems = assignedItems.filter((item) => !RESOLVED_SET.has(item.status) && item.status !== 'REJECTED')
+    const overdueItems = openItems.filter((item) => {
+      const due = toDate(getRequestDeadline(item))
+      return due && due.getTime() < Date.now()
+    })
+    const resolvedItems = workflowItems.filter((item) => RESOLVED_SET.has(item.status))
+
+    return {
+      myRequests: isResolverProfile ? activeAssignedItems.length : openItems.length,
+      escalationRisk: overdueItems.length,
+      submittedByMe: isResolverProfile ? workflowItems.filter((item) => item.status === 'IN_PROGRESS').length : ownItems.length,
+      resolvedForMe: resolvedItems.length,
+    }
+  }, [isResolverProfile, ownRequestsQuery.data?.items, resolverRequestsQuery.data?.items, user?.id, user?.username])
+
+  const userFlowMetrics = useMemo(() => {
+    const ownItems = ownRequestsQuery.data?.items || []
+    const resolverItems = resolverRequestsQuery.data?.items || []
+    const workflowItems = isResolverProfile ? resolverItems : ownItems
+    const statusCount = STATUS_ORDER.reduce((acc, key) => {
+      acc[key] = workflowItems.filter((item) => item.status === key).length
+      return acc
+    }, {})
+
+    return {
+      statusCount,
+      totalRequests: workflowItems.length,
+    }
+  }, [isResolverProfile, ownRequestsQuery.data?.items, resolverRequestsQuery.data?.items])
 
   if (authLoading || dashboardState.loading || requestState.loading) {
     return (
@@ -283,64 +369,79 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Standardized KPI System */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="surface-card border-border/70 bg-card">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Total Requests</p>
-                <div className="p-1 rounded bg-muted text-muted-foreground">
-                  <Inbox className="h-4 w-4" />
+          <Card className="border-warning/30 bg-warning/5 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">{isResolverProfile ? 'Assigned To Me' : 'My Requests'}</p>
+                    <HelpTip text={isResolverProfile ? 'Open requests currently assigned to you.' : 'Open requests submitted by you.'} />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{userCardMetrics.myRequests}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{isResolverProfile ? 'Open assigned work' : 'Open items submitted by you'}</p>
                 </div>
+                <ClipboardList className="h-5 w-5 text-muted-foreground/50" />
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.totalRequests}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Recorded demand in scope</p>
             </CardContent>
           </Card>
 
-          <Card className="surface-card border-warning/40 bg-warning/12">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Status Overview</p>
-                <div className="p-1 rounded bg-warning/20 text-warning">
-                  <AlertCircle className="h-4 w-4" />
+          <Card className="border-ink/10 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">Escalation Risk</p>
+                    <HelpTip text={isResolverProfile ? 'Assigned open requests with due dates that already passed.' : 'Your open requests with due dates that already passed.'} />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{userCardMetrics.escalationRisk}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {userCardMetrics.escalationRisk ? 'Overdue items need follow-up' : 'No overdue items right now'}
+                  </p>
                 </div>
+                <AlertCircle className="h-5 w-5 text-muted-foreground/50" />
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Items needing attention</p>
             </CardContent>
           </Card>
 
-          <Card className="surface-card border-warning/40 bg-warning/12">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Open Requests</p>
-                <div className="p-1 rounded bg-warning/20 text-warning">
-                  <Activity className="h-4 w-4" />
+          <Card className="border-ink/10 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">{isResolverProfile ? 'In Progress' : 'Submitted By Me'}</p>
+                    <HelpTip text={isResolverProfile ? 'Assigned requests currently in progress.' : 'All requests submitted by you.'} />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{userCardMetrics.submittedByMe}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{isResolverProfile ? 'Work actively being handled' : 'Useful for follow-up and context'}</p>
                 </div>
+                <ClipboardList className="h-5 w-5 text-muted-foreground/50" />
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{metrics.unassigned} pending assignment</p>
             </CardContent>
           </Card>
 
-          <Card className="surface-card border-success/40 bg-success/12">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolution Rate</p>
-                <div className="p-1 rounded bg-success/20 text-success">
-                  <CheckCircle2 className="h-4 w-4" />
+          <Card className="border-success/30 bg-success/5 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow text-success">{isResolverProfile ? 'Resolved Work' : 'Resolved For Me'}</p>
+                    <HelpTip text={isResolverProfile ? 'Visible assigned work that was completed or closed.' : 'Your requests that were completed or closed.'} />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{userCardMetrics.resolvedForMe}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{isResolverProfile ? 'Completed or closed work' : 'Requests already delivered'}</p>
+                </div>
+                <div className="rounded-sm bg-success/10 p-2">
+                  <CheckCheck className="h-5 w-5 text-success" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.resolutionRate}%</p>
-              <p className="mt-1 text-xs text-muted-foreground">{metrics.resolved} closed items</p>
             </CardContent>
           </Card>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Analytical Drilldown: Lifecycle */}
-          <Card className="border-ink/5 shadow-none">
+          <Card className="border-ink/5 shadow-none lg:col-span-2">
             <CardHeader className="flex-row items-center justify-between pb-2">
               <div>
                 <p className="eyebrow">Flow Analysis</p>
@@ -353,8 +454,8 @@ function Dashboard() {
             <CardContent className="p-5 pt-0">
               <div className="space-y-1">
                 {STATUS_ORDER.map((status) => {
-                  const count = metrics.statusCount[status] || 0
-                  const pct = metrics.totalRequests ? Math.round((count / metrics.totalRequests) * 100) : 0
+                  const count = userFlowMetrics.statusCount[status] || 0
+                  const pct = userFlowMetrics.totalRequests ? Math.round((count / userFlowMetrics.totalRequests) * 100) : 0
                   return (
                     <div key={status} className="group relative flex items-center gap-4 py-2">
                       <div className="flex w-24 flex-shrink-0 items-center gap-2">
@@ -428,6 +529,42 @@ function Dashboard() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Ownership Distribution (Added for User Dashboard) */}
+          <Card className="border-ink/5 shadow-none">
+            <CardHeader className="pb-2">
+              <p className="eyebrow">Workforce Coverage</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold">Ownership Distribution</h3>
+                <HelpTip text="Shows how open requests are distributed across assignees to highlight workload balance." />
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 pt-0">
+              <div className="space-y-4">
+                {metrics.ownership.length ? (
+                  metrics.ownership.slice(0, 5).map((owner) => (
+                    <Link key={owner.name} to={`/requests?assignee=${encodeURIComponent(owner.name)}`} className="flex items-center justify-between transition-colors hover:bg-muted/30">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
+                          {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-foreground">{owner.name}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{owner.role}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold tabular-nums">{owner.count}</p>
+                        <p className="text-[10px] font-medium text-muted-foreground">Assigned items</p>
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No active assignments in this scope.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {(dashboardState.error || requestState.error) && (
@@ -494,67 +631,71 @@ function Dashboard() {
 
         {/* Standardized KPI System */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card className="surface-card border-border/70 bg-card">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Team Queue</p>
-                  <HelpTip text="All open requests currently under your team scope." />
+          <Card className="border-ink/10 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">{isScopedResolverProfile ? 'Resolver Queue' : 'Team Queue'}</p>
+                    <HelpTip text={isScopedResolverProfile ? 'Open requests currently under your resolver scope.' : 'All open requests currently under your team scope.'} />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{isScopedResolverProfile ? 'Requests needing delivery' : 'Requests needing coordination'}</p>
                 </div>
-                <div className="p-1 rounded bg-muted text-muted-foreground">
-                  <ClipboardList className="h-4 w-4" />
-                </div>
+                <ClipboardList className="h-5 w-5 text-muted-foreground/50" />
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.openRequests}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Requests needing coordination</p>
             </CardContent>
           </Card>
 
-          <Card className="surface-card border-border/70 bg-card">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Units in Focus</p>
-                  <HelpTip text="Number of entities currently generating workload in your scope." />
+          <Card className="border-ink/10 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow">{isScopedResolverProfile ? 'Work Units' : 'Units in Focus'}</p>
+                    <HelpTip text="Number of entities currently generating workload in your scope." />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.concentration.length}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Active platform entities</p>
                 </div>
-                <div className="p-1 rounded bg-muted text-muted-foreground">
-                  <Building2 className="h-4 w-4" />
-                </div>
+                <Building2 className="h-5 w-5 text-muted-foreground/50" />
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.concentration.length}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Active platform entities</p>
             </CardContent>
           </Card>
 
-          <Card className="surface-card border-warning/40 bg-warning/12">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-warning">Need Attention</p>
-                  <HelpTip text="Combined count of unassigned and overdue requests." />
+          <Card className="border-warning/30 bg-warning/5 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow text-warning">Need Attention</p>
+                    <HelpTip text="Combined count of unassigned and overdue requests." />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{metrics.overdue} overdue items</p>
                 </div>
-                <div className="p-1 rounded bg-warning/20 text-warning">
-                  <AlertCircle className="h-4 w-4" />
+                <div className="rounded-sm bg-warning/10 p-2">
+                  <AlertCircle className="h-5 w-5 text-warning" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.attentionCount}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{metrics.overdue} overdue items</p>
             </CardContent>
           </Card>
 
-          <Card className="surface-card border-success/40 bg-success/12">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-success">Resolved in Scope</p>
-                  <HelpTip text="Requests completed or closed in the current scope." />
+          <Card className="border-success/30 bg-success/5 shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-1">
+                    <p className="eyebrow text-success">{isScopedResolverProfile ? 'Resolved By Scope' : 'Resolved in Scope'}</p>
+                    <HelpTip text="Requests completed or closed in the current scope." />
+                  </div>
+                  <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metrics.resolved}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Closed or completed work</p>
                 </div>
-                <div className="p-1 rounded bg-success/20 text-success">
-                  <CheckCircle2 className="h-4 w-4" />
+                <div className="rounded-sm bg-success/10 p-2">
+                  <CheckCheck className="h-5 w-5 text-success" />
                 </div>
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{metrics.resolved}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Closed or completed work</p>
             </CardContent>
           </Card>
         </div>
@@ -688,48 +829,47 @@ function Dashboard() {
           </Card>
 
           {/* Ownership Distribution */}
-          <Card className="border-ink/10 shadow-none">
-            <CardHeader className="border-b bg-muted/20 pb-4">
+          <Card className="border-ink/5 shadow-none">
+            <CardHeader className="pb-2">
+              <p className="eyebrow">Workforce Coverage</p>
               <div className="flex items-center gap-2">
-                <CardTitle className="text-lg font-semibold text-foreground">Ownership Distribution</CardTitle>
+                <h3 className="text-lg font-bold">Ownership Distribution</h3>
                 <HelpTip text="Shows how open requests are distributed across assignees to highlight workload balance." />
               </div>
-              <CardDescription className="text-sm text-muted-foreground">Request load by team member.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 pt-6">
-              {metrics.ownership.length ? (
-                metrics.ownership.slice(0, 5).map((owner) => (
-                  <div key={owner.name} className="flex items-center justify-between rounded-lg border bg-card p-3 shadow-elev-sm">
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-primary-foreground bg-primary`}>
-                        {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+            <CardContent className="p-5 pt-0">
+              <div className="space-y-4">
+                {metrics.ownership.length ? (
+                  metrics.ownership.slice(0, 5).map((owner) => (
+                    <Link key={owner.name} to={`/requests?assignee=${encodeURIComponent(owner.name)}`} className="flex items-center justify-between transition-colors hover:bg-muted/30">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
+                          {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-foreground">{owner.name}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{owner.role}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">{owner.name}</p>
-                        <p className="text-xs text-muted-foreground">{owner.role}</p>
+                      <div className="text-right">
+                        <p className="text-lg font-bold tabular-nums">{owner.count}</p>
+                        <p className="text-[10px] font-medium text-muted-foreground">Assigned items</p>
                       </div>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No active assignments in this scope.</p>
+                )}
+                {metrics.unassigned > 0 && (
+                  <Link to="/requests?assignee=unassigned" className="mt-6 flex items-center justify-between border-t border-ink/5 pt-4 transition-colors hover:bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-warning animate-pulse" />
+                      <p className="text-xs font-bold uppercase tracking-tight text-warning">Coverage Risk</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xl font-bold tabular-nums text-foreground">{owner.count}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Open</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                  <Users className="mb-2 h-8 w-8 opacity-20" />
-                  <p className="text-sm">No ownership data available.</p>
-                </div>
-              )}
-              {metrics.unassigned > 0 && (
-                <div className="mt-6 flex items-center justify-between border-t border-ink/5 pt-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-warning animate-pulse" />
-                    <p className="text-xs font-bold uppercase tracking-tight text-warning">Coverage Risk</p>
-                  </div>
-                  <p className="text-sm font-bold tabular-nums text-warning">{metrics.unassigned} items unassigned</p>
-                </div>
-              )}
+                    <p className="text-sm font-bold tabular-nums text-warning">{metrics.unassigned} items unassigned</p>
+                  </Link>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -984,8 +1124,8 @@ function Dashboard() {
             <CardContent className="p-5 pt-0">
               <div className="space-y-4">
                 {metrics.ownership.length ? (
-                  metrics.ownership.slice(0, 3).map((owner) => (
-                    <div key={owner.name} className="flex items-center justify-between">
+                  metrics.ownership.slice(0, 5).map((owner) => (
+                    <Link key={owner.name} to={`/requests?assignee=${encodeURIComponent(owner.name)}`} className="flex items-center justify-between transition-colors hover:bg-muted/30">
                       <div className="flex items-center gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
                           {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
@@ -999,19 +1139,19 @@ function Dashboard() {
                         <p className="text-lg font-bold tabular-nums">{owner.count}</p>
                         <p className="text-[10px] font-medium text-muted-foreground">Assigned items</p>
                       </div>
-                    </div>
+                    </Link>
                   ))
                 ) : (
                   <p className="py-4 text-center text-xs text-muted-foreground">No active assignments in this scope.</p>
                 )}
                 {metrics.unassigned > 0 && (
-                  <div className="mt-6 flex items-center justify-between border-t border-ink/5 pt-4">
+                  <Link to="/requests?assignee=unassigned" className="mt-6 flex items-center justify-between border-t border-ink/5 pt-4 transition-colors hover:bg-muted/30">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-full bg-warning animate-pulse" />
                       <p className="text-xs font-bold uppercase tracking-tight text-warning">Coverage Risk</p>
                     </div>
                     <p className="text-sm font-bold tabular-nums text-warning">{metrics.unassigned} items unassigned</p>
-                  </div>
+                  </Link>
                 )}
               </div>
             </CardContent>
@@ -1088,8 +1228,8 @@ function Dashboard() {
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="eyebrow">{canReadGlobalDashboard ? 'Global users' : 'Units in scope'}</p>
-                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{canReadGlobalDashboard ? dashboardState.data?.totals?.users || 0 : metrics.concentration.length}</p>
+                <p className="eyebrow">{canShowGlobalDashboardTotals ? 'Global users' : 'Units in scope'}</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{canShowGlobalDashboardTotals ? dashboardState.data?.totals?.users || 0 : metrics.concentration.length}</p>
                 <p className="mt-1 text-sm text-muted-foreground">Active platform entities</p>
               </div>
               <Users className="h-5 w-5 text-muted-foreground/50" />
@@ -1142,6 +1282,3 @@ function Dashboard() {
 }
 
 export default Dashboard
-
-
-

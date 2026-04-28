@@ -3,7 +3,10 @@ from django.contrib.auth.password_validation import validate_password
 
 from apps.entities.models import Entity
 from apps.permissions_app.services import (
+    can_access_reports_page,
     can_create_requests,
+    get_dashboard_profile,
+    get_effective_analytics_scope,
     get_effective_permission_keys,
     get_user_role_keys,
 )
@@ -21,6 +24,9 @@ class UserMeSerializer(serializers.ModelSerializer):
     source_entity = serializers.SerializerMethodField()
     available_target_teams = serializers.SerializerMethodField()
     request_creation_allowed = serializers.SerializerMethodField()
+    analytics_scope = serializers.SerializerMethodField()
+    reports_page_access_allowed = serializers.SerializerMethodField()
+    dashboard_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -45,6 +51,9 @@ class UserMeSerializer(serializers.ModelSerializer):
             "source_entity",
             "available_target_teams",
             "request_creation_allowed",
+            "analytics_scope",
+            "reports_page_access_allowed",
+            "dashboard_profile",
         ]
 
     def get_role_keys(self, obj):
@@ -87,6 +96,15 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     def get_request_creation_allowed(self, obj):
         return can_create_requests(obj)
+
+    def get_analytics_scope(self, obj):
+        return get_effective_analytics_scope(obj)
+
+    def get_reports_page_access_allowed(self, obj):
+        return can_access_reports_page(obj)
+
+    def get_dashboard_profile(self, obj):
+        return get_dashboard_profile(obj)
 
 
 class UserThemePreferenceSerializer(serializers.ModelSerializer):

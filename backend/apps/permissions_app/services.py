@@ -21,6 +21,12 @@ MANAGE_PERMISSION_SCOPE_ORDER = [
     "manage_users_entity",
 ]
 
+REPORT_PERMISSION_KEYS = {
+    "view_global_reports",
+    "view_company_reports",
+    "view_entity_reports",
+}
+
 ROLE_PERMISSION_HIERARCHY_ERROR = "You can only manage users below your role."
 ROLE_PERMISSION_OWNERSHIP_ERROR = "You can only assign permissions you already have."
 
@@ -94,6 +100,28 @@ def get_effective_permission_keys(user):
     return sorted(allowed - denied)
 
 
+def get_explicit_user_permission_keys(user):
+    today = timezone.now().date()
+    delegated = set(
+        UserAccessDelegation.objects.filter(
+            delegate=user,
+            is_revoked=False,
+            start_date__lte=today,
+            end_date__gte=today,
+            permissions__isnull=False,
+        ).values_list("permissions__key", flat=True)
+    )
+    overrides = {
+        item["permission__key"]: item["is_allowed"]
+        for item in UserPermissionOverride.objects.filter(user=user).values(
+            "permission__key", "is_allowed"
+        )
+    }
+    allowed = delegated | {key for key, value in overrides.items() if value}
+    denied = {key for key, value in overrides.items() if not value}
+    return allowed - denied
+
+
 def has_permission(user, permission_key):
     return permission_key in set(get_effective_permission_keys(user))
 
@@ -106,6 +134,113 @@ def has_any_permission(user, permission_keys):
 def has_all_permissions(user, permission_keys):
     effective = set(get_effective_permission_keys(user))
     return set(permission_keys).issubset(effective)
+
+
+def can_access_reports_page(user):
+    role_key = get_primary_role_key(user)
+    if role_key not in {"super_admin", "senior", "manager"}:
+        return False
+    return has_any_permission(user, REPORT_PERMISSION_KEYS)
+
+
+def get_effective_analytics_scope(user):
+    effective_permissions = set(get_effective_permission_keys(user))
+    role_key = get_primary_role_key(user)
+    report_permissions = effective_permissions
+    if role_key in {"team_leader", "user"}:
+        report_permissions = set(get_explicit_user_permission_keys(user)) & REPORT_PERMISSION_KEYS
+
+    if "view_global_reports" in report_permissions and role_key == "super_admin":
+        return "global"
+    if "view_global_reports" in report_permissions and user.company_id:
+        return "company"
+    if "view_company_reports" in report_permissions and user.company_id:
+        return "company"
+    if "view_entity_reports" in report_permissions and user.entity_id:
+        return "entity"
+
+    if role_key == "team_leader":
+        return "team"
+    if role_key == "user":
+        return "own"
+
+    if "view_all_requests" in effective_permissions:
+        return "global"
+    if "view_company_requests" in effective_permissions and user.company_id:
+        return "company"
+    if "view_entity_requests" in effective_permissions and user.entity_id:
+        return "entity"
+    if "view_team_requests" in effective_permissions:
+        return "team"
+    if "view_own_requests" in effective_permissions:
+        return "own"
+    if role_key == "super_admin":
+        return "global"
+    if role_key == "senior" and user.company_id:
+        return "company"
+    if role_key == "manager" and user.entity_id:
+        return "entity"
+    return "none"
+
+
+def get_dashboard_profile(user):
+    role_key = get_primary_role_key(user)
+    entity_type = user.entity.entity_type if user.entity_id and user.entity else ""
+
+    if role_key == "user":
+        return "requester" if entity_type == Entity.EntityType.PROD else "resolver"
+    if role_key == "team_leader":
+        return "team_requester" if entity_type == Entity.EntityType.PROD else "team_resolver"
+    if role_key == "manager":
+        return "entity_requester" if entity_type == Entity.EntityType.PROD else "entity_resolver"
+    if role_key == "senior":
+        return "company_analytics"
+    if role_key == "super_admin":
+        return "global_analytics"
+    return "requester"
+
+
+def get_analytics_request_scope_filter(user):
+    scope = get_effective_analytics_scope(user)
+
+    if scope == "global":
+        return Q()
+    if scope == "company" and user.company_id:
+        company_scope = (
+            Q(company_id=user.company_id)
+            | Q(company__isnull=True, requester_user__company_id=user.company_id)
+        )
+        same_company_entities = (
+            Q(source_entity__isnull=True) | Q(source_entity__company_id=user.company_id)
+        ) & (
+            Q(target_entity__isnull=True) | Q(target_entity__company_id=user.company_id)
+        )
+        return company_scope & same_company_entities
+    if scope == "entity" and user.entity_id:
+        entity_scope = (
+            Q(source_entity_id=user.entity_id)
+            | Q(target_entity_id=user.entity_id)
+            | Q(requester_user__entity_id=user.entity_id)
+        )
+        same_company_entities = (
+            Q(source_entity__isnull=True) | Q(source_entity__company_id=user.company_id)
+        ) & (
+            Q(target_entity__isnull=True) | Q(target_entity__company_id=user.company_id)
+        )
+        return entity_scope & same_company_entities
+    if scope == "team":
+        team_user_ids = list(
+            user.__class__.objects.filter(team_leader_id=user.id).values_list("id", flat=True)
+        )
+        return (
+            Q(requester_user_id=user.id)
+            | Q(current_assignee_id=user.id)
+            | Q(requester_user_id__in=team_user_ids)
+            | Q(current_assignee_id__in=team_user_ids)
+        )
+    if scope == "own":
+        return Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
+    return Q(pk__in=[])
 
 
 def get_delegatable_permission_keys(editor_user):

@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, Q, Value
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q, Value
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 from rest_framework import status
@@ -27,8 +27,12 @@ from apps.permissions_app.services import (
     ROLE_HIERARCHY,
     ROLE_PERMISSION_HIERARCHY_ERROR,
     ROLE_PERMISSION_OWNERSHIP_ERROR,
+    can_access_reports_page,
     can_manage_role_permissions,
     can_view_target_user,
+    get_analytics_request_scope_filter,
+    get_effective_analytics_scope,
+    get_dashboard_profile,
     get_delegatable_permission_keys,
     get_effective_permission_keys,
     get_manageable_permission_keys_for_actor,
@@ -159,6 +163,8 @@ class AdminBaseView(APIView):
         allowed_permissions = ADMIN_MODULE_PERMISSIONS.get(self.module_key, set())
         if allowed_permissions and not has_any_permission(request.user, allowed_permissions):
             self.permission_denied(request, message="You do not have access to this admin section.")
+        if self.module_key == "reports" and not can_access_reports_page(request.user):
+            self.permission_denied(request, message="You do not have access to this admin section.")
 
     def role_key(self, user):
         return get_primary_role_key(user)
@@ -209,27 +215,10 @@ class AdminBaseView(APIView):
         )
 
     def scoped_report_requests(self, user):
-        queryset = ServiceRequest.objects.all()
+        return self.scoped_analytics_requests(user)
 
-        if has_permission(user, "view_global_reports"):
-            return queryset
-
-        visibility_filter = Q(pk__in=[])
-        if has_permission(user, "view_company_reports") and user.company_id:
-            visibility_filter |= (
-                Q(company_id=user.company_id)
-                | Q(company__isnull=True, requester_user__company_id=user.company_id)
-            )
-        if has_permission(user, "view_entity_reports") and user.entity_id:
-            visibility_filter |= (
-                Q(source_entity_id=user.entity_id)
-                | Q(target_entity_id=user.entity_id)
-                | Q(requester_user__entity_id=user.entity_id)
-            )
-
-        if not visibility_filter.children:
-            return queryset.none()
-        return queryset.filter(visibility_filter)
+    def scoped_analytics_requests(self, user):
+        return ServiceRequest.objects.all().filter(get_analytics_request_scope_filter(user))
 
     def build_stats_cache_key(self, *, area, user, extra=None):
         payload = {
@@ -238,7 +227,9 @@ class AdminBaseView(APIView):
             "company_id": user.company_id,
             "entity_id": user.entity_id,
             "role": get_primary_role_key(user),
+            "analytics_scope": get_effective_analytics_scope(user),
             "permissions": sorted(get_effective_permission_keys(user)),
+            "version": 2,
             "extra": extra or {},
         }
         digest = hashlib.md5(
@@ -347,11 +338,7 @@ class AdminDashboardView(AdminBaseView):
         if cached_payload is not None:
             return Response(cached_payload)
 
-        request_qs = self.scoped_requests(
-            request.user,
-            include_related=False,
-            include_ordering=False,
-        )
+        request_qs = self.scoped_analytics_requests(request.user)
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
         if date_from:
@@ -373,6 +360,28 @@ class AdminDashboardView(AdminBaseView):
                 filter=Q(status__in=open_statuses, current_assignee__isnull=True),
             ),
         )
+        workload_qs = request_qs.filter(status__in=open_statuses)
+        if get_primary_role_key(request.user) == "user":
+            if request.user.team_leader_id:
+                same_team_user_ids = User.objects.filter(
+                    Q(team_leader_id=request.user.team_leader_id)
+                    | Q(id=request.user.team_leader_id)
+                ).values_list("id", flat=True)
+            else:
+                same_team_user_ids = [request.user.id]
+            workload_qs = workload_qs.filter(current_assignee_id__in=same_team_user_ids)
+        analytics_scope = get_effective_analytics_scope(request.user)
+        dashboard_profile = get_dashboard_profile(request.user)
+        entity_group_field = (
+            "company__name"
+            if analytics_scope == "global"
+            else "requester_user__entity__name"
+            if analytics_scope == "team" and dashboard_profile == "team_requester"
+            else
+            "current_assignee__entity__name"
+            if analytics_scope == "team"
+            else "target_entity__name"
+        )
 
         payload = {
             "totals": {
@@ -386,9 +395,18 @@ class AdminDashboardView(AdminBaseView):
                 request_qs.values("company__name").annotate(total=Count("id")).order_by("-total", "company__name")[:50]
             ),
             "requests_by_entity": list(
-                request_qs.values("target_entity__name").annotate(total=Count("id")).order_by("-total", "target_entity__name")[:20]
+                request_qs.exclude(**{f"{entity_group_field}__isnull": True})
+                .values(entity_group_field)
+                .annotate(total=Count("id"))
+                .order_by("-total", entity_group_field)[:20]
             ),
             "queue": queue_counts,
+            "team_workload": list(
+                workload_qs
+                .values("current_assignee__username")
+                .annotate(total=Count("id"))
+                .order_by("-total")[:20]
+            ),
             "recent_activity": AuditLogSerializer(recent_logs[:8], many=True).data,
         }
         profile_meta = self.maybe_profile_meta(request=request, started_at=started_at)
@@ -1929,6 +1947,30 @@ class AdminReportsView(AdminBaseView):
         queue_counts = queryset.aggregate(
             unassigned=Count("id", filter=Q(status__in=open_statuses, current_assignee__isnull=True)),
         )
+        analytics_scope = get_effective_analytics_scope(request.user)
+        team_workload_qs = queryset.filter(status__in=open_statuses)
+        if analytics_scope == "company" and request.user.company_id:
+            team_workload_qs = team_workload_qs.filter(current_assignee__company_id=request.user.company_id)
+        elif analytics_scope == "entity" and request.user.entity_id:
+            team_workload_qs = team_workload_qs.filter(current_assignee__entity_id=request.user.entity_id)
+        resolved_timing = (
+            queryset.filter(
+                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
+                completed_at__isnull=False,
+                completed_at__gt=F("created_at"),
+            )
+            .annotate(
+                resolution_duration=ExpressionWrapper(
+                    F("completed_at") - F("created_at"),
+                    output_field=DurationField(),
+                )
+            )
+            .aggregate(avg_resolution=Avg("resolution_duration"))
+        )
+        avg_resolution = resolved_timing.get("avg_resolution")
+        avg_resolution_days = (
+            avg_resolution.total_seconds() / 86400 if avg_resolution else 0
+        )
         volume_by_company = (
             queryset.annotate(
                 company_name=Coalesce("company__name", "requester_user__company__name", Value("No company"))
@@ -1946,8 +1988,9 @@ class AdminReportsView(AdminBaseView):
             "requests_by_status": list(queryset.values("status").annotate(total=Count("id")).order_by("-total")),
             "open_vs_resolved": open_vs_resolved,
             "queue": queue_counts,
+            "avg_resolution_days": avg_resolution_days,
             "team_workload": list(
-                queryset.filter(status__in=open_statuses)
+                team_workload_qs
                 .values("current_assignee__username")
                 .annotate(total=Count("id"))
                 .order_by("-total")[:100]

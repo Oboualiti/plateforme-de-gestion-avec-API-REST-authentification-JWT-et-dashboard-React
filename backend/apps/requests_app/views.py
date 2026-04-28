@@ -420,6 +420,7 @@ class RequestListCreateView(APIView):
                 "target_entity_id": request.query_params.get("target_entity_id", ""),
                 "type": request.query_params.get("type", ""),
                 "status": request.query_params.get("status", ""),
+                "assignee": request.query_params.get("assignee", ""),
                 "stuck": request.query_params.get("stuck", ""),
                 "page_size": page_size,
             }
@@ -1685,6 +1686,15 @@ def apply_request_filters(queryset, params):
     request_status = (params.get("status") or "").strip()
     if request_status:
         queryset = queryset.filter(status=request_status)
+
+    assignee = (params.get("assignee") or "").strip()
+    if assignee:
+        if assignee.lower() in {"unassigned", "none", "null"}:
+            queryset = queryset.filter(current_assignee__isnull=True)
+        elif assignee.isdigit():
+            queryset = queryset.filter(current_assignee_id=assignee)
+        else:
+            queryset = queryset.filter(current_assignee__username__iexact=assignee)
 
     stuck = (params.get("stuck") or "").strip().lower()
     if stuck in {"1", "true", "yes"}:

@@ -3,7 +3,13 @@ import { useAuth } from '../context/AuthContext'
 import { Skeleton } from '../components/ui/skeleton'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
 
-function ProtectedRoute({ allowedRoles, requireAnyPermission, requireRequestCreate = false, redirectTo = '/requests' }) {
+function ProtectedRoute({
+  allowedRoles,
+  requireAnyPermission,
+  requireRequestCreate = false,
+  requireReportsPageAccess = false,
+  redirectTo = '/requests',
+}) {
   const { isAuthenticated, loading, user } = useAuth()
   const location = useLocation()
 
@@ -67,6 +73,10 @@ function ProtectedRoute({ allowedRoles, requireAnyPermission, requireRequestCrea
   }
 
   if (requireRequestCreate && !user?.request_creation_allowed) {
+    return <Navigate to={redirectTo} replace />
+  }
+
+  if (requireReportsPageAccess && !user?.reports_page_access_allowed) {
     return <Navigate to={redirectTo} replace />
   }
 
