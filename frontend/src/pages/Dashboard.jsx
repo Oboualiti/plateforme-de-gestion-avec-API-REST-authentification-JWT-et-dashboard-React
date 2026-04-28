@@ -30,6 +30,7 @@ import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 import { ROLE_LABELS } from '../lib/constants'
 import { api } from '../lib/api'
+import { useScopedRequests } from '../lib/requestsQueries'
 
 const STATUS_ORDER = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CLOSED']
 const RESOLVED_SET = new Set(['COMPLETED', 'CLOSED'])
@@ -129,7 +130,6 @@ function HelpTip({ text }) {
 function Dashboard() {
   const { user, loading: authLoading, refreshUser } = useAuth()
   const [dashboardState, setDashboardState] = useState({ loading: true, error: '', data: null })
-  const [requestState, setRequestState] = useState({ loading: true, error: '', items: [] })
 
   const primaryRole = getPrimaryRole(user)
   const roleLabel = ROLE_LABELS[primaryRole] || 'User'
@@ -142,6 +142,12 @@ function Dashboard() {
     [user?.effective_permission_keys],
   )
   const canCreateRequest = Boolean(user?.request_creation_allowed) && effectivePermissionKeys.has('create_request')
+  const requestsQuery = useScopedRequests(scope, { enabled: Boolean(user) })
+  const requestState = {
+    loading: requestsQuery.isLoading,
+    error: requestsQuery.error?.response?.data?.detail || (requestsQuery.error ? 'Could not load requests.' : ''),
+    items: requestsQuery.data?.items || [],
+  }
 
   useEffect(() => {
     refreshUser().catch(() => {})
@@ -152,27 +158,16 @@ function Dashboard() {
 
     async function load() {
       setDashboardState({ loading: true, error: '', data: null })
-      setRequestState({ loading: true, error: '', items: [] })
 
-      const [dashboardResult, requestsResult] = await Promise.allSettled([
-        canReadGlobalDashboard ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }),
-        api.get('/requests/', { params: { page: 1, page_size: 200, scope, skip_count: 1 } }),
-      ])
-
-      if (!active) return
-
-      if (dashboardResult.status === 'fulfilled') {
-        setDashboardState({ loading: false, error: '', data: dashboardResult.value.data || null })
-      } else {
-        setDashboardState({ loading: false, error: 'Could not load dashboard metrics.', data: null })
-      }
-
-      if (requestsResult.status === 'fulfilled') {
-        const payload = requestsResult.value.data || {}
-        const items = Array.isArray(payload.results) ? payload.results : Array.isArray(payload) ? payload : []
-        setRequestState({ loading: false, error: '', items })
-      } else {
-        setRequestState({ loading: false, error: 'Could not load requests.', items: [] })
+      try {
+        const dashboardResult = await (canReadGlobalDashboard ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }))
+        if (active) {
+          setDashboardState({ loading: false, error: '', data: dashboardResult.data || null })
+        }
+      } catch {
+        if (active) {
+          setDashboardState({ loading: false, error: 'Could not load dashboard metrics.', data: null })
+        }
       }
     }
 
@@ -180,97 +175,24 @@ function Dashboard() {
     return () => {
       active = false
     }
-  }, [canReadGlobalDashboard, scope, user])
+  }, [canReadGlobalDashboard, user])
 
   const metrics = useMemo(() => {
-    const items = requestState.items
+    const summary = requestsQuery.data?.summary || {}
     const statusCount = STATUS_ORDER.reduce((acc, key) => {
-      acc[key] = items.filter((item) => item.status === key).length
+      acc[key] = Number(summary.status_counts?.[key] || 0)
       return acc
     }, {})
 
-    const totalRequests = items.length
-    const openRequests = items.filter((item) => !RESOLVED_SET.has(item.status) && item.status !== 'REJECTED').length
-    const resolved = items.filter((item) => RESOLVED_SET.has(item.status)).length
-    const unassigned = items.filter((item) => !item.assignee_name && !item.current_assignee__username).length
-    const overdue = items.filter((item) => {
-      const due = toDate(getRequestDeadline(item))
-      return due && due.getTime() < Date.now() && !RESOLVED_SET.has(item.status)
-    }).length
-
-    const resolutionRate = totalRequests ? Math.round((resolved / totalRequests) * 100) : 0
-
-    const identityNames = [
-      user?.full_name,
-      [user?.first_name, user?.last_name].filter(Boolean).join(' '),
-      user?.username,
-    ]
-      .map((value) => String(value || '').trim().toLowerCase())
-      .filter(Boolean)
-
-    const submittedByMe = items.filter((item) => {
-      const creatorId = item.created_by_id ?? item.creator_id ?? item.requester_id ?? item.created_by?.id
-      if (creatorId && user?.id && Number(creatorId) === Number(user.id)) return true
-      const creatorName = String(item.created_by_name || item.creator_name || item.requester_name || '').trim().toLowerCase()
-      return creatorName && identityNames.includes(creatorName)
-    }).length
-
-    const attentionCount = overdue + unassigned
-    const createdByTeam = Math.max(0, totalRequests - submittedByMe)
-
-    const sortedRecent = [...items].sort((a, b) => {
-      const aDate = +(toDate(a.updated_at || a.updatedAt || a.created_at || a.createdAt) || 0)
-      const bDate = +(toDate(b.updated_at || b.updatedAt || b.created_at || b.createdAt) || 0)
-      return bDate - aDate
-    })
-
-    const itemsWithDueDate = sortedRecent
-      .filter((item) => toDate(getRequestDeadline(item)))
-      .sort((a, b) => +(toDate(getRequestDeadline(a)) || 0) - +(toDate(getRequestDeadline(b)) || 0))
-
-    const priorityWatch =
-      itemsWithDueDate.find((item) => item.status === 'IN_PROGRESS') ||
-      itemsWithDueDate[0] ||
-      sortedRecent.find((item) => item.status === 'IN_PROGRESS') ||
-      sortedRecent.find((item) => item.status === 'NEW') ||
-      sortedRecent[0] ||
-      null
-
-    const byEntity = new Map()
-    items.forEach((item) => {
-      const code = item.target_entity_code || item.target_entity?.code || item.target_entity_name || 'Unknown'
-      const name = item.target_entity_name || item.target_entity?.name || code
-      const current = byEntity.get(code) || { code, name, count: 0 }
-      current.count += 1
-      byEntity.set(code, current)
-    })
-
-    const concentration = [...byEntity.values()].sort((a, b) => b.count - a.count).slice(0, 4)
-
-    const byOwner = new Map()
-    items
-      .filter((item) => !RESOLVED_SET.has(item.status) && item.status !== 'REJECTED')
-      .forEach((item) => {
-        const name = item.assignee_name || item.current_assignee__username
-        if (!name) return
-        const current = byOwner.get(name) || {
-          name,
-          role: ROLE_LABELS[item.assignee_role] || 'User',
-          count: 0,
-        }
-        current.count += 1
-        byOwner.set(name, current)
-      })
-
-    const ownership = [...byOwner.values()].sort((a, b) => b.count - a.count).slice(0, 3)
-
-    const memberSet = new Set()
-    items.forEach((item) => {
-      ;[item.created_by_name, item.creator_name, item.requester_name, item.assignee_name, item.current_assignee__username].forEach((name) => {
-        const cleaned = String(name || '').trim()
-        if (cleaned) memberSet.add(cleaned.toLowerCase())
-      })
-    })
+    const totalRequests = Number(summary.total_requests || 0)
+    const openRequests = Number(summary.open_requests || 0)
+    const resolved = Number(summary.resolved || 0)
+    const unassigned = Number(summary.unassigned || 0)
+    const overdue = Number(summary.overdue || 0)
+    const submittedByMe = Number(summary.submitted_by_me || 0)
+    const attentionCount = Number(summary.attention_count || 0)
+    const createdByTeam = Number(summary.created_by_team || 0)
+    const resolutionRate = Number(summary.resolution_rate || 0)
 
     return {
       statusCount,
@@ -283,15 +205,15 @@ function Dashboard() {
       attentionCount,
       createdByTeam,
       resolutionRate,
-      priorityWatch,
-      concentration,
-      ownership,
-      activeEntities: byEntity.size,
-      companyMembers: memberSet.size,
-      recent: sortedRecent.slice(0, 5),
-      recentCompact: sortedRecent.slice(0, 2),
+      priorityWatch: summary.priority_watch || null,
+      concentration: Array.isArray(summary.concentration) ? summary.concentration : [],
+      ownership: Array.isArray(summary.ownership) ? summary.ownership : [],
+      activeEntities: Number(summary.active_entities || 0),
+      companyMembers: Number(summary.company_members || 0),
+      recent: Array.isArray(summary.recent) ? summary.recent : [],
+      recentCompact: Array.isArray(summary.recent_compact) ? summary.recent_compact : [],
     }
-  }, [requestState.items, user])
+  }, [requestsQuery.data?.summary])
 
   if (authLoading || dashboardState.loading || requestState.loading) {
     return (
@@ -1220,9 +1142,6 @@ function Dashboard() {
 }
 
 export default Dashboard
-
-
-
 
 
 

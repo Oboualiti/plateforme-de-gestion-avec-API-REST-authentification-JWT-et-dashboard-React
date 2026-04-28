@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 
 import { api, clearTokens, getStoredTokens, saveTokens } from '../lib/api'
+import { useTheme } from './ThemeContext'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
+  const { setThemePreference } = useTheme()
   const [tokens, setTokens] = useState(() => getStoredTokens())
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -16,9 +18,12 @@ export function AuthProvider({ children }) {
     }
 
     const response = await api.get('/auth/me/')
+    if (response.data.theme_preference) {
+      setThemePreference(response.data.theme_preference)
+    }
     setUser(response.data)
     return response.data
-  }, [])
+  }, [setThemePreference])
 
   useEffect(() => {
     let active = true
@@ -35,6 +40,9 @@ export function AuthProvider({ children }) {
       try {
         const response = await api.get('/auth/me/')
         if (active) {
+          if (response.data.theme_preference) {
+            setThemePreference(response.data.theme_preference)
+          }
           setUser(response.data)
         }
       } catch {
@@ -55,7 +63,7 @@ export function AuthProvider({ children }) {
     return () => {
       active = false
     }
-  }, [tokens.access])
+  }, [setThemePreference, tokens.access])
 
   async function login(credentials) {
     const response = await api.post('/auth/login/', credentials)

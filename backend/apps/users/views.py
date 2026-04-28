@@ -2,13 +2,23 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import ChangePasswordSerializer, UserMeSerializer
+from .serializers import ChangePasswordSerializer, UserMeSerializer, UserThemePreferenceSerializer
 
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        return Response(UserMeSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = UserThemePreferenceSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(UserMeSerializer(request.user).data)
 
 

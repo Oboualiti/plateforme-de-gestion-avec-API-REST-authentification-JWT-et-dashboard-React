@@ -1921,6 +1921,14 @@ class AdminReportsView(AdminBaseView):
                 ),
             ),
         )
+        open_statuses = [
+            ServiceRequest.Status.NEW,
+            ServiceRequest.Status.ACCEPTED,
+            ServiceRequest.Status.IN_PROGRESS,
+        ]
+        queue_counts = queryset.aggregate(
+            unassigned=Count("id", filter=Q(status__in=open_statuses, current_assignee__isnull=True)),
+        )
         volume_by_company = (
             queryset.annotate(
                 company_name=Coalesce("company__name", "requester_user__company__name", Value("No company"))
@@ -1937,8 +1945,12 @@ class AdminReportsView(AdminBaseView):
             "requests_by_type": list(queryset.values("category").annotate(total=Count("id")).order_by("-total")),
             "requests_by_status": list(queryset.values("status").annotate(total=Count("id")).order_by("-total")),
             "open_vs_resolved": open_vs_resolved,
+            "queue": queue_counts,
             "team_workload": list(
-                queryset.values("current_assignee__username").annotate(total=Count("id")).order_by("-total")[:100]
+                queryset.filter(status__in=open_statuses)
+                .values("current_assignee__username")
+                .annotate(total=Count("id"))
+                .order_by("-total")[:100]
             ),
             "trend_summaries": list(
                 queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id")).order_by("-day")[:31]

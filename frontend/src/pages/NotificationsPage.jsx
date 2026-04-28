@@ -1,53 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import PageHeader from '../components/layout/PageHeader'
-import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { useNotifications } from '../hooks/useNotifications'
 
 function NotificationsPage() {
-  const { user } = useAuth()
-  const [state, setState] = useState({
-    loading: true,
-    error: '',
-    notifications: [],
-    unreadOnly: false,
-  })
-  const [busy, setBusy] = useState(false)
-  const canViewRequestDiscussion = Boolean(
-    user?.effective_permission_keys?.includes('view_request_discussion'),
-  )
-
-  function filterVisibleNotifications(list) {
-    if (canViewRequestDiscussion) return list
-    return (list || []).filter((item) => {
-      const eventType = String(item?.event_type || '').toUpperCase()
-      const hasMessageId = Boolean(item?.metadata?.message_id)
-      return eventType !== 'REQUEST_MESSAGE' && !hasMessageId
-    })
-  }
-
-  async function loadNotifications(unreadOnly = state.unreadOnly) {
-    setState((current) => ({ ...current, loading: true, error: '', unreadOnly }))
-    try {
-      const response = await api.get('/notifications/', {
-        params: { unread_only: unreadOnly ? 'true' : undefined },
-      })
-      const visibleNotifications = filterVisibleNotifications(response.data || [])
-      setState((current) => ({
-        ...current,
-        loading: false,
-        notifications: visibleNotifications,
-        unreadOnly,
-      }))
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        loading: false,
-        error: error.response?.data?.detail || 'Could not load notifications.',
-        notifications: [],
-      }))
-    }
-  }
+  const notifications = useNotifications()
 
   useEffect(() => {
     let active = true
@@ -58,7 +16,7 @@ function NotificationsPage() {
       } catch {
       } finally {
         if (active) {
-          loadNotifications(false)
+          notifications.loadNotifications(false)
         }
       }
     }
@@ -66,36 +24,7 @@ function NotificationsPage() {
     return () => {
       active = false
     }
-  }, [canViewRequestDiscussion])
-
-  async function markAsRead(notificationId) {
-    setBusy(true)
-    try {
-      const response = await api.post(`/notifications/${notificationId}/read/`)
-      setState((current) => ({
-        ...current,
-        notifications: current.notifications.map((item) =>
-          item.id === notificationId ? response.data : item,
-        ),
-      }))
-      window.dispatchEvent(new Event('notifications:changed'))
-    } catch {
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function markAllRead() {
-    setBusy(true)
-    try {
-      await api.post('/notifications/read-all/')
-      await loadNotifications(state.unreadOnly)
-      window.dispatchEvent(new Event('notifications:changed'))
-    } catch {
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [notifications.canViewRequestDiscussion, notifications.loadNotifications])
 
   function formatEventType(value) {
     return (value || 'notification')
@@ -115,32 +44,32 @@ function NotificationsPage() {
             <button
               type="button"
               className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                state.unreadOnly
+                notifications.unreadOnly
                   ? 'border-border bg-background text-foreground hover:bg-muted/60'
                   : 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
               }`}
-              onClick={() => loadNotifications(false)}
-              disabled={busy}
+              onClick={() => notifications.loadNotifications(false)}
+              disabled={notifications.busy}
             >
               All
             </button>
             <button
               type="button"
               className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                state.unreadOnly
+                notifications.unreadOnly
                   ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'border-border bg-background text-foreground hover:bg-muted/60'
               }`}
-              onClick={() => loadNotifications(true)}
-              disabled={busy}
+              onClick={() => notifications.loadNotifications(true)}
+              disabled={notifications.busy}
             >
               Unread only
             </button>
             <button
               type="button"
               className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={markAllRead}
-              disabled={busy}
+              onClick={notifications.markAllRead}
+              disabled={notifications.busy}
             >
               Mark all read
             </button>
@@ -149,14 +78,14 @@ function NotificationsPage() {
       />
 
       <section className="surface-card overflow-hidden">
-        {state.loading && <p className="px-4 py-6 text-sm text-muted-foreground">Loading notifications...</p>}
-        {state.error && <p className="px-4 py-6 text-sm font-medium text-destructive">{state.error}</p>}
-        {!state.loading && !state.error && state.notifications.length === 0 && (
+        {notifications.loading && <p className="px-4 py-6 text-sm text-muted-foreground">Loading notifications...</p>}
+        {notifications.error && <p className="px-4 py-6 text-sm font-medium text-destructive">{notifications.error}</p>}
+        {!notifications.loading && !notifications.error && notifications.notifications.length === 0 && (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">No notifications.</p>
         )}
-        {!state.loading && !state.error && state.notifications.length > 0 && (
+        {!notifications.loading && !notifications.error && notifications.notifications.length > 0 && (
           <div className="divide-y divide-border">
-            {state.notifications.map((item) => (
+            {notifications.notifications.map((item) => (
               <article
                 key={item.id}
                 className={`px-4 py-4 transition-colors ${item.is_read ? 'bg-card' : 'bg-primary-soft/50'}`}
@@ -186,8 +115,8 @@ function NotificationsPage() {
                     <button
                       type="button"
                       className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => markAsRead(item.id)}
-                      disabled={busy}
+                      onClick={() => notifications.markAsRead(item.id)}
+                      disabled={notifications.busy}
                     >
                       Mark read
                     </button>

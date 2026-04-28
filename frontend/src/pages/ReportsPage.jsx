@@ -31,6 +31,7 @@ import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { useScopedRequests } from '../lib/requestsQueries'
 
 const RESOLVED_SET = new Set(['COMPLETED', 'CLOSED'])
 const ACTIVE_SET = new Set(['NEW', 'ACCEPTED', 'IN_PROGRESS'])
@@ -174,6 +175,7 @@ function ReportsPage() {
   const canViewReports = canViewGlobalReports || canViewCompanyReports || canViewEntityReports
   const canSeeCompanyVolume = canViewGlobalReports || canViewCompanyReports
   const canSeeExecutiveCards = (role === 'super_admin' && canViewGlobalReports) || (role === 'senior' && canViewCompanyReports)
+  const requestsQuery = useScopedRequests(scope, { enabled: Boolean(user && canViewReports) })
 
   useEffect(() => {
     if (!canViewReports) {
@@ -185,10 +187,9 @@ function ReportsPage() {
     async function load() {
       setState({ loading: true, error: '', reports: null, dashboard: null, requests: [] })
 
-      const [reportsRes, dashboardRes, requestsRes] = await Promise.allSettled([
+      const [reportsRes, dashboardRes] = await Promise.allSettled([
         api.get('/admin/reports/'),
         isSuperAdmin ? api.get('/admin/dashboard/') : Promise.resolve({ data: null }),
-        api.get('/requests/', { params: { page: 1, page_size: 200, scope, skip_count: 1 } }),
       ])
 
       if (!active) return
@@ -198,14 +199,7 @@ function ReportsPage() {
         error: '',
         reports: reportsRes.status === 'fulfilled' ? reportsRes.value.data || {} : null,
         dashboard: dashboardRes.status === 'fulfilled' ? dashboardRes.value.data || {} : null,
-        requests:
-          requestsRes.status === 'fulfilled'
-            ? (Array.isArray(requestsRes.value.data?.results)
-                ? requestsRes.value.data.results
-                : Array.isArray(requestsRes.value.data)
-                  ? requestsRes.value.data
-                  : [])
-            : [],
+        requests: [],
       }
 
       if (next.requests.length === 0 && !next.reports && !next.dashboard) {
@@ -219,41 +213,49 @@ function ReportsPage() {
     return () => {
       active = false
     }
-  }, [canViewReports, isSuperAdmin, scope, user])
+  }, [canViewReports, isSuperAdmin, user])
 
   const parsed = useMemo(() => {
     const reports = state.reports || {}
     const dashboard = state.dashboard || {}
-    const items = state.requests || []
+    const summary = requestsQuery.data?.summary || {}
+    const items = Array.isArray(summary.recent_movement) ? summary.recent_movement : requestsQuery.data?.items || []
     const reportStatusRows = Array.isArray(reports.requests_by_status) ? reports.requests_by_status : []
     const reportTotal = reportStatusRows.reduce((sum, item) => sum + Number(item.total || 0), 0)
     const reportOpen = Number(reports.open_vs_resolved?.open || 0)
     const reportResolved = Number(reports.open_vs_resolved?.resolved || 0)
     const hasReportTotals = reportTotal > 0 || (reportOpen + reportResolved > 0)
 
-    const totalFromReports = (reports.requests_by_status || []).reduce((sum, row) => sum + Number(row.total || 0), 0)
-    const totalRequests = isSuperAdmin
-      ? dashboard.totals?.requests || totalFromReports || items.length
-      : totalFromReports || items.length
-    const openQueue = isSuperAdmin
-      ? (dashboard.queue?.open ?? items.filter((item) => ACTIVE_SET.has(item.status)).length)
-      : (hasReportTotals ? reportOpen : items.filter((item) => ACTIVE_SET.has(item.status)).length)
-    const resolved = isSuperAdmin
-      ? (dashboard.open_vs_resolved?.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length)
-      : (hasReportTotals ? reportResolved : items.filter((item) => RESOLVED_SET.has(item.status)).length)
-    const unassigned = isSuperAdmin
-      ? (dashboard.queue?.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length)
-      : items.filter((item) => !item.assignee_name && !item.current_assignee__username).length
+    const totalRequests = Number(
+      isSuperAdmin
+        ? (dashboard.totals?.requests ?? (hasReportTotals ? reportTotal : (summary.total_requests ?? items.length)))
+        : (hasReportTotals ? reportTotal : (summary.total_requests ?? items.length))
+    )
+    const openQueue = Number(
+      isSuperAdmin
+        ? (dashboard.queue?.open ?? (hasReportTotals ? reportOpen : (summary.open_requests ?? items.filter((item) => ACTIVE_SET.has(item.status)).length)))
+        : (hasReportTotals ? reportOpen : (summary.open_requests ?? items.filter((item) => ACTIVE_SET.has(item.status)).length))
+    )
+    const resolved = Number(
+      isSuperAdmin
+        ? (dashboard.open_vs_resolved?.resolved ?? (hasReportTotals ? reportResolved : (summary.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length)))
+        : (hasReportTotals ? reportResolved : (summary.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length))
+    )
+    const unassigned = Number(
+      isSuperAdmin
+        ? (dashboard.queue?.unassigned ?? reports.queue?.unassigned ?? (summary.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length))
+        : (reports.queue?.unassigned ?? (summary.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length))
+    )
 
-    const avgDays = avgResolutionDays(items)
+    const avgDays = Number(summary.avg_resolution_days ?? avgResolutionDays(items))
     const avgTurnaround = avgDays ? `${avgDays.toFixed(1)}d` : '0.0d'
 
-    const overdue = items.filter((item) => {
+    const overdue = Number(summary.overdue ?? items.filter((item) => {
       const due = toDate(getRequestDeadline(item))
       return due && due.getTime() < Date.now() && !RESOLVED_SET.has(item.status)
-    }).length
+    }).length)
 
-    const resolutionRate = totalRequests ? Math.round((resolved / totalRequests) * 100) : 0
+    const resolutionRate = Number(summary.resolution_rate ?? (totalRequests ? Math.round((resolved / totalRequests) * 100) : 0))
     const workloadPressure = openQueue - resolved
 
     const timelineBase = []
@@ -284,7 +286,7 @@ function ReportsPage() {
       }
     })
 
-    const trend = [...timelineMap.values()]
+    const trend = Array.isArray(summary.trend) && summary.trend.length ? summary.trend : [...timelineMap.values()]
 
     const statusRows = (reports.requests_by_status || [])
       .map((entry) => ({
@@ -298,9 +300,13 @@ function ReportsPage() {
       fallbackStatusMap.set(item.status, (fallbackStatusMap.get(item.status) || 0) + 1)
     })
 
+    const summaryStatusRows = summary.status_counts
+      ? Object.entries(summary.status_counts).map(([status, total]) => ({ status, total: Number(total || 0) }))
+      : []
+
     const statusDistribution = statusRows.length
       ? statusRows
-      : [...fallbackStatusMap.entries()].map(([status, total]) => ({ status, total }))
+      : (summaryStatusRows.length ? summaryStatusRows : [...fallbackStatusMap.entries()].map(([status, total]) => ({ status, total })))
 
     const typeRows = (reports.requests_by_type || [])
       .map((entry) => ({
@@ -348,11 +354,16 @@ function ReportsPage() {
       .sort((a, b) => b.total - a.total)
       .slice(0, 4)
 
-    const requestTypeMix = (typeRows.length ? typeRows : fallbackTypeRows).slice(0, 4)
+    const summaryTypeRows = Array.isArray(summary.request_type_mix) ? summary.request_type_mix : []
+    const requestTypeMix = (summaryTypeRows.length ? summaryTypeRows : (typeRows.length ? typeRows : fallbackTypeRows)).slice(0, 4)
     const mixTotal = requestTypeMix.reduce((sum, row) => sum + row.total, 0)
-    const requestVolumeRows = canSeeCompanyVolume
-      ? (companyRows.length ? companyRows : unitRows)
-      : (entityRows.length ? entityRows : unitRows)
+    const summaryVolumeRows = Array.isArray(summary.request_volume_rows) ? summary.request_volume_rows : []
+    const requestVolumeRows = summaryVolumeRows.length
+      ? summaryVolumeRows
+      : (canSeeCompanyVolume
+          ? (companyRows.length ? companyRows : unitRows)
+          : (entityRows.length ? entityRows : unitRows))
+    const volumeTotal = requestVolumeRows.reduce((sum, row) => sum + Number(row.total || 0), 0)
 
     const recentMovement = [...items]
       .sort((a, b) => {
@@ -363,21 +374,30 @@ function ReportsPage() {
       .slice(0, 5)
       .map((item) => ({
         id: item.id,
-        reference: cleanLabel(item.reference_code || item.request_number, '-'),
+        reference: cleanLabel(item.reference || item.reference_code || item.request_number, '-'),
         status: cleanLabel(item.status, 'NEW'),
-        category: cleanLabel(item.category, 'OTHER'),
+        category: cleanLabel(item.category || item.type, 'OTHER'),
         title: cleanLabel(item.title, 'Untitled request'),
-        actor: cleanLabel(item.created_by_name || item.creator_name || item.requester_name, 'Unknown user'),
-        target: cleanLabel(item.target_entity_code || item.target_entity_name || item.source_entity_name, 'Unspecified unit'),
-        when: formatRelative(item.updated_at || item.updatedAt || item.created_at || item.createdAt),
+        actor: cleanLabel(item.actor || item.created_by_name || item.creator_name || item.requester_name, 'Unknown user'),
+        target: cleanLabel(item.target || item.target_entity_code || item.target_entity_name || item.source_entity_name, 'Unspecified unit'),
+        when: item.when || formatRelative(item.updated_at || item.updatedAt || item.created_at || item.createdAt),
       }))
+
+    const reportOwnershipRows = (reports.team_workload || [])
+      .map((entry, idx) => ({
+        name: cleanLabel(entry.current_assignee__username, 'Unassigned'),
+        total: Number(entry.total || 0),
+        role: 'User',
+        tone: AVATAR_TONE[idx % AVATAR_TONE.length],
+      }))
+      .filter((entry) => entry.total > 0)
 
     const ownershipMap = new Map()
     items.forEach((item) => {
       const key = cleanLabel(item.assignee_name || item.current_assignee__username, 'Unassigned')
       ownershipMap.set(key, (ownershipMap.get(key) || 0) + 1)
     })
-    const ownershipRows = [...ownershipMap.entries()]
+    const fallbackOwnershipRows = [...ownershipMap.entries()]
       .map(([name, total], idx) => ({
         name,
         total,
@@ -386,6 +406,7 @@ function ReportsPage() {
       }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 5)
+    const ownershipRows = (reportOwnershipRows.length ? reportOwnershipRows : fallbackOwnershipRows).slice(0, 5)
 
     const summaryRows = [
       { metric: 'Total requests', value: totalRequests },
@@ -411,14 +432,15 @@ function ReportsPage() {
       requestTypeMix,
       mixTotal,
       requestVolumeRows,
+      volumeTotal,
       recentMovement,
       ownershipRows,
       showExecutiveCards: canSeeExecutiveCards,
       summaryRows,
     }
-  }, [canSeeCompanyVolume, canSeeExecutiveCards, isSuperAdmin, state.dashboard, state.reports, state.requests])
+  }, [canSeeCompanyVolume, canSeeExecutiveCards, isSuperAdmin, requestsQuery.data?.items, requestsQuery.data?.summary, state.dashboard, state.reports])
 
-  if (state.loading) {
+  if (state.loading || requestsQuery.isLoading) {
     return (
       <main className="space-y-6">
         <Skeleton className="h-28 w-full rounded-md" />
@@ -428,12 +450,14 @@ function ReportsPage() {
     )
   }
 
-  if (state.error) {
+  const requestError = requestsQuery.error?.response?.data?.detail || (requestsQuery.error ? 'Could not load requests.' : '')
+
+  if (state.error || requestError) {
     return (
       <main className="space-y-4">
         <Card>
           <CardContent className="p-8 text-center">
-            <p className="text-sm font-bold text-destructive">{state.error}</p>
+            <p className="text-sm font-bold text-destructive">{state.error || requestError}</p>
           </CardContent>
         </Card>
       </main>
@@ -733,7 +757,7 @@ function ReportsPage() {
           <CardContent className="space-y-4 p-5 pt-6">
             {parsed.requestVolumeRows.length ? (
               parsed.requestVolumeRows.map((row) => {
-                const pct = parsed.totalRequests ? Math.round((row.total / parsed.totalRequests) * 100) : 0
+                const pct = parsed.volumeTotal ? Math.round((row.total / parsed.volumeTotal) * 100) : 0
                 return (
                   <div key={row.name} className="group">
                     <div className="mb-2 flex items-center justify-between">
@@ -862,11 +886,6 @@ function ReportsPage() {
 }
 
 export default ReportsPage
-
-
-
-
-
 
 
 

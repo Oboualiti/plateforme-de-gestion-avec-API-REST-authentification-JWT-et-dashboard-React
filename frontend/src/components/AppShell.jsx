@@ -1,8 +1,11 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, Building2, FileText, LogOut, Menu, Moon, Search, Settings, Sun, UserRound, X } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import { useGlobalSearch } from "../hooks/useGlobalSearch";
+import { useNotifications } from "../hooks/useNotifications";
 import { ROLE_LABELS, ROLE_RANK } from "../lib/constants";
 import { getNavForRole } from "../config/nav";
 import { cn } from "../lib/utils";
@@ -173,49 +176,23 @@ function getNotificationSubtitle(item) {
 }
 function NotificationsBell() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [items, setItems] = useState([]);
-  const [unread, setUnread] = useState(0);
-  const canViewRequestDiscussion = Boolean(
-    user?.effective_permission_keys?.includes("view_request_discussion")
-  );
-
-  function filterVisibleNotifications(list) {
-    if (canViewRequestDiscussion) return list;
-    return (list || []).filter((item) => {
-      const eventType = String(item?.event_type || "").toUpperCase();
-      const hasMessageId = Boolean(item?.metadata?.message_id);
-      return eventType !== "REQUEST_MESSAGE" && !hasMessageId;
-    });
-  }
-
-  async function loadNotifications() {
-    try {
-      const unreadResp = await api.get("/notifications/", { params: { unread_only: "true" } });
-      const unreadItems = Array.isArray(unreadResp.data) ? unreadResp.data : [];
-      const visibleItems = filterVisibleNotifications(unreadItems);
-      setItems(visibleItems.slice(0, 6));
-      setUnread(visibleItems.length);
-    } catch {
-      setItems([]);
-      setUnread(0);
-    }
-  }
+  const notifications = useNotifications({ limit: 6 });
+  const unread = notifications.notifications.length;
 
   useEffect(() => {
-    void loadNotifications();
+    void notifications.loadNotifications(true);
 
     function handleChanged() {
-      void loadNotifications();
+      void notifications.loadNotifications(true);
     }
 
     function handleFocusRefresh() {
-      void loadNotifications();
+      void notifications.loadNotifications(true);
     }
 
     const pollId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
-        void loadNotifications();
+        void notifications.loadNotifications(true);
       }
     }, 15000);
 
@@ -229,23 +206,22 @@ function NotificationsBell() {
       document.removeEventListener("visibilitychange", handleFocusRefresh);
       window.clearInterval(pollId);
     };
-  }, [canViewRequestDiscussion]);
+  }, [notifications.canViewRequestDiscussion, notifications.loadNotifications]);
 
   async function openNotification(item) {
     try {
       if (!item.is_read) {
-        await api.post(`/notifications/${item.id}/read/`);
-        window.dispatchEvent(new Event("notifications:changed"));
+        await notifications.markAsRead(item.id);
       }
     } catch {
     } finally {
-      await loadNotifications();
+      await notifications.loadNotifications(true);
       navigate(item.link || "/notifications");
     }
   }
 
   return (
-    <DropdownMenu onOpenChange={(open) => open && loadNotifications()}>
+    <DropdownMenu onOpenChange={(open) => open && notifications.loadNotifications(true)}>
       <DropdownMenuTrigger asChild>
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
           <Bell className="h-4 w-4" />
@@ -260,17 +236,17 @@ function NotificationsBell() {
           {unread > 0 && <span className="text-xs font-normal text-muted-foreground">{unread} unread</span>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {items.length === 0 ? (
+        {notifications.notifications.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">You're all caught up.</div>
         ) : (
-          items.map((n) => (
+          notifications.notifications.map((n) => (
             <DropdownMenuItem
               key={n.id}
               onSelect={(event) => {
                 event.preventDefault();
                 void openNotification(n);
               }}
-              className="flex flex-col items-start justify-center gap-0"
+              className="flex flex-col items-start justify-center gap-0 focus:bg-muted focus:text-foreground"
             >
                 <div className="flex w-full items-center gap-2">
                   {!n.is_read && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
@@ -282,7 +258,7 @@ function NotificationsBell() {
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <NavLink to="/notifications" className="text-sm font-medium">
+          <NavLink to="/notifications" className="text-sm font-medium focus:bg-muted focus:text-foreground">
             Open notifications page
           </NavLink>
         </DropdownMenuItem>
@@ -292,111 +268,21 @@ function NotificationsBell() {
 }
 
 export function AppShell({ children }) {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchSuggestions, setSearchSuggestions] = useState({
-    requests: [],
-    users: [],
-    entities: [],
-  });
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const stored = window.localStorage.getItem("theme");
-    if (stored === "dark") return true;
-    if (stored === "light") return false;
-    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
-  const blurTimeoutRef = useRef(null);
+  const search = useGlobalSearch();
+  const { isDarkMode, setThemePreference } = useTheme();
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDarkMode);
-    window.localStorage.setItem("theme", isDarkMode ? "dark" : "light");
-  }, [isDarkMode]);
-
-  useEffect(() => {
-    if (location.pathname !== "/requests") return;
-    const params = new URLSearchParams(location.search);
-    setGlobalSearch(params.get("search") || "");
-  }, [location.pathname, location.search]);
-
-  function handleGlobalSearchSubmit(event) {
-    event.preventDefault();
-    const params = new URLSearchParams();
-    const query = globalSearch.trim();
-
-    if (location.pathname === "/requests") {
-      const currentParams = new URLSearchParams(location.search);
-      const currentScope = currentParams.get("scope");
-      if (currentScope) params.set("scope", currentScope);
+  async function handleThemeToggle() {
+    const nextTheme = isDarkMode ? "light" : "dark";
+    setThemePreference(nextTheme);
+    if (!isAuthenticated || !user) return;
+    try {
+      await api.patch("/auth/me/", { theme_preference: nextTheme });
+    } catch {
+      setThemePreference(isDarkMode ? "dark" : "light");
     }
-    if (query) params.set("search", query);
-
-    navigate(`/requests${params.toString() ? `?${params.toString()}` : ""}`);
-    setIsSearchOpen(false);
   }
-
-  useEffect(() => {
-    const query = globalSearch.trim();
-    if (query.length < 2) {
-      setSearchLoading(false);
-      setSearchSuggestions({ requests: [], users: [], entities: [] });
-      return;
-    }
-
-    let active = true;
-    setSearchLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const response = await api.get("/admin/global-search/", {
-          params: { q: query, limit: 5 },
-        });
-        if (!active) return;
-        setSearchSuggestions({
-          requests: Array.isArray(response.data?.requests) ? response.data.requests : [],
-          users: Array.isArray(response.data?.users) ? response.data.users : [],
-          entities: Array.isArray(response.data?.entities) ? response.data.entities : [],
-        });
-      } catch {
-        if (!active) return;
-        setSearchSuggestions({ requests: [], users: [], entities: [] });
-      } finally {
-        if (active) setSearchLoading(false);
-      }
-    }, 220);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [globalSearch]);
-
-  function handleSearchFocus() {
-    if (blurTimeoutRef.current) {
-      clearTimeout(blurTimeoutRef.current);
-      blurTimeoutRef.current = null;
-    }
-    setIsSearchOpen(true);
-  }
-
-  function handleSearchBlur() {
-    blurTimeoutRef.current = setTimeout(() => {
-      setIsSearchOpen(false);
-    }, 140);
-  }
-
-  function handleSuggestionClick(item) {
-    setIsSearchOpen(false);
-    setGlobalSearch(item.label || "");
-    navigate(item.link);
-  }
-
-  const totalSuggestions =
-    searchSuggestions.requests.length +
-    searchSuggestions.users.length +
-    searchSuggestions.entities.length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -431,32 +317,32 @@ export function AppShell({ children }) {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <form className="relative hidden flex-1 max-w-md md:block" onSubmit={handleGlobalSearchSubmit}>
+          <form className="relative hidden flex-1 max-w-md md:block" onSubmit={search.handleSubmit}>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              value={globalSearch}
-              onChange={(event) => setGlobalSearch(event.target.value)}
-              onFocus={handleSearchFocus}
-              onBlur={handleSearchBlur}
+              value={search.query}
+              onChange={(event) => search.setQuery(event.target.value)}
+              onFocus={search.handleFocus}
+              onBlur={search.handleBlur}
               placeholder="Search requests, users, entities..."
               className="h-9 pl-9"
             />
-            {isSearchOpen && globalSearch.trim().length >= 2 && (
+            {search.isOpen && search.query.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 rounded-md border-2 border-ink bg-card p-2 shadow-elev-lg">
-                {searchLoading ? (
+                {search.loading ? (
                   <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
-                ) : totalSuggestions === 0 ? (
+                ) : search.totalSuggestions === 0 ? (
                   <div className="px-2 py-2 text-xs text-muted-foreground">No matching requests, users, or entities.</div>
                 ) : (
                   <div className="max-h-72 overflow-y-auto">
-                    {searchSuggestions.requests.length > 0 && (
+                    {search.suggestions.requests.length > 0 && (
                       <div className="mb-1">
                         <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Requests</p>
-                        {searchSuggestions.requests.map((item) => (
+                        {search.suggestions.requests.map((item) => (
                           <button
                             key={`request-${item.id}`}
                             type="button"
-                            onMouseDown={() => handleSuggestionClick(item)}
+                            onMouseDown={() => search.handleSuggestionClick(item)}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-primary-soft"
                           >
                             <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -466,14 +352,14 @@ export function AppShell({ children }) {
                         ))}
                       </div>
                     )}
-                    {searchSuggestions.users.length > 0 && (
+                    {search.suggestions.users.length > 0 && (
                       <div className="mb-1">
                         <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Users</p>
-                        {searchSuggestions.users.map((item) => (
+                        {search.suggestions.users.map((item) => (
                           <button
                             key={`user-${item.id}`}
                             type="button"
-                            onMouseDown={() => handleSuggestionClick(item)}
+                            onMouseDown={() => search.handleSuggestionClick(item)}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-primary-soft"
                           >
                             <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -483,14 +369,14 @@ export function AppShell({ children }) {
                         ))}
                       </div>
                     )}
-                    {searchSuggestions.entities.length > 0 && (
+                    {search.suggestions.entities.length > 0 && (
                       <div>
                         <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Entities</p>
-                        {searchSuggestions.entities.map((item) => (
+                        {search.suggestions.entities.map((item) => (
                           <button
                             key={`entity-${item.id}`}
                             type="button"
-                            onMouseDown={() => handleSuggestionClick(item)}
+                            onMouseDown={() => search.handleSuggestionClick(item)}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-primary-soft"
                           >
                             <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -508,7 +394,7 @@ export function AppShell({ children }) {
           <div className="ml-auto flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setIsDarkMode((current) => !current)}
+              onClick={handleThemeToggle}
               className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input px-2.5 text-xs font-bold uppercase tracking-wider text-foreground transition-colors hover:bg-muted"
               title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
@@ -527,11 +413,6 @@ export function AppShell({ children }) {
     </div>
   );
 }
-
-
-
-
-
 
 
 

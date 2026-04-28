@@ -32,6 +32,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "last_name",
             "job_title",
             "phone_number",
+            "theme_preference",
             "company",
             "company_name",
             "entity",
@@ -86,6 +87,12 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     def get_request_creation_allowed(self, obj):
         return can_create_requests(obj)
+
+
+class UserThemePreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["theme_preference"]
 
 
 class ChangePasswordSerializer(serializers.Serializer):

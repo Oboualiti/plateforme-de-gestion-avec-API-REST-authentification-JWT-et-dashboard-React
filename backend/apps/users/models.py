@@ -5,6 +5,10 @@ from django.db import models
 
 
 class User(AbstractUser):
+    class ThemePreference(models.TextChoices):
+        LIGHT = "light", "Light"
+        DARK = "dark", "Dark"
+
     company = models.ForeignKey(
         "companies.Company",
         on_delete=models.SET_NULL,
@@ -28,6 +32,11 @@ class User(AbstractUser):
         blank=True,
         related_name="team_members",
         limit_choices_to={"is_active": True},
+    )
+    theme_preference = models.CharField(
+        max_length=10,
+        choices=ThemePreference.choices,
+        blank=True,
     )
 
     def clean(self):

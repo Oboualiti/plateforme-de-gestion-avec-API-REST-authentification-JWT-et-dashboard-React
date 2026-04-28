@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import MainLayout from '../components/layout/MainLayout'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import Dashboard from '../pages/Dashboard'
 import CreateRequestPage from '../pages/CreateRequestPage'
 import CreateManagedUserPage from '../pages/CreateManagedUserPage'
@@ -29,20 +30,7 @@ function LoginPage() {
   const [form, setForm] = useState({ username: 'prod', password: 'test12345' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const stored = window.localStorage.getItem('theme')
-    if (stored === 'dark') return true
-    if (stored === 'light') return false
-    return document.documentElement.classList.contains('dark')
-  })
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDarkMode(document.documentElement.classList.contains('dark'))
-    })
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
+  const { isDarkMode } = useTheme()
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
