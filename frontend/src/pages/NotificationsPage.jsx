@@ -1,136 +1,326 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Bell,
+  CheckCheck,
+  ClipboardList,
+  UserPlus,
+  AlertCircle,
+  MessageSquare,
+  RefreshCw,
+  CheckCircle2,
+  Settings,
+  Filter,
+  Calendar,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react'
 
-import PageHeader from '../components/layout/PageHeader'
-import { api } from '../lib/api'
 import { useNotifications } from '../hooks/useNotifications'
+
+const PAGE_SIZE = 30
+
+function withNotificationContext(link) {
+  if (!link) return '/notifications'
+  if (!link.startsWith('/requests/')) return link
+  const [path, rawQuery = ''] = link.split('?')
+  const params = new URLSearchParams(rawQuery)
+  params.set('from', 'notification')
+  return `${path}?${params.toString()}`
+}
+
+function formatEventType(value) {
+  return (value || 'notification')
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function getMetaForType(eventType) {
+  const key = String(eventType || '').toUpperCase()
+  if (key.includes('ASSIGN')) return { icon: UserPlus, dot: 'bg-success', tag: 'bg-success/15 text-success' }
+  if (key.includes('DEADLINE')) return { icon: AlertCircle, dot: 'bg-warning', tag: 'bg-warning/15 text-warning' }
+  if (key.includes('COMMENT') || key.includes('DISCUSSION')) return { icon: MessageSquare, dot: 'bg-secondary', tag: 'bg-secondary/15 text-secondary' }
+  if (key.includes('STATUS')) return { icon: RefreshCw, dot: 'bg-secondary', tag: 'bg-secondary/15 text-secondary' }
+  if (key.includes('COMPLETE') || key.includes('CLOSE') || key.includes('RESOLVE')) return { icon: CheckCircle2, dot: 'bg-success', tag: 'bg-success/15 text-success' }
+  if (key.includes('SYSTEM')) return { icon: Settings, dot: 'bg-muted-foreground', tag: 'bg-muted text-muted-foreground' }
+  return { icon: ClipboardList, dot: 'bg-secondary', tag: 'bg-secondary/15 text-secondary' }
+}
 
 function NotificationsPage() {
   const notifications = useNotifications()
+  const [activeTab, setActiveTab] = useState('all')
+  const [selectedTypes, setSelectedTypes] = useState([])
+  const [dateRange, setDateRange] = useState('last_7_days')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
-    let active = true
-    async function bootstrap() {
-      try {
-        await api.post('/notifications/read-all/')
-        window.dispatchEvent(new Event('notifications:changed'))
-      } catch {
-      } finally {
-        if (active) {
-          notifications.loadNotifications(false)
-        }
-      }
-    }
-    bootstrap()
-    return () => {
-      active = false
-    }
+    notifications.loadNotifications(false)
   }, [notifications.canViewRequestDiscussion, notifications.loadNotifications])
 
-  function formatEventType(value) {
-    return (value || 'notification')
-      .toLowerCase()
-      .replaceAll('_', ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase())
+  const allItems = notifications.notifications || []
+  const unreadCount = allItems.filter((item) => !item.is_read).length
+  const systemCount = allItems.filter((item) => String(item.event_type || '').toUpperCase().includes('SYSTEM')).length
+  const mentionCount = allItems.filter((item) => String(item.message || '').includes('@')).length
+
+  const filtered = useMemo(() => {
+    let list = allItems
+    if (activeTab === 'unread') list = list.filter((item) => !item.is_read)
+    if (activeTab === 'mentions') list = list.filter((item) => String(item.message || '').includes('@'))
+    if (activeTab === 'system') list = list.filter((item) => String(item.event_type || '').toUpperCase().includes('SYSTEM'))
+    if (selectedTypes.length) {
+      const set = new Set(selectedTypes)
+      list = list.filter((item) => set.has(String(item.event_type || 'notification').toUpperCase()))
+    }
+    const now = new Date()
+    if (dateRange === 'today') {
+      list = list.filter((item) => {
+        const d = new Date(item.created_at)
+        return (
+          d.getFullYear() === now.getFullYear()
+          && d.getMonth() === now.getMonth()
+          && d.getDate() === now.getDate()
+        )
+      })
+    } else if (dateRange === 'last_7_days') {
+      const threshold = new Date(now)
+      threshold.setDate(now.getDate() - 7)
+      list = list.filter((item) => new Date(item.created_at) >= threshold)
+    } else if (dateRange === 'last_month') {
+      const threshold = new Date(now)
+      threshold.setMonth(now.getMonth() - 1)
+      list = list.filter((item) => new Date(item.created_at) >= threshold)
+    }
+    return list
+  }, [activeTab, allItems, selectedTypes, dateRange])
+
+  const typeOptions = useMemo(() => {
+    const unique = Array.from(new Set(allItems.map((item) => String(item.event_type || 'notification').toUpperCase())))
+    return unique.map((key) => ({ key, label: formatEventType(key) }))
+  }, [allItems])
+
+  useEffect(() => {
+    setPage(1)
+  }, [activeTab, selectedTypes, notifications.unreadOnly, dateRange])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const startIndex = (safePage - 1) * PAGE_SIZE
+  const endIndex = startIndex + PAGE_SIZE
+  const pagedItems = filtered.slice(startIndex, endIndex)
+
+  function toggleType(typeKey) {
+    setSelectedTypes((current) => (
+      current.includes(typeKey)
+        ? current.filter((value) => value !== typeKey)
+        : [...current, typeKey]
+    ))
   }
 
   return (
     <main className="space-y-6">
-      <PageHeader
-        eyebrow={null}
-        title="Your notifications"
-        description="All updates related to requests, messages, and account actions."
-        actions={(
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
+            <Bell className="h-6 w-6" />
+            Notifications
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">All updates related to requests, messages and account actions.</p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-semibold text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={notifications.markAllRead}
+          disabled={notifications.busy}
+        >
+          <CheckCheck className="h-4 w-4" />
+          Mark all as read
+        </button>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_280px]">
+        <section className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
+            {[
+              { key: 'all', label: 'All', count: allItems.length },
+              { key: 'unread', label: 'Unread only', count: unreadCount },
+              { key: 'mentions', label: 'Mentions', count: mentionCount },
+              { key: 'system', label: 'System', count: systemCount },
+            ].map((tab) => {
+              const active = activeTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                    active
+                      ? 'border-secondary bg-secondary/15 text-secondary'
+                      : 'border-border bg-card text-foreground hover:bg-muted/60'
+                  }`}
+                >
+                  {tab.label}
+                  <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${active ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="surface-card overflow-hidden p-2">
+            {notifications.loading ? (
+              <p className="px-4 py-10 text-sm text-muted-foreground">Loading notifications...</p>
+            ) : notifications.error ? (
+              <p className="px-4 py-10 text-sm font-medium text-destructive">{notifications.error}</p>
+            ) : filtered.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">No notifications.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {pagedItems.map((item, index) => {
+                  const meta = getMetaForType(item.event_type)
+                  const Icon = meta.icon
+                  const highlighted = !item.is_read && index === 0
+                  return (
+                    <article key={item.id} className={`relative flex gap-3 px-4 py-4 ${highlighted ? 'bg-secondary/10' : ''}`}>
+                      {highlighted ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-secondary" /> : null}
+                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/60">
+                        <Icon className="h-5 w-5 text-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="truncate text-sm font-semibold text-foreground">{item.title}</h3>
+                          <small className="shrink-0 text-xs text-muted-foreground">{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">{item.message}</p>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.tag}`}>
+                            {formatEventType(item.event_type)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {item.link ? (
+                              <a className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60" href={withNotificationContext(item.link)}>
+                                Open
+                              </a>
+                            ) : null}
+                            {!item.is_read ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => notifications.markAsRead(item.id)}
+                                disabled={notifications.busy}
+                              >
+                                Mark read
+                              </button>
+                            ) : (
+                              <CheckCheck className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            {!item.is_read ? <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} /> : null}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {!notifications.loading && !notifications.error && filtered.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="px-2 text-xs">Page {safePage} of {totalPages}</span>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              <span className="text-xs">
+                Showing {filtered.length ? startIndex + 1 : 0} to {Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} notifications
+              </span>
+            </div>
+          ) : null}
+        </section>
+
+        <aside className="surface-card h-fit p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Filter className="h-4 w-4" />
+              Filters
+            </p>
             <button
               type="button"
-              className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                notifications.unreadOnly
-                  ? 'border-border bg-background text-foreground hover:bg-muted/60'
-                  : 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
-              }`}
-              onClick={() => notifications.loadNotifications(false)}
-              disabled={notifications.busy}
+              className="text-xs font-semibold text-secondary hover:underline"
+              onClick={() => {
+                setSelectedTypes([])
+                setDateRange('all')
+              }}
             >
-              All
-            </button>
-            <button
-              type="button"
-              className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                notifications.unreadOnly
-                  ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'border-border bg-background text-foreground hover:bg-muted/60'
-              }`}
-              onClick={() => notifications.loadNotifications(true)}
-              disabled={notifications.busy}
-            >
-              Unread only
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={notifications.markAllRead}
-              disabled={notifications.busy}
-            >
-              Mark all read
+              Clear all
             </button>
           </div>
-        )}
-      />
 
-      <section className="surface-card overflow-hidden">
-        {notifications.loading && <p className="px-4 py-6 text-sm text-muted-foreground">Loading notifications...</p>}
-        {notifications.error && <p className="px-4 py-6 text-sm font-medium text-destructive">{notifications.error}</p>}
-        {!notifications.loading && !notifications.error && notifications.notifications.length === 0 && (
-          <p className="px-4 py-10 text-center text-sm text-muted-foreground">No notifications.</p>
-        )}
-        {!notifications.loading && !notifications.error && notifications.notifications.length > 0 && (
-          <div className="divide-y divide-border">
-            {notifications.notifications.map((item) => (
-              <article
-                key={item.id}
-                className={`px-4 py-4 transition-colors ${item.is_read ? 'bg-card' : 'bg-primary-soft/50'}`}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <h3 className="text-base font-semibold text-foreground">{item.title}</h3>
-                    <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      {formatEventType(item.event_type)}
-                    </span>
-                  </div>
-                  <small className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleString()}</small>
-                </div>
+          <div className="space-y-5">
+            <div>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Type</p>
+              <div className="space-y-2">
+                {typeOptions.map((option) => {
+                  const checked = selectedTypes.includes(option.key)
+                  return (
+                    <label key={option.key} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={checked}
+                        onChange={() => toggleType(option.key)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
 
-                <p className="mt-3 text-sm text-foreground/90">{item.message}</p>
+            <div>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Date range</p>
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={dateRange}
+                  onChange={(event) => setDateRange(event.target.value)}
+                  className="h-10 w-full appearance-none rounded-md border border-border bg-background pl-9 pr-9 text-sm text-foreground"
+                >
+                  <option value="today">Today</option>
+                  <option value="last_7_days">Last 7 days</option>
+                  <option value="last_month">Last month</option>
+                  <option value="all">All notifications</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  {item.link ? (
-                    <a
-                      className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
-                      href={item.link}
-                    >
-                      Open
-                    </a>
-                  ) : null}
-                  {!item.is_read ? (
-                    <button
-                      type="button"
-                      className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => notifications.markAsRead(item.id)}
-                      disabled={notifications.busy}
-                    >
-                      Mark read
-                    </button>
-                  ) : (
-                    <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                      Read
-                    </span>
-                  )}
-                </div>
-              </article>
-            ))}
+            <div>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Read status</p>
+              <button type="button" className="flex h-10 w-full items-center justify-between rounded-md border border-border bg-background px-3 text-sm text-foreground">
+                {activeTab === 'unread' ? 'Unread only' : 'All'}
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
           </div>
-        )}
-      </section>
+        </aside>
+      </div>
     </main>
   )
 }

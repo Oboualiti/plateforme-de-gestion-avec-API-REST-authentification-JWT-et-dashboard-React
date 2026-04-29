@@ -776,8 +776,43 @@ function AdminControlCenterPage() {
     if (sectionKey === 'companies') {
       const companies = data.companies || []
       const seniorOptions = data.senior_options || []
+      const totalCompanies = companies.length
+      const activeCompanies = companies.filter((item) => item.is_active).length
+      const totalUsers = companies.reduce((sum, item) => sum + Number(item.user_count || 0), 0)
+      const totalEntities = companies.reduce((sum, item) => sum + Number(item.entity_count || 0), 0)
       return (
         <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Companies</p>
+                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalCompanies}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Registered companies</p>
+              </CardContent>
+            </Card>
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Active Companies</p>
+                <p className="mt-2 text-3xl font-extrabold text-success">{activeCompanies}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Companies currently active</p>
+              </CardContent>
+            </Card>
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Users</p>
+                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalUsers}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Across all companies</p>
+              </CardContent>
+            </Card>
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Entities</p>
+                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalEntities}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Linked to companies</p>
+              </CardContent>
+            </Card>
+          </div>
+
           {canManageCompanies && (
             <Card>
               <CardHeader>
@@ -898,6 +933,14 @@ function AdminControlCenterPage() {
       const entities = data.entities || []
       const companies = data.companies || []
       const managerOptions = data.manager_options || []
+      const totalEntities = entities.length
+      const activeEntities = entities.filter((item) => item.is_active).length
+      const totalUsers = entities.reduce((sum, item) => sum + Number(item.user_count || 0), 0)
+      const linkedCompanies = new Set(
+        entities
+          .map((item) => item.company || item.company_id)
+          .filter(Boolean),
+      ).size
       const filteredEntities = entities.filter((item) => {
         const matchesCompany = entityCompanyFilter === 'all' || String(item.company) === entityCompanyFilter
         const matchesType = entityTypeFilter === 'all' || item.entity_type === entityTypeFilter
@@ -907,6 +950,37 @@ function AdminControlCenterPage() {
 
       return (
         <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Entities</p>
+                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalEntities}</p>
+                <p className="mt-1 text-xs text-muted-foreground">All entities</p>
+              </CardContent>
+            </Card>
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Active Entities</p>
+                <p className="mt-2 text-3xl font-extrabold text-success">{activeEntities}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Currently active</p>
+              </CardContent>
+            </Card>
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Users</p>
+                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalUsers}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Across all entities</p>
+              </CardContent>
+            </Card>
+            <Card className="surface-card">
+              <CardContent className="p-4">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Companies</p>
+                <p className="mt-2 text-3xl font-extrabold text-foreground">{linkedCompanies}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Entities linked to companies</p>
+              </CardContent>
+            </Card>
+          </div>
+
           {canManageEntities && (
             <Card>
               <CardHeader>

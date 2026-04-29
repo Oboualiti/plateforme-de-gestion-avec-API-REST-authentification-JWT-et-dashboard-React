@@ -166,7 +166,8 @@ class EffectivePermissionUserSerializer(serializers.ModelSerializer):
         return get_effective_permission_keys(obj)
 
     def get_permissions(self, obj):
-        return get_permission_matrix_for_user(obj)
+        editor_user = self.context.get("editor_user")
+        return get_permission_matrix_for_user(obj, editor_user=editor_user)
 
 
 class RequestAdminSummarySerializer(serializers.ModelSerializer):

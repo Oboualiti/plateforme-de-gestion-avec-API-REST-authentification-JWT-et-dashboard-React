@@ -9,7 +9,7 @@ from rest_framework.test import APITestCase
 
 from apps.companies.models import Company
 from apps.entities.models import Entity
-from apps.permissions_app.models import UserRole
+from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
 from apps.requests_app.models import MainBranch, OperationalUnit, ServiceRequest
 from apps.roles.models import Role
 from apps.users.models import User
@@ -145,6 +145,38 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.pending_request.refresh_from_db()
         self.assertTrue(self.pending_request.is_submitted_to_target)
         self.assertEqual(self.pending_request.status, ServiceRequest.Status.NEW)
+
+    def test_basic_user_with_approve_permission_submits_directly(self):
+        approve_permission = AppPermission.objects.get(key="approve_request")
+        UserPermissionOverride.objects.update_or_create(
+            user=self.requester,
+            permission=approve_permission,
+            defaults={"is_allowed": True},
+        )
+
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            reverse("requests-list-create"),
+            {
+                "title": "Direct user request",
+                "description": "Should skip pending approval",
+                "type": "INFO",
+                "priority": "MEDIUM",
+                "target_team": self.support_entity.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        created_request = ServiceRequest.objects.get(id=response.data["id"])
+        self.assertTrue(created_request.is_submitted_to_target)
+
+        pending_response = self.client.get(
+            f"{reverse('requests-list-create')}?scope=pending",
+            format="json",
+        )
+        self.assertEqual(pending_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(pending_response.data.get("count"), 0)
 
     def test_manager_outside_requester_hierarchy_cannot_approve_pending_request(self):
         self.client.force_authenticate(user=self.outsider_manager)

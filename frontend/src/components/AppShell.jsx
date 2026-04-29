@@ -54,6 +54,21 @@ function SidebarContent({ onNavigate, isDarkMode }) {
     roleKeys[0])
     : (user?.role || "user");
   const roleLabel = ROLE_LABELS[primaryRoleKey] || "User";
+  const menuNotifications = useNotifications();
+
+  useEffect(() => {
+    void menuNotifications.loadNotifications(false);
+
+    function handleChanged() {
+      void menuNotifications.loadNotifications(false);
+    }
+
+    window.addEventListener("notifications:changed", handleChanged);
+    return () => {
+      window.removeEventListener("notifications:changed", handleChanged);
+    };
+  }, [menuNotifications.loadNotifications]);
+
 
   return (
     <div className="flex h-full flex-col bg-sidebar">
@@ -174,10 +189,20 @@ function getNotificationSubtitle(item) {
   if (text.length > 80) return `${text.slice(0, 77)}...`;
   return text;
 }
+
+function withNotificationContext(link) {
+  if (!link) return "/notifications";
+  if (!link.startsWith("/requests/")) return link;
+  const [path, rawQuery = ""] = link.split("?");
+  const params = new URLSearchParams(rawQuery);
+  params.set("from", "notification");
+  return `${path}?${params.toString()}`;
+}
+
 function NotificationsBell() {
   const navigate = useNavigate();
   const notifications = useNotifications({ limit: 6 });
-  const unread = notifications.notifications.length;
+  const unread = notifications.unreadCount || 0;
 
   useEffect(() => {
     void notifications.loadNotifications(true);
@@ -216,7 +241,7 @@ function NotificationsBell() {
     } catch {
     } finally {
       await notifications.loadNotifications(true);
-      navigate(item.link || "/notifications");
+      navigate(withNotificationContext(item.link));
     }
   }
 
@@ -225,9 +250,11 @@ function NotificationsBell() {
       <DropdownMenuTrigger asChild>
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
           <Bell className="h-4 w-4" />
-          {unread > 0 && (
-            <span className="absolute right-1.5 top-1.5 inline-flex h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
-          )}
+          {unread > 0 ? (
+            <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full border border-background bg-destructive px-1 text-[10px] font-bold leading-4 text-destructive-foreground">
+              {unread > 99 ? "99+" : unread}
+            </span>
+          ) : null}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
@@ -413,9 +440,4 @@ export function AppShell({ children }) {
     </div>
   );
 }
-
-
-
-
-
 

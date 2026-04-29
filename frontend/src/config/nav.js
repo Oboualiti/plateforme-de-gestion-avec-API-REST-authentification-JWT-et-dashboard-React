@@ -33,8 +33,17 @@ export function getNavForRole(role, user = null) {
       || role === "senior"
       || ((role === "manager" || role === "team_leader") && user?.entity_type === "PROD")
     );
+  const canApproveAsBasicUser = role === "user" && has("approve_request");
   const canTrackOwnPending = has("view_own_requests") && canCreateRequests;
   const canAccessPending = canApprovePending || canTrackOwnPending;
+  const canAccessRequests = hasAny([
+    "view_all_requests",
+    "view_company_requests",
+    "view_entity_requests",
+    "view_team_requests",
+    "view_own_requests",
+    
+  ]);
   const canAccessReports = Boolean(user?.reports_page_access_allowed);
   const canExportReports = has("export_data");
   const canManageUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
@@ -57,11 +66,11 @@ export function getNavForRole(role, user = null) {
             ...(canCreateRequests
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
-            ...(canCreateRequests
+            ...(canCreateRequests && !canApproveAsBasicUser
               ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
             ...(has("view_own_requests")
-              ? [{ label: "My Requests", to: "/requests?scope=mine", icon: ListChecks }]
+              ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
@@ -93,7 +102,7 @@ export function getNavForRole(role, user = null) {
           label: "Workspace",
           items: [
             ...(has("view_team_requests")
-              ? [{ label: "Incoming Queue", to: "/requests?scope=team", icon: Inbox }]
+              ? [{ label: "Requests", to: "/requests?scope=all", icon: Inbox }]
               : []),
             ...(canCreateRequests
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
@@ -129,8 +138,8 @@ export function getNavForRole(role, user = null) {
         {
           label: "Workspace",
           items: [
-            ...(has("view_entity_requests")
-              ? [{ label: "Entity Requests", to: "/requests?scope=entity", icon: ListChecks }]
+            ...(canAccessRequests
+              ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
             ...(canAccessPending
               ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
@@ -161,10 +170,12 @@ export function getNavForRole(role, user = null) {
         {
           label: "Operations",
           items: [
-            ...(has("view_company_requests")
-              ? [{ label: "Company Requests", to: "/requests?scope=company", icon: ListChecks }]
+            ...(canAccessRequests
+              ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
-            { label: "Pending Requests", to: "/pending-requests", icon: Inbox },
+            ...(canAccessPending
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
+              : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],

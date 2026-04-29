@@ -569,7 +569,9 @@ class RequestListCreateView(APIView):
         requester_unit = get_or_create_unit_for_entity(selected_source_entity)
         target_unit = get_or_create_unit_for_entity(target_entity)
         requester_primary_role = get_primary_role_key(request.user)
-        submit_to_target_now = requester_primary_role != "user"
+        submit_to_target_now = requester_primary_role != "user" or has_permission(
+            request.user, "approve_request"
+        )
 
         service_request = ServiceRequest.objects.create(
             request_number=f"REQ-{timezone.now():%Y%m%d%H%M%S%f}",
@@ -1417,6 +1419,10 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
         visibility_filter |= Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
 
     pending_visibility = get_pending_approval_visibility_filter(user)
+    if "view_all_requests" in effective_permissions:
+        return base_queryset.filter(
+            Q(is_submitted_to_target=True) | pending_visibility,
+        )
     return base_queryset.filter(
         visibility_filter,
         Q(is_submitted_to_target=True) | pending_visibility,
@@ -1713,11 +1719,14 @@ def apply_request_filters(queryset, params):
 
 def apply_scope_filters(queryset, user, scope):
     normalized_scope = (scope or "").strip().lower()
+    role_key = get_primary_role_key(user)
     if normalized_scope == "mine":
         if not has_permission(user, "view_own_requests"):
             return queryset.none()
         return queryset.filter(requester_user_id=user.id)
     if normalized_scope == "pending":
+        if role_key == "user" and has_permission(user, "approve_request"):
+            return queryset.none()
         if has_permission(user, "approve_request") and can_access_pending_scope(user):
             return queryset.filter(
                 is_submitted_to_target=False,

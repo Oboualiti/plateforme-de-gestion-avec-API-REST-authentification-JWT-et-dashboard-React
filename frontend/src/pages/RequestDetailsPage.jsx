@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
@@ -21,6 +21,7 @@ import {
   MessageSquarePlus,
   ExternalLink,
   Clock,
+  Loader2,
 } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -198,14 +199,86 @@ function StatusNoteModal({
   )
 }
 
+function PendingDecisionModal({
+  open,
+  busy,
+  error,
+  note,
+  requestData,
+  canDecide,
+  onChangeNote,
+  onApprove,
+  onReject,
+  onClose,
+}) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4">
+      <section className="w-full max-w-lg rounded-xl border-2 border-ink bg-card shadow-elev-xl">
+        <div className="border-b border-border px-6 py-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Pending approval</p>
+          <h3 className="mt-1 text-lg font-extrabold text-foreground">Request decision required</h3>
+          <p className="mt-1 text-sm text-muted-foreground">This request was opened from notifications and is waiting for approval.</p>
+        </div>
+        <div className="border-b border-border px-6 py-4">
+          <div className="space-y-1.5 text-sm">
+            <p className="font-semibold text-foreground">{requestData?.title || '-'}</p>
+            <p className="text-xs text-muted-foreground">
+              Ref: {requestData?.request_number || '-'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {requestData?.source_entity_name || '-'} - {requestData?.target_entity_name || '-'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Priority: {(requestData?.priority || 'MEDIUM').toUpperCase()} • Created: {formatDateOnly(requestData?.created_at)}
+            </p>
+          </div>
+        </div>
+        <div className="space-y-3 px-6 py-5">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Rejection reason (required for reject)
+          </label>
+          <textarea
+            value={note}
+            onChange={(event) => onChangeNote(event.target.value)}
+            className="w-full min-h-[110px] rounded-lg border-2 border-ink bg-card p-3 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-muted-foreground"
+            placeholder="Write reason if you reject..."
+          />
+          {error ? <p className="text-xs font-semibold text-destructive">{error}</p> : null}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            Close
+          </Button>
+          <Button type="button" onClick={onApprove} disabled={busy || !canDecide}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Approve'}
+          </Button>
+          <Button type="button" variant="destructive" onClick={onReject} disabled={busy || !canDecide}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reject'}
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function RequestDetailsPage() {
   const { requestId } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
   const [activeTab, setActiveTab] = useState('comments')
   const [comment, setComment] = useState('')
   const [commentAttachment, setCommentAttachment] = useState(null)
+  const [mentionState, setMentionState] = useState({
+    open: false,
+    query: '',
+    start: -1,
+    end: -1,
+    activeIndex: 0,
+  })
   const [assignmentForm, setAssignmentForm] = useState({ userId: '', note: '' })
   const [actionState, setActionState] = useState({ busy: false, error: '' })
   const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
@@ -220,7 +293,14 @@ function RequestDetailsPage() {
     error: '',
   })
   const [deadlineForm, setDeadlineForm] = useState({ value: '', saving: false, error: '' })
+  const [pendingDecisionModal, setPendingDecisionModal] = useState({
+    open: false,
+    busy: false,
+    note: '',
+    error: '',
+  })
   const discussionRef = useRef(null)
+  const commentInputRef = useRef(null)
 
   const request = state.request
   const roleKeys = user?.role_keys || []
@@ -243,6 +323,12 @@ function RequestDetailsPage() {
   const canEditDeadline = Boolean(request?.can_edit_deadline)
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const canAssignToMe = Boolean(request?.can_assign_to_me) && (isTeamLeader || isUser)
+  const openedFromNotification = new URLSearchParams(location.search).get('from') === 'notification'
+  const isPendingApproval = Boolean(request?.is_pending_approval)
+  const isPendingLikeRequest = isPendingApproval || request?.status === 'NEW'
+  const canDecidePendingFromNotification = isPendingLikeRequest
+    && allowedStatusTransitions.includes('ACCEPTED')
+    && allowedStatusTransitions.includes('REJECTED')
   const potentialAssignees = request?.potential_assignees || []
   const assignableUsers = useMemo(() => {
     if (!isSuperAdmin) return potentialAssignees
@@ -257,6 +343,30 @@ function RequestDetailsPage() {
 
   const comments = request?.comments || []
   const lastCommentId = comments.length ? comments[comments.length - 1].id : null
+  const mentionCandidates = useMemo(() => {
+    const map = new Map()
+    const add = (username, label = '') => {
+      const clean = String(username || '').trim()
+      if (!clean) return
+      if (!map.has(clean.toLowerCase())) {
+        map.set(clean.toLowerCase(), { username: clean, label })
+      }
+    }
+    add(user?.username, user?.fullName)
+    add(request?.requester_user__username || request?.requester_name, request?.requester_name)
+    add(request?.assignee_name, request?.assignee_name)
+    potentialAssignees.forEach((candidate) => {
+      add(candidate?.username, candidate?.full_name || candidate?.name || '')
+    })
+    comments.forEach((c) => add(c?.sender_username || c?.sender_name, c?.sender_name))
+    return Array.from(map.values())
+  }, [comments, potentialAssignees, request?.assignee_name, request?.requester_name, request?.requester_user__username, user?.fullName, user?.username])
+  const filteredMentions = useMemo(() => {
+    if (!mentionState.open) return []
+    const q = mentionState.query.toLowerCase()
+    const list = mentionCandidates.filter((candidate) => candidate.username.toLowerCase().includes(q))
+    return list.slice(0, 8)
+  }, [mentionCandidates, mentionState.open, mentionState.query])
 
   const historyItems = request?.activity_timeline || []
   const ITEMS_PER_PAGE = 8
@@ -317,6 +427,11 @@ function RequestDetailsPage() {
     }))
   }, [request?.deadline_date])
 
+  useEffect(() => {
+    if (!openedFromNotification || !isPendingLikeRequest) return
+    setPendingDecisionModal((current) => ({ ...current, open: true }))
+  }, [openedFromNotification, isPendingLikeRequest, request?.id])
+
   async function handleAction(promise) {
     setActionState({ busy: true, error: '' })
     try {
@@ -333,6 +448,32 @@ function RequestDetailsPage() {
     }
   }
 
+  async function submitPendingDecisionFromModal(status) {
+    setPendingDecisionModal((current) => ({ ...current, busy: true, error: '' }))
+    try {
+      const note = pendingDecisionModal.note.trim()
+      if (status === 'REJECTED' && !note) {
+        setPendingDecisionModal((current) => ({
+          ...current,
+          busy: false,
+          error: 'Rejection reason is required.',
+        }))
+        return
+      }
+
+      const response = await api.post(`/requests/${requestId}/status/`, { status, note })
+      setState((current) => ({ ...current, request: response.data }))
+      setPendingDecisionModal({ open: false, busy: false, note: '', error: '' })
+      navigate('/pending-requests', { replace: true })
+    } catch (error) {
+      setPendingDecisionModal((current) => ({
+        ...current,
+        busy: false,
+        error: error.response?.data?.detail || 'Could not submit decision.',
+      }))
+    }
+  }
+
   async function submitComment(e) {
     e.preventDefault()
     if (!canCommentRequest) return
@@ -341,6 +482,89 @@ function RequestDetailsPage() {
     formData.append('message', comment)
     if (commentAttachment) formData.append('attachment', commentAttachment)
     await handleAction(api.post(`/requests/${requestId}/comments/`, formData))
+  }
+
+  function closeMentionMenu() {
+    setMentionState((current) => ({
+      ...current,
+      open: false,
+      query: '',
+      start: -1,
+      end: -1,
+      activeIndex: 0,
+    }))
+  }
+
+  function insertMention(username) {
+    const start = mentionState.start
+    const end = mentionState.end >= 0 ? mentionState.end : start
+    if (start < 0) return
+    const before = comment.slice(0, start)
+    const after = comment.slice(end)
+    const mentionToken = `@${username} `
+    const nextValue = `${before}${mentionToken}${after}`
+    setComment(nextValue)
+    closeMentionMenu()
+    requestAnimationFrame(() => {
+      if (!commentInputRef.current) return
+      const caretPos = before.length + mentionToken.length
+      commentInputRef.current.focus()
+      commentInputRef.current.setSelectionRange(caretPos, caretPos)
+    })
+  }
+
+  function handleCommentInputChange(value) {
+    setComment(value)
+    const caret = commentInputRef.current?.selectionStart ?? value.length
+    const before = value.slice(0, caret)
+    const atIndex = before.lastIndexOf('@')
+    if (atIndex < 0) {
+      closeMentionMenu()
+      return
+    }
+    const prefix = before.slice(atIndex + 1)
+    const hasSpace = /\s/.test(prefix)
+    if (hasSpace) {
+      closeMentionMenu()
+      return
+    }
+    setMentionState({
+      open: true,
+      query: prefix,
+      start: atIndex,
+      end: caret,
+      activeIndex: 0,
+    })
+  }
+
+  function handleCommentInputKeyDown(event) {
+    if (!mentionState.open || !filteredMentions.length) return
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setMentionState((current) => ({
+        ...current,
+        activeIndex: (current.activeIndex + 1) % filteredMentions.length,
+      }))
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setMentionState((current) => ({
+        ...current,
+        activeIndex: (current.activeIndex - 1 + filteredMentions.length) % filteredMentions.length,
+      }))
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      const active = filteredMentions[mentionState.activeIndex]
+      if (active) insertMention(active.username)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMentionMenu()
+    }
   }
 
   function requestStatusChange(status) {
@@ -710,14 +934,43 @@ function RequestDetailsPage() {
                       </div>
 
                       {canCommentRequest ? (
-                        <form onSubmit={submitComment} className="mt-4 rounded-xl border-2 border-ink shadow-brutal bg-background overflow-hidden relative z-20">
-                          <div className="flex items-start gap-2 p-1">
+                        <form onSubmit={submitComment} className="mt-4 rounded-xl border-2 border-ink shadow-brutal bg-background overflow-visible relative z-20">
+                          <div className="relative flex items-start gap-2 p-1">
                              <textarea
+                              ref={commentInputRef}
                               value={comment}
-                              onChange={e => setComment(e.target.value)}
+                              onChange={e => handleCommentInputChange(e.target.value)}
+                              onKeyDown={handleCommentInputKeyDown}
                               placeholder="Type your message..."
                               className="flex-1 bg-transparent p-3 text-sm font-medium outline-none placeholder:text-muted-foreground resize-none min-h-[60px]"
                              />
+                             {mentionState.open && filteredMentions.length > 0 ? (
+                               <div className="absolute bottom-[calc(100%+6px)] left-3 z-40 max-h-56 w-96 max-w-[calc(100%-7.5rem)] overflow-y-auto rounded-md border-2 border-ink bg-card p-1 shadow-elev-lg">
+                                 {filteredMentions.map((candidate, index) => {
+                                    const active = index === mentionState.activeIndex
+                                    return (
+                                      <button
+                                        key={candidate.username}
+                                        type="button"
+                                       className={`flex w-full items-center justify-between rounded px-2.5 py-2 text-left text-xs font-semibold ${
+                                         active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted/60'
+                                       }`}
+                                       onMouseDown={(event) => {
+                                         event.preventDefault()
+                                         insertMention(candidate.username)
+                                       }}
+                                     >
+                                       <span>@{candidate.username}</span>
+                                       {candidate.label ? (
+                                         <span className={`truncate pl-2 ${active ? 'text-primary-foreground/90' : 'text-muted-foreground'}`}>
+                                           {candidate.label}
+                                         </span>
+                                       ) : null}
+                                     </button>
+                                   )
+                                 })}
+                               </div>
+                             ) : null}
                              <div className="flex flex-col gap-2 p-2 pt-3 pr-3">
                                <Button
                                  size="sm"
@@ -977,10 +1230,22 @@ function RequestDetailsPage() {
         onCancel={closeStatusDialog}
         onConfirm={confirmStatusChange}
       />
+      <PendingDecisionModal
+        open={pendingDecisionModal.open}
+        busy={pendingDecisionModal.busy}
+        error={pendingDecisionModal.error}
+        note={pendingDecisionModal.note}
+        requestData={request}
+        canDecide={canDecidePendingFromNotification}
+        onChangeNote={(value) =>
+          setPendingDecisionModal((current) => ({ ...current, note: value, error: '' }))
+        }
+        onApprove={() => submitPendingDecisionFromModal('ACCEPTED')}
+        onReject={() => submitPendingDecisionFromModal('REJECTED')}
+        onClose={() => navigate('/pending-requests')}
+      />
     </main>
   )
 }
 
 export default RequestDetailsPage
-
-

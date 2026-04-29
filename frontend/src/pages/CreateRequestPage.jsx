@@ -37,6 +37,8 @@ function CreateRequestPage() {
   const isSuperAdmin = roleKeys.includes('super_admin')
   const isSenior = roleKeys.includes('senior')
   const isNormalUser = roleKeys.includes('user')
+  const effectivePermissionKeys = new Set(user?.effective_permission_keys || [])
+  const canApproveRequest = effectivePermissionKeys.has('approve_request')
 
   useEffect(() => {
     refreshUser().catch(() => {})
@@ -201,8 +203,15 @@ function CreateRequestPage() {
       } else if (isSenior) {
         payload.append('source_entity_id', String(Number(form.source_entity_id)))
       }
-      await api.post('/requests/', payload)
-      navigate(isNormalUser ? '/pending-requests' : '/requests', { replace: true })
+      const response = await api.post('/requests/', payload)
+      const createdRequestId = response?.data?.id
+      const shouldRouteNormalUserToPending = isNormalUser && !canApproveRequest
+
+      if (isNormalUser && canApproveRequest) {
+        navigate('/requests?scope=mine', { replace: true })
+      } else {
+        navigate(shouldRouteNormalUserToPending ? '/pending-requests' : '/requests', { replace: true })
+      }
     } catch (nextError) {
       setError(nextError.response?.data?.detail || 'Could not create request.')
     } finally {

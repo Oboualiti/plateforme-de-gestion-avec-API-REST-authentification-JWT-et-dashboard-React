@@ -14,6 +14,8 @@ export function useNotifications({ limit } = {}) {
     loading: true,
     error: '',
     notifications: [],
+    totalCount: 0,
+    unreadCount: 0,
     unreadOnly: false,
   })
   const [busy, setBusy] = useState(false)
@@ -42,10 +44,15 @@ export function useNotifications({ limit } = {}) {
           params: { unread_only: nextUnreadOnly ? 'true' : undefined },
         })
         const visibleNotifications = filterVisibleNotifications(response.data || [])
+        const unreadCount = nextUnreadOnly
+          ? visibleNotifications.length
+          : visibleNotifications.filter((item) => !item.is_read).length
         setState((current) => ({
           ...current,
           loading: false,
           notifications: limit ? visibleNotifications.slice(0, limit) : visibleNotifications,
+          totalCount: visibleNotifications.length,
+          unreadCount,
           unreadOnly: nextUnreadOnly,
         }))
       } catch (error) {
@@ -54,6 +61,8 @@ export function useNotifications({ limit } = {}) {
           loading: false,
           error: error.response?.data?.detail || 'Could not load notifications.',
           notifications: [],
+          totalCount: 0,
+          unreadCount: 0,
         }))
       }
     },
@@ -63,19 +72,14 @@ export function useNotifications({ limit } = {}) {
   const markAsRead = useCallback(async (notificationId) => {
     setBusy(true)
     try {
-      const response = await api.post(`/notifications/${notificationId}/read/`)
-      setState((current) => ({
-        ...current,
-        notifications: current.notifications.map((item) =>
-          item.id === notificationId ? response.data : item,
-        ),
-      }))
+      await api.post(`/notifications/${notificationId}/read/`)
+      await loadNotifications(unreadOnlyRef.current)
       dispatchNotificationsChanged()
     } catch {
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [loadNotifications])
 
   const markAllRead = useCallback(async () => {
     setBusy(true)

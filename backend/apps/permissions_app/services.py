@@ -433,9 +433,12 @@ def get_permission_matrix_for_user(user, editor_user=None):
     }
     result = []
     permissions_queryset = AppPermission.objects.all()
+    
+    # Get delegatable permissions if editor is provided
+    delegatable_keys = set()
     if editor_user is not None:
-        delegatable_keys = get_delegatable_permission_keys(editor_user)
-        permissions_queryset = permissions_queryset.filter(key__in=delegatable_keys)
+        delegatable_keys = set(get_delegatable_permission_keys(editor_user))
+    
     for permission in permissions_queryset.order_by("category", "key"):
         override = overrides.get(permission.key)
         is_effective = permission.key in inherited
@@ -450,6 +453,7 @@ def get_permission_matrix_for_user(user, editor_user=None):
                 "inherited": permission.key in inherited,
                 "override": None if override is None else override.is_allowed,
                 "effective": is_effective,
+                "delegatable": permission.key in delegatable_keys if editor_user else None,
             }
         )
     return result

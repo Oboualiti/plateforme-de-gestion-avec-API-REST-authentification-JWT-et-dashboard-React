@@ -242,6 +242,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "view_users_company",
         "view_users_entity",
         "create_request",
+        "view_all_requests",
         "view_company_requests",
         "view_entity_requests",
         "view_team_requests",

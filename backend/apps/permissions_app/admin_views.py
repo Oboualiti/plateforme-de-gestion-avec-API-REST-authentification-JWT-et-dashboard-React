@@ -1668,7 +1668,7 @@ class AdminPermissionsView(AdminBaseView):
         if user_id:
             target = self.scoped_users(request.user).filter(id=user_id).first()
             if target and can_view_target_user(request.user, target):
-                payload["selected_user"] = EffectivePermissionUserSerializer(target).data
+                payload["selected_user"] = EffectivePermissionUserSerializer(target, context={"editor_user": request.user}).data
         return Response(payload)
 
 

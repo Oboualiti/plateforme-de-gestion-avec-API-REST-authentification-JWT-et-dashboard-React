@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, PlusCircle, Search } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, Loader2, PlusCircle, Search } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
 import PageHeader from '../components/layout/PageHeader'
@@ -61,10 +61,11 @@ function formatUpdated(value) {
 }
 
 function RequestsPage({ forcedScope = '' }) {
+  const navigate = useNavigate()
   const { user, refreshUser } = useAuth()
   const [searchParams] = useSearchParams()
   const scope = forcedScope || searchParams.get('scope') || 'all'
-  const resolvedScope = scope === 'mine' ? 'all' : scope
+  const resolvedScope = scope
   const initialSearch = searchParams.get('search') || ''
   const initialAssignee = searchParams.get('assignee') || ''
 
@@ -89,6 +90,20 @@ function RequestsPage({ forcedScope = '' }) {
     next: null,
     previous: null,
   })
+  const [selectedPendingIds, setSelectedPendingIds] = useState([])
+  const [bulkActionLoading, setBulkActionLoading] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState({
+    active: false,
+    label: '',
+    done: 0,
+    total: 0,
+  })
+  const [rejectDialog, setRejectDialog] = useState({
+    open: false,
+    mode: 'single',
+    requestIds: [],
+    reason: '',
+  })
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const effectivePermissionKeys = useMemo(
@@ -103,6 +118,9 @@ function RequestsPage({ forcedScope = '' }) {
   const isBasicUser = roleKeys.includes('user')
   const isIncomingQueueTeamLeader = isTeamLeader && resolvedScope === 'team'
   const isPendingScope = resolvedScope === 'pending'
+  const shouldRedirectBasicApproverFromPending = isPendingScope
+    && isBasicUser
+    && hasPermission('approve_request')
   const canDecidePending = isPendingScope
     && hasPermission('approve_request')
     && (
@@ -124,6 +142,11 @@ function RequestsPage({ forcedScope = '' }) {
     entity: 'Entity requests',
     company: 'Company requests',
   }
+
+  useEffect(() => {
+    if (!shouldRedirectBasicApproverFromPending) return
+    navigate('/requests?scope=mine', { replace: true })
+  }, [navigate, shouldRedirectBasicApproverFromPending])
 
   const applyScopeFilter = (items) => {
     if (!Array.isArray(items)) return []
@@ -232,12 +255,14 @@ function RequestsPage({ forcedScope = '' }) {
     try {
       await refreshUser()
       const isTeamScope = resolvedScope === 'team'
+      const canViewAllRequests = hasPermission('view_all_requests')
       const params = {
         page: isTeamScope ? 1 : pagination.page,
         page_size: isTeamScope ? 200 : pagination.pageSize,
         scope: resolvedScope !== 'all' ? resolvedScope : undefined,
         search: filters.search || undefined,
-        company_id: isGlobalAdmin ? filters.company_id || undefined : actorCompanyId || undefined,
+        // Only pass company_id if not viewing all requests globally
+        company_id: (isGlobalAdmin && !canViewAllRequests) ? filters.company_id || undefined : (!isGlobalAdmin && !canViewAllRequests ? actorCompanyId || undefined : undefined),
         source_entity_id: filters.source_entity_id || undefined,
         target_entity_id: filters.target_entity_id || undefined,
         status: filters.status || undefined,
@@ -284,12 +309,7 @@ function RequestsPage({ forcedScope = '' }) {
     }
   }
 
-  async function handlePendingDecision(requestId, nextStatus) {
-    let note = ''
-    if (nextStatus === 'REJECTED') {
-      note = window.prompt('Rejection reason (required):')?.trim() || ''
-      if (!note) return
-    }
+  async function handlePendingDecision(requestId, nextStatus, note = '') {
     try {
       await api.post(`/requests/${requestId}/status/`, { status: nextStatus, note })
       await loadRequests()
@@ -304,6 +324,22 @@ function RequestsPage({ forcedScope = '' }) {
   }, [filters, pagination.page, resolvedScope, refreshUser])
 
   useEffect(() => {
+    if (shouldRedirectBasicApproverFromPending) return
+    setState((current) => ({ ...current, loading: true, error: '' }))
+    loadRequests()
+  }, [filters, pagination.page, resolvedScope, refreshUser, shouldRedirectBasicApproverFromPending])
+
+  useEffect(() => {
+    if (!canDecidePending) {
+      setSelectedPendingIds([])
+      return
+    }
+    const visibleIds = new Set(state.requests.map((item) => item.id))
+    setSelectedPendingIds((current) => current.filter((id) => visibleIds.has(id)))
+  }, [canDecidePending, state.requests])
+
+  useEffect(() => {
+    if (shouldRedirectBasicApproverFromPending) return undefined
     if (resolvedScope !== 'pending') return undefined
 
     const refreshPending = () => {
@@ -319,7 +355,7 @@ function RequestsPage({ forcedScope = '' }) {
       window.removeEventListener('focus', refreshPending)
       document.removeEventListener('visibilitychange', refreshPending)
     }
-  }, [resolvedScope, filters, pagination.page, refreshUser])
+  }, [resolvedScope, filters, pagination.page, refreshUser, shouldRedirectBasicApproverFromPending])
 
   function handleFilterChange(key, value) {
     setFilters((current) => {
@@ -345,10 +381,99 @@ function RequestsPage({ forcedScope = '' }) {
     setPagination((current) => ({ ...current, page: 1 }))
   }
 
+  function togglePendingSelection(requestId) {
+    setSelectedPendingIds((current) => (
+      current.includes(requestId)
+        ? current.filter((id) => id !== requestId)
+        : [...current, requestId]
+    ))
+  }
+
+  function toggleSelectAllPendingOnPage(event) {
+    const checked = event.target.checked
+    const visiblePendingIds = state.requests
+      .filter((item) => item.status === 'NEW')
+      .map((item) => item.id)
+    setSelectedPendingIds((current) => {
+      if (checked) {
+        const merged = new Set([...current, ...visiblePendingIds])
+        return Array.from(merged)
+      }
+      return current.filter((id) => !visiblePendingIds.includes(id))
+    })
+  }
+
+  async function processPendingDecisions(requestIds, nextStatus, reason = '') {
+    if (!requestIds.length) return
+    setBulkActionLoading(true)
+    setBulkProgress({
+      active: true,
+      label: nextStatus === 'ACCEPTED' ? 'Approving' : 'Rejecting',
+      done: 0,
+      total: requestIds.length,
+    })
+    try {
+      for (let index = 0; index < requestIds.length; index += 1) {
+        const requestId = requestIds[index]
+        await api.post(`/requests/${requestId}/status/`, {
+          status: nextStatus,
+          ...(nextStatus === 'REJECTED' ? { note: reason } : {}),
+        })
+        setBulkProgress((current) => ({ ...current, done: index + 1 }))
+      }
+      setSelectedPendingIds([])
+      await loadRequests()
+    } catch (error) {
+      window.alert(error.response?.data?.detail || `Could not ${nextStatus === 'ACCEPTED' ? 'approve' : 'reject'} requests.`)
+    } finally {
+      setBulkActionLoading(false)
+      setBulkProgress({ active: false, label: '', done: 0, total: 0 })
+    }
+  }
+
+  function openRejectDialog(mode, requestIds) {
+    setRejectDialog({
+      open: true,
+      mode,
+      requestIds,
+      reason: '',
+    })
+  }
+
+  function closeRejectDialog() {
+    if (bulkActionLoading) return
+    setRejectDialog({
+      open: false,
+      mode: 'single',
+      requestIds: [],
+      reason: '',
+    })
+  }
+
+  async function submitRejectDialog() {
+    const reason = rejectDialog.reason.trim()
+    if (!reason) return
+    const ids = rejectDialog.requestIds
+    await processPendingDecisions(ids, 'REJECTED', reason)
+    closeRejectDialog()
+  }
+
+  async function approveSelectedPending() {
+    const ids = selectedPendingIds.slice()
+    await processPendingDecisions(ids, 'ACCEPTED')
+  }
+
+  function rejectSelectedPending() {
+    if (!selectedPendingIds.length) return
+    openRejectDialog('selected', selectedPendingIds.slice())
+  }
+
   const canShowCompanyFilter = hasPermission('view_all_requests') || isIncomingQueueTeamLeader
   const totalPages = Math.max(1, Math.ceil((pagination.count || 0) / pagination.pageSize))
   const fromIndex = pagination.count ? (pagination.page - 1) * pagination.pageSize + 1 : 0
   const toIndex = Math.min(pagination.page * pagination.pageSize, pagination.count || 0)
+
+  if (shouldRedirectBasicApproverFromPending) return null
 
   return (
     <main className="space-y-6">
@@ -442,6 +567,27 @@ function RequestsPage({ forcedScope = '' }) {
               </option>
             ))}
           </Select>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 lg:col-span-2"
+            onClick={resetFilters}
+          >
+            Clear filters
+          </Button>
+
+          {!isPendingScope ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={filters.assignee === 'unassigned' ? 'default' : 'outline'}
+              className="h-10 lg:col-span-2 lg:col-start-11"
+              onClick={() => handleFilterChange('assignee', filters.assignee === 'unassigned' ? '' : 'unassigned')}
+            >
+              Unassigned only
+            </Button>
+          ) : null}
         </div>
 
         <div className="mt-3 flex items-center justify-between">
@@ -449,28 +595,38 @@ function RequestsPage({ forcedScope = '' }) {
             {`${pagination.count || 0} result(s)`}
             {filters.assignee && filters.assignee !== 'unassigned' ? ` assigned to ${filters.assignee}` : ''}
           </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={filters.assignee === 'unassigned' ? 'default' : 'outline'}
-              onClick={() => handleFilterChange('assignee', filters.assignee === 'unassigned' ? '' : 'unassigned')}
-            >
-              Unassigned only
-            </Button>
-            <Button variant="outline" size="sm" onClick={resetFilters}>
-              Clear filters
-            </Button>
-          </div>
         </div>
       </div>
 
       <div className={`${isIncomingQueueTeamLeader ? 'overflow-hidden rounded-md border-2 border-ink bg-card shadow-elev-sm' : 'surface-card overflow-hidden'}`}>
+        {canDecidePending && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+            <div className="text-xs text-muted-foreground">
+              <p>{selectedPendingIds.length} selected</p>
+              {bulkProgress.active && (
+                <p className="mt-1 flex items-center gap-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {bulkProgress.label} {bulkProgress.done}/{bulkProgress.total}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={approveSelectedPending} disabled={!selectedPendingIds.length || bulkActionLoading}>
+                Approve selected
+              </Button>
+              <Button size="sm" variant="destructive" onClick={rejectSelectedPending} disabled={!selectedPendingIds.length || bulkActionLoading}>
+                Reject selected
+              </Button>
+            </div>
+          </div>
+        )}
+
         {state.loading && state.requests.length === 0 ? (
           <div className="overflow-x-auto p-4">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                  {canDecidePending && <th className="px-4 py-3 text-left font-medium">Select</th>}
                   <th className="px-4 py-3 text-left font-medium">Reference</th>
                   <th className="px-4 py-3 text-left font-medium">Title</th>
                   <th className="px-4 py-3 text-left font-medium">Source - Target</th>
@@ -484,6 +640,7 @@ function RequestsPage({ forcedScope = '' }) {
               <tbody>
                 {Array.from({ length: 8 }).map((_, index) => (
                   <tr key={`request-row-skeleton-${index}`} className="border-b border-border last:border-0">
+                    {canDecidePending && <td className="px-4 py-3"><Skeleton className="h-4 w-4" /></td>}
                     <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                     <td className="px-4 py-3"><Skeleton className="h-4 w-44" /></td>
@@ -518,6 +675,17 @@ function RequestsPage({ forcedScope = '' }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                  {canDecidePending && (
+                    <th className="px-4 py-3 text-left font-medium">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={state.requests.filter((item) => item.status === 'NEW').length > 0
+                          && state.requests.filter((item) => item.status === 'NEW').every((item) => selectedPendingIds.includes(item.id))}
+                        onChange={toggleSelectAllPendingOnPage}
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 text-left font-medium">Reference</th>
                   <th className="px-4 py-3 text-left font-medium">Title</th>
                   <th className="px-4 py-3 text-left font-medium">Source - Target</th>
@@ -532,6 +700,17 @@ function RequestsPage({ forcedScope = '' }) {
               <tbody>
                 {state.requests.map((item) => (
                   <tr key={item.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                    {canDecidePending && (
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={selectedPendingIds.includes(item.id)}
+                          disabled={item.status !== 'NEW' || bulkActionLoading}
+                          onChange={() => togglePendingSelection(item.id)}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                       {isPendingScope ? (
                         <span>{item.reference_code || item.request_number || '-'}</span>
@@ -593,15 +772,15 @@ function RequestsPage({ forcedScope = '' }) {
                           <Button
                             size="sm"
                             onClick={() => handlePendingDecision(item.id, 'ACCEPTED')}
-                            disabled={item.status !== 'NEW'}
+                            disabled={item.status !== 'NEW' || bulkActionLoading}
                           >
                             Accept
                           </Button>
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => handlePendingDecision(item.id, 'REJECTED')}
-                            disabled={item.status !== 'NEW'}
+                            onClick={() => openRejectDialog('single', [item.id])}
+                            disabled={item.status !== 'NEW' || bulkActionLoading}
                           >
                             Reject
                           </Button>
@@ -644,6 +823,41 @@ function RequestsPage({ forcedScope = '' }) {
           </div>
         )}
       </div>
+      {rejectDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-md border-2 border-border bg-card p-5 shadow-elev-lg">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reject request</p>
+            <h3 className="mt-1 text-lg font-semibold text-foreground">Rejection reason</h3>
+            <p className="mt-1 text-sm text-muted-foreground">This reason is required and will be saved in the request history.</p>
+            <textarea
+              className="mt-4 min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              value={rejectDialog.reason}
+              onChange={(event) => setRejectDialog((current) => ({ ...current, reason: event.target.value }))}
+              placeholder="Write the rejection reason..."
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={closeRejectDialog} disabled={bulkActionLoading}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={submitRejectDialog}
+                disabled={!rejectDialog.reason.trim() || bulkActionLoading}
+              >
+                {bulkActionLoading ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Rejecting...
+                  </span>
+                ) : (
+                  'Reject'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
