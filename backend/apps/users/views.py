@@ -9,17 +9,21 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(UserMeSerializer(request.user).data)
+        return Response(UserMeSerializer(request.user, context={"request": request}).data)
 
     def patch(self, request):
+        mutable_data = request.data.copy()
+        remove_avatar_flag = str(mutable_data.get("remove_avatar", "")).lower() in {"1", "true", "yes"}
+        if remove_avatar_flag:
+            mutable_data["avatar"] = None
         serializer = UserThemePreferenceSerializer(
             request.user,
-            data=request.data,
+            data=mutable_data,
             partial=True,
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(UserMeSerializer(request.user).data)
+        return Response(UserMeSerializer(request.user, context={"request": request}).data)
 
 
 class ChangePasswordView(APIView):

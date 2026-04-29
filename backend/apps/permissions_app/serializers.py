@@ -36,6 +36,7 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
     entity_type = serializers.CharField(source="entity.entity_type", read_only=True)
     entity_label = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -56,7 +57,16 @@ class ManageableUserListSerializer(serializers.ModelSerializer):
             "role",
             "max_role_level",
             "can_edit",
+            "avatar_url",
         ]
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.avatar.url)
+        return obj.avatar.url
 
     def _get_roles_cached(self, obj):
         cached = getattr(obj, "_roles_cache", None)
@@ -105,6 +115,7 @@ class UserPermissionAdminDetailSerializer(serializers.ModelSerializer):
     entity_type = serializers.CharField(source="entity.entity_type", read_only=True)
     entity_label = serializers.SerializerMethodField()
     team_leader_name = serializers.CharField(source="team_leader.username", read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -128,7 +139,16 @@ class UserPermissionAdminDetailSerializer(serializers.ModelSerializer):
             "roles",
             "effective_permission_keys",
             "permissions",
+            "avatar_url",
         ]
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.avatar.url)
+        return obj.avatar.url
 
     def get_roles(self, obj):
         return [

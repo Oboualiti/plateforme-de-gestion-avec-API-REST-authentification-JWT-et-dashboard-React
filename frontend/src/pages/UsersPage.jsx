@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { Avatar } from '../components/Avatar'
 import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
@@ -20,32 +21,6 @@ const ROLE_LABELS = {
 }
 
 const roleKeys = Object.keys(ROLE_LABELS)
-
-function getInitials(name) {
-  if (!name) return '?'
-  const parts = name.trim().split(' ').filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-  return name.substring(0, 2).toUpperCase()
-}
-
-function getAvatarColor(name) {
-  const colors = ['#6366F1', '#14B8A6', '#22C55E', '#F59E0B', '#EC4899', '#06B6D4']
-  const index = name ? name.charCodeAt(0) % colors.length : 0
-  return colors[index]
-}
-
-function Avatar({ name, size = 32 }) {
-  const initials = getInitials(name)
-  const color = getAvatarColor(name)
-  return (
-    <div
-      className="flex items-center justify-center rounded-sm border border-ink/10 font-bold text-foreground"
-      style={{ width: size, height: size, fontSize: size * 0.36, backgroundColor: color }}
-    >
-      {initials}
-    </div>
-  )
-}
 
 function roleBadgeClass(roleKey) {
   const toneByRole = {
@@ -349,7 +324,13 @@ function UsersPage() {
                     <tr key={item.id}>
                       <td className="font-medium cursor-pointer" onClick={() => navigate(`/admin/users/${item.id}`)}>
                         <div className="flex items-center gap-3">
-                          <Avatar name={fullName} size={32} />
+                          <Avatar
+                            name={fullName}
+                            size={32}
+                            className="rounded-sm border border-ink/10"
+                            photoUrl={item.avatar_url}
+                            identifiers={[item.id, item.username, item.email, fullName]}
+                          />
                           <div>
                             <div>{item.username || '-'}</div>
                             <div className="text-xs text-muted-foreground">{item.email || '-'}</div>

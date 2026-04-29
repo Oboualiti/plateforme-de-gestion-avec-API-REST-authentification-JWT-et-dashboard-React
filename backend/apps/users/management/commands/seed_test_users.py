@@ -70,11 +70,14 @@ class Command(BaseCommand):
                 if getattr(user, key) != payload[key]:
                     setattr(user, key, payload[key])
                     changed = True
-            if user.company_id != payload["company"].id:
-                user.company = payload["company"]
+            target_company_id = payload["company"].id if payload["company"] else None
+            target_entity_id = payload["entity"].id if payload["entity"] else None
+
+            if user.company_id != target_company_id:
+                user.company = payload["company"] if payload["company"] else None
                 changed = True
-            if user.entity_id != payload["entity"].id:
-                user.entity = payload["entity"]
+            if user.entity_id != target_entity_id:
+                user.entity = payload["entity"] if payload["entity"] else None
                 changed = True
             if not user.check_password("test12345"):
                 user.set_password("test12345")

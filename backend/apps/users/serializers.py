@@ -27,6 +27,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     analytics_scope = serializers.SerializerMethodField()
     reports_page_access_allowed = serializers.SerializerMethodField()
     dashboard_profile = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -54,7 +55,16 @@ class UserMeSerializer(serializers.ModelSerializer):
             "analytics_scope",
             "reports_page_access_allowed",
             "dashboard_profile",
+            "avatar_url",
         ]
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.avatar.url)
+        return obj.avatar.url
 
     def get_role_keys(self, obj):
         return get_user_role_keys(obj)
@@ -110,7 +120,7 @@ class UserMeSerializer(serializers.ModelSerializer):
 class UserThemePreferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["theme_preference"]
+        fields = ["theme_preference", "avatar"]
 
 
 class ChangePasswordSerializer(serializers.Serializer):

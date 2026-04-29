@@ -142,6 +142,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
 class RequestCommentSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(source="sender.username", read_only=True)
+    sender_username = serializers.CharField(source="sender.username", read_only=True)
     sender_role_keys = serializers.SerializerMethodField()
     sender_entity_name = serializers.CharField(source="sender.entity.name", read_only=True)
     sender_entity_type = serializers.CharField(
@@ -149,6 +150,7 @@ class RequestCommentSerializer(serializers.ModelSerializer):
     )
     attachment = serializers.FileField(read_only=True)
     attachment_url = serializers.SerializerMethodField()
+    sender_avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestMessage
@@ -156,9 +158,11 @@ class RequestCommentSerializer(serializers.ModelSerializer):
             "id",
             "sender",
             "sender_name",
+            "sender_username",
             "sender_role_keys",
             "sender_entity_name",
             "sender_entity_type",
+            "sender_avatar_url",
             "message",
             "attachment",
             "attachment_url",
@@ -175,6 +179,14 @@ class RequestCommentSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.attachment.url)
         return obj.attachment.url
+
+    def get_sender_avatar_url(self, obj):
+        if not obj.sender.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.sender.avatar.url)
+        return obj.sender.avatar.url
 
 
 class RequestHistorySerializer(serializers.ModelSerializer):
@@ -267,6 +279,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
     )
+    requester_avatar_url = serializers.SerializerMethodField()
+    assignee_avatar_url = serializers.SerializerMethodField()
     attachment = serializers.FileField(read_only=True)
     attachment_url = serializers.SerializerMethodField()
     comments = serializers.SerializerMethodField()
@@ -319,8 +333,10 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "target_entity_name",
             "requester_user",
             "requester_name",
+            "requester_avatar_url",
             "current_assignee",
             "assignee_name",
+            "assignee_avatar_url",
             "comments",
             "status_history",
             "assignment_history",
@@ -494,6 +510,22 @@ class RequestDetailSerializer(serializers.ModelSerializer):
                 )
 
         return sorted(events, key=lambda event: event["timestamp"], reverse=True)
+
+    def get_requester_avatar_url(self, obj):
+        if not obj.requester_user.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.requester_user.avatar.url)
+        return obj.requester_user.avatar.url
+
+    def get_assignee_avatar_url(self, obj):
+        if not obj.current_assignee_id or not obj.current_assignee.avatar:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.current_assignee.avatar.url)
+        return obj.current_assignee.avatar.url
 
 
 class RequestTargetReassignSerializer(serializers.Serializer):

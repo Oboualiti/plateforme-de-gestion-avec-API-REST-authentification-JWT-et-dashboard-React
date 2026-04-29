@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, KeyRound, ShieldCheck } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -26,8 +26,9 @@ function EntityTypeBadge({ type }) {
 }
 
 function ProfilePage() {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const isSuperAdmin = (user?.role_keys || []).includes('super_admin')
+  const photoInputRef = useRef(null)
   const [passwordForm, setPasswordForm] = useState({
     current_password: '',
     new_password: '',
@@ -36,6 +37,9 @@ function ProfilePage() {
   const [passwordMessage, setPasswordMessage] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+  const [profilePhoto, setProfilePhoto] = useState('')
+  const [profilePhotoError, setProfilePhotoError] = useState('')
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
 
   const fullName = useMemo(
     () => `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || 'User',
@@ -43,8 +47,56 @@ function ProfilePage() {
   )
   const roleKey = user?.role_keys?.[0] || 'user'
   const roleLabel = ROLE_LABELS[roleKey] || roleKey.replaceAll('_', ' ')
+  useEffect(() => {
+    setProfilePhoto(user?.avatar_url || '')
+  }, [user?.avatar_url])
 
   if (!user) return null
+
+  async function handleProfilePhotoChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setProfilePhotoError('')
+    if (!file.type.startsWith('image/')) {
+      setProfilePhotoError('Please select an image file.')
+      event.target.value = ''
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setProfilePhotoError('Image must be 2MB or smaller.')
+      event.target.value = ''
+      return
+    }
+    setIsUploadingPhoto(true)
+    try {
+      const formData = new FormData()
+      formData.append('avatar', file)
+      await api.patch('/auth/me/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const updated = await refreshUser()
+      setProfilePhoto(updated?.avatar_url || '')
+    } catch {
+      setProfilePhotoError('Could not upload profile photo.')
+    } finally {
+      setIsUploadingPhoto(false)
+      event.target.value = ''
+    }
+  }
+
+  async function removeProfilePhoto() {
+    setProfilePhotoError('')
+    setIsUploadingPhoto(true)
+    try {
+      await api.patch('/auth/me/', { remove_avatar: true })
+      const updated = await refreshUser()
+      setProfilePhoto(updated?.avatar_url || '')
+    } catch {
+      setProfilePhotoError('Could not remove profile photo.')
+    } finally {
+      setIsUploadingPhoto(false)
+    }
+  }
 
   async function handlePasswordSubmit(event) {
     event.preventDefault()
@@ -85,7 +137,7 @@ function ProfilePage() {
 
       <section className="surface-card shadow-none p-6">
         <div className="flex items-center gap-4">
-          <Avatar name={fullName} size={64} />
+          <Avatar name={fullName} size={64} photoUrl={profilePhoto} className="border border-border" />
           <div>
             <div className="text-lg font-semibold">{fullName}</div>
             <div className="text-sm text-muted-foreground">{user?.email || '-'}</div>
@@ -100,6 +152,25 @@ function ProfilePage() {
               )}
               <EntityTypeBadge type={user?.entity_type} />
             </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleProfilePhotoChange}
+                className="hidden"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto}>
+                {profilePhoto ? 'Change photo' : 'Add photo'}
+              </Button>
+              {profilePhoto && (
+                <Button type="button" variant="ghost" size="sm" onClick={removeProfilePhoto} disabled={isUploadingPhoto}>
+                  Remove photo
+                </Button>
+              )}
+            </div>
+            {isUploadingPhoto && <p className="mt-2 text-xs text-muted-foreground">Updating photo...</p>}
+            {profilePhotoError && <p className="mt-2 text-xs font-medium text-destructive">{profilePhotoError}</p>}
           </div>
         </div>
       </section>
@@ -171,11 +242,6 @@ function ProfilePage() {
           </div>
 
           <div className="mt-4 space-y-3 text-sm">
-            <label className="flex items-center gap-3 rounded-md border border-border p-3">
-              <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border accent-primary" />
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-              <span>Require password re-entry for sensitive actions</span>
-            </label>
             <label className="flex items-center gap-3 rounded-md border border-border p-3">
               <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border accent-primary" />
               <KeyRound className="h-4 w-4 text-muted-foreground" />

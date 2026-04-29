@@ -127,7 +127,13 @@ function SidebarContent({ onNavigate, isDarkMode }) {
           <div className="eyebrow">Signed in as</div>
           {user ? (
             <div className="mt-1.5 flex items-center gap-2">
-              <Avatar name={user.fullName || user.username || "User"} color={user.avatarColor} size={28} />
+              <Avatar
+                name={user.fullName || user.username || "User"}
+                color={user.avatarColor}
+                size={28}
+                photoUrl={user.avatar_url}
+                identifiers={[user.id, user.username, user.fullName, user.email]}
+              />
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-foreground">{user.fullName || user.username}</div>
                 <div className="truncate text-xs text-muted-foreground">{roleLabel}</div>
@@ -155,7 +161,14 @@ function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-2 rounded-md bg-transparent p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-          <Avatar name={user.fullName || user.username} color={user.avatarColor} size={32} className="rounded-sm border-2 border-ink" />
+          <Avatar
+            name={user.fullName || user.username}
+            color={user.avatarColor}
+            size={32}
+            className="rounded-sm border-2 border-ink"
+            photoUrl={user.avatar_url}
+            identifiers={[user.id, user.username, user.fullName, user.email]}
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

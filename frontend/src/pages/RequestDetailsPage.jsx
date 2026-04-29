@@ -826,7 +826,12 @@ function RequestDetailsPage() {
 
                       return (
                         <>
-                          <Avatar name={name} size={24} />
+                          <Avatar
+                            name={name}
+                            size={24}
+                            photoUrl={name === request.assignee_name ? request?.assignee_avatar_url : request?.requester_avatar_url}
+                            identifiers={[request.requester_user__username, request.assignee_name, name]}
+                          />
                           <span className="text-xs font-semibold truncate">{name}</span>
                         </>
                       );
@@ -913,7 +918,7 @@ function RequestDetailsPage() {
                         ) : (
                           comments.map(c => (
                             <div key={c.id} className="flex gap-4">
-                              <Avatar name={c.sender_name} size={32} />
+                              <Avatar name={c.sender_name} size={32} photoUrl={c.sender_avatar_url} identifiers={[c.sender_username, c.sender_name]} />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline justify-between gap-4 mb-1">
                                    <div className="flex items-baseline gap-2 min-w-0">

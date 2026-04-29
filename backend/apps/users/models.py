@@ -38,6 +38,7 @@ class User(AbstractUser):
         choices=ThemePreference.choices,
         blank=True,
     )
+    avatar = models.ImageField(upload_to="profile_avatars/", null=True, blank=True)
 
     def clean(self):
         super().clean()
