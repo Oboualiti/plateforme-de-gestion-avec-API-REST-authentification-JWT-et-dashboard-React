@@ -63,9 +63,9 @@ function DeleteConfirmModal({ open, username, loading, onCancel, onConfirm }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <Card className="w-full max-w-md border-2 border-destructive/40 shadow-elev-xl animate-in fade-in zoom-in duration-200">
+      <Card className="w-full max-w-md border border-destructive/20 shadow-xl animate-in fade-in zoom-in duration-200">
         <CardHeader>
-          <div className="inline-flex w-fit items-center rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-bold uppercase tracking-widest text-destructive">
+          <div className="inline-flex w-fit items-center rounded-sm border border-destructive/20 bg-destructive/10 px-2 py-1 text-[11px] font-bold uppercase tracking-widest text-destructive">
             Dangerous action
           </div>
           <CardTitle className="mt-2">Remove User</CardTitle>

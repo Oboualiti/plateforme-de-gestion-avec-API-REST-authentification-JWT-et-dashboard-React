@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Building2,
   ChevronDown,
@@ -198,7 +198,7 @@ function HierarchyPage() {
       <div className="space-y-4">
         <div className="surface-card shadow-none p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex items-center rounded-md border border-border bg-surface-2 p-1">
+            <div className="inline-flex items-center rounded-md border border-ink/10 bg-surface-2 p-1">
               <button
                 type="button"
                 onClick={() => setViewMode('tree')}
@@ -218,9 +218,9 @@ function HierarchyPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button type="button" onClick={expandAllCompanies} className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold hover:bg-muted/50">Expand all</button>
-              <button type="button" onClick={collapseAllCompanies} className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold hover:bg-muted/50">Collapse all</button>
-              <button type="button" className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-semibold hover:bg-muted/50">
+              <button type="button" onClick={expandAllCompanies} className="inline-flex h-9 items-center rounded-md border border-ink/10 bg-card px-3 text-sm font-semibold hover:bg-muted/50">Expand all</button>
+              <button type="button" onClick={collapseAllCompanies} className="inline-flex h-9 items-center rounded-md border border-ink/10 bg-card px-3 text-sm font-semibold hover:bg-muted/50">Collapse all</button>
+              <button type="button" className="inline-flex h-9 items-center gap-2 rounded-md border border-ink/10 bg-card px-3 text-sm font-semibold hover:bg-muted/50">
                 <Download className="h-4 w-4" />
                 Export
               </button>
@@ -265,9 +265,9 @@ function HierarchyPage() {
 
           return (
             <section key={company.id} className="surface-card shadow-none overflow-hidden">
-              <div className="flex items-center justify-between border-b border-border bg-surface-2 px-5 py-3">
+              <div className="flex items-center justify-between border-b border-ink/10 bg-surface-2 px-5 py-3">
                 <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => toggleCompany(company.id)} className="inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-card text-muted-foreground hover:text-foreground">
+                  <button type="button" onClick={() => toggleCompany(company.id)} className="inline-flex h-7 w-7 items-center justify-center rounded border border-ink/10 bg-card text-muted-foreground hover:text-foreground">
                     {companyExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </button>
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-soft text-primary">
@@ -279,8 +279,8 @@ function HierarchyPage() {
                   </div>
                 </div>
                 {seniorName ? (
-                  <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-none">
-                    <Avatar name={seniorName} size={24} className="border-2 border-ink" />
+                  <div className="flex items-center gap-2 rounded-md border border-ink/10 bg-card px-3 py-1.5 shadow-none">
+                    <Avatar name={seniorName} size={24} className="border border-ink/10" />
                     <div className="text-xs text-muted-foreground">
                       Senior:{' '}
                       {seniorId ? (
@@ -305,7 +305,7 @@ function HierarchyPage() {
                     const managerExpanded = Boolean(expandedManagers[managerKey])
 
                     return (
-                      <article key={entity.id} className="rounded-md border border-border bg-card p-3 shadow-none">
+                      <article key={entity.id} className="rounded-md border border-ink/10 bg-card p-3 shadow-none">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="font-mono text-xl font-extrabold">{entity.code}</div>
@@ -328,7 +328,7 @@ function HierarchyPage() {
                               className="flex w-full items-center gap-1.5 text-left"
                             >
                               <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${managerExpanded ? 'rotate-90' : ''}`} />
-                              <Avatar name={managerName} size={22} className="border-2 border-ink" />
+                              <Avatar name={managerName} size={22} className="border border-ink/10" />
                               <span className="text-xs text-muted-foreground">
                                 Manager{' '}
                                 {managerOption?.id ? (
@@ -354,7 +354,7 @@ function HierarchyPage() {
                                     className="flex w-full items-center gap-1.5 text-left"
                                   >
                                     <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${expandedTeamLeaders[leader.id] ? 'rotate-90' : ''}`} />
-                                    <Avatar name={leader.username} size={22} className="border-2 border-ink" />
+                                    <Avatar name={leader.username} size={22} className="border border-ink/10" />
                                     <span className="text-xs text-muted-foreground">
                                       <Link to={`/admin/users/${leader.id}`} className="font-bold text-primary underline-offset-2 hover:underline">
                                         {leader.username}

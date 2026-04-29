@@ -111,19 +111,19 @@ function SidebarContent({ onNavigate, isDarkMode }) {
             </div>
         ))}
       </nav>
-      <div className="border-t-2 border-sidebar-border p-3">
+      <div className="border-t border-sidebar-border p-3">
         <button
           type="button"
           onClick={() => {
             logout();
             onNavigate?.();
           }}
-          className="mb-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-card px-3 text-sm font-bold uppercase tracking-tight text-foreground shadow-elev-sm transition-colors hover:bg-primary-soft"
+          className="mb-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-ink/10 bg-card px-3 text-sm font-bold uppercase tracking-tight text-foreground shadow-none transition-colors hover:bg-primary-soft"
         >
           <LogOut className="h-4 w-4" />
           Sign out
         </button>
-        <div className="rounded-md border-2 border-ink bg-surface-2 p-3 shadow-elev-sm">
+        <div className="rounded-md border border-ink/10 bg-surface-2 p-3 shadow-none">
           <div className="eyebrow">Signed in as</div>
           {user ? (
             <div className="mt-1.5 flex items-center gap-2">
@@ -314,7 +314,7 @@ export function AppShell({ children }) {
   return (
     <div className="min-h-screen bg-background">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r-2 border-sidebar-border lg:block">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-sidebar-border lg:block">
         <SidebarContent isDarkMode={isDarkMode} />
       </aside>
 
@@ -322,7 +322,7 @@ export function AppShell({ children }) {
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-foreground/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 border-r-2 border-sidebar-border bg-sidebar shadow-elev-lg">
+          <aside className="absolute inset-y-0 left-0 w-72 border-r border-sidebar-border bg-sidebar shadow-lg">
             <button
               onClick={() => setOpen(false)}
               className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
@@ -336,7 +336,7 @@ export function AppShell({ children }) {
       )}
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b-2 border-border bg-card px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card px-4 sm:px-6">
           <button
             onClick={() => setOpen(true)}
             className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
@@ -355,7 +355,7 @@ export function AppShell({ children }) {
               className="h-9 pl-9"
             />
             {search.isOpen && search.query.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 rounded-md border-2 border-ink bg-card p-2 shadow-elev-lg">
+              <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 rounded-md border border-ink/10 bg-card p-2 shadow-lg">
                 {search.loading ? (
                   <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
                 ) : search.totalSuggestions === 0 ? (

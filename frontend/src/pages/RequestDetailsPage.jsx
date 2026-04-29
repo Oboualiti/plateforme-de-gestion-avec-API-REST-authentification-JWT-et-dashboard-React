@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -114,7 +114,7 @@ function StatusStepper({ currentStatus }) {
             key={status}
             className={cn(
               "flex flex-1 items-center justify-center py-3 text-[10px] font-bold uppercase tracking-[0.14em] transition-colors relative",
-              isCurrent && "bg-primary text-primary-foreground shadow-brutal border-x-2 border-ink z-10",
+              isCurrent && "bg-primary text-primary-foreground shadow-none border-x border-ink/20 z-10",
               isPast && "bg-primary/5 text-primary",
               isFuture && "text-muted-foreground bg-card",
               isTerminal && i >= currentIndex && "opacity-40 grayscale"
@@ -147,7 +147,7 @@ function StatusNoteModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <section className="w-full max-w-lg rounded-xl border-2 border-ink bg-card shadow-elev-xl animate-in fade-in zoom-in duration-200">
+      <section className="w-full max-w-lg rounded-xl border border-ink/10 bg-card shadow-xl animate-in fade-in zoom-in duration-200">
         <div className="border-b border-border px-6 py-5">
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status update</p>
           <h3 className="mt-1 text-lg font-extrabold text-foreground">Move request to {statusLabelMap[targetStatus]}</h3>
@@ -162,7 +162,7 @@ function StatusNoteModal({
           <textarea
             value={note}
             onChange={(event) => onChangeNote(event.target.value)}
-            className="w-full min-h-[110px] rounded-lg border-2 border-ink bg-card p-3 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-muted-foreground"
+            className="w-full min-h-[110px] rounded-lg border border-input bg-card p-3 text-sm font-medium focus:ring-1 focus:ring-ring focus:outline-none placeholder:text-muted-foreground"
             placeholder={required ? 'Write the resolution note...' : 'Optional note...'}
           />
           {requireDeadline ? (
@@ -215,7 +215,7 @@ function PendingDecisionModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4">
-      <section className="w-full max-w-lg rounded-xl border-2 border-ink bg-card shadow-elev-xl">
+      <section className="w-full max-w-lg rounded-xl border border-ink/10 bg-card shadow-xl">
         <div className="border-b border-border px-6 py-5">
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Pending approval</p>
           <h3 className="mt-1 text-lg font-extrabold text-foreground">Request decision required</h3>
@@ -242,7 +242,7 @@ function PendingDecisionModal({
           <textarea
             value={note}
             onChange={(event) => onChangeNote(event.target.value)}
-            className="w-full min-h-[110px] rounded-lg border-2 border-ink bg-card p-3 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none placeholder:text-muted-foreground"
+            className="w-full min-h-[110px] rounded-lg border border-input bg-card p-3 text-sm font-medium focus:ring-1 focus:ring-ring focus:outline-none placeholder:text-muted-foreground"
             placeholder="Write reason if you reject..."
           />
           {error ? <p className="text-xs font-semibold text-destructive">{error}</p> : null}
@@ -712,7 +712,7 @@ function RequestDetailsPage() {
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <span>Request</span>
             <span className="text-muted-foreground/60">•</span>
-            <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px] tracking-tight text-foreground border-2 border-ink shadow-sm">
+            <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px] tracking-tight text-foreground border border-ink/10 shadow-sm">
               {request.reference_code || `#${request.request_number}`}
             </span>
             <button className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Copy reference" onClick={() => navigator.clipboard.writeText(request.reference_code || request.request_number)}>
@@ -721,24 +721,24 @@ function RequestDetailsPage() {
           </div>
           <h1 className="text-4xl font-extrabold tracking-tight text-foreground">{request.title || 'Untitled Request'}</h1>
           <div className="flex flex-wrap items-center gap-2 pt-1 mt-2">
-            <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-ink bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-foreground shadow-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-ink/10 bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-foreground shadow-sm">
               <FileText className="h-3 w-3 text-muted-foreground" />
               Type: {request.type || 'Standard'}
             </span>
             {request.priority && (
-               <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-ink bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-foreground shadow-sm">
+               <span className="inline-flex items-center gap-1.5 rounded-md border border-ink/10 bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-foreground shadow-sm">
                  <span className={cn("h-1.5 w-1.5 rounded-full", request.priority === 'High' ? "bg-destructive" : request.priority === 'Medium' ? "bg-warning" : "bg-info")} />
                  Priority: {request.priority}
                </span>
             )}
-            <span className="inline-flex items-center gap-1.5 rounded-md border-2 border-ink bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground shadow-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-ink/10 bg-card px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground shadow-sm">
               <Calendar className="h-3 w-3" />
               Opened {formatRelative(request.created_at)}
             </span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-3">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-primary border-2 border-ink shadow-brutal px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-primary border border-ink/10 shadow-none px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
             {statusLabelMap[request.status]}
           </span>
@@ -770,7 +770,7 @@ function RequestDetailsPage() {
               </div>
               <h2 className="text-sm font-extrabold uppercase text-foreground tracking-widest">AI Synopsis</h2>
               <span className="rounded-md bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">Beta</span>
-              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="ml-auto h-7 px-2 border-2 border-ink shadow-sm bg-surface-2 text-[10px] uppercase font-extrabold">
+              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="ml-auto h-7 px-2 border border-ink/10 shadow-sm bg-surface-2 text-[10px] uppercase font-extrabold">
                 {aiSummary.loading ? 'Parsing...' : <><Sparkles className="h-3 w-3 mr-1" /> Re-trigger</>}
               </Button>
             </div>
@@ -841,7 +841,7 @@ function RequestDetailsPage() {
             ) : (
                <div className="rounded-md border-2 border-dashed border-ink/30 bg-muted/10 py-6 text-center">
                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">No intelligence data generated yet.</p>
-                 <Button size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="text-[10px] font-extrabold uppercase tracking-wider shadow-brutal border-2 border-ink bg-primary text-primary-foreground">
+                 <Button size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="text-[10px] font-extrabold uppercase tracking-wider shadow-brutal border border-ink/10 bg-primary text-primary-foreground">
                    {aiSummary.loading ? 'Initializing...' : 'Initialize Synthesis'}
                  </Button>
                </div>
@@ -862,7 +862,7 @@ function RequestDetailsPage() {
             </div>
             <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90 font-medium pl-1">{request.description}</p>
             {request.attachment_url && (
-              <a href={request.attachment_url} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 rounded-md border-2 border-ink bg-muted/30 px-4 py-2 text-[11px] uppercase tracking-wider font-extrabold hover:bg-muted shadow-brutal transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none ml-1">
+              <a href={request.attachment_url} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 rounded-md border border-ink/10 bg-muted/30 px-4 py-2 text-[11px] uppercase tracking-wider font-extrabold hover:bg-muted shadow-brutal transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none ml-1">
                 <Paperclip className="h-3.5 w-3.5" /> View original attachment
               </a>
             )}
@@ -924,7 +924,7 @@ function RequestDetailsPage() {
                                    </div>
                                    <span className="text-[10px] font-bold text-muted-foreground shrink-0 uppercase tracking-widest">{formatRelative(c.created_at)}</span>
                                 </div>
-                                <div className="rounded-lg rounded-tl-none border-2 border-ink bg-surface-2 p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
+                                <div className="rounded-lg rounded-tl-none border border-ink/10 bg-surface-2 p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
                                   {c.message}
                                 </div>
                               </div>
@@ -934,7 +934,7 @@ function RequestDetailsPage() {
                       </div>
 
                       {canCommentRequest ? (
-                        <form onSubmit={submitComment} className="mt-4 rounded-xl border-2 border-ink shadow-brutal bg-background overflow-visible relative z-20">
+                        <form onSubmit={submitComment} className="mt-4 rounded-xl border border-ink/10 shadow-brutal bg-background overflow-visible relative z-20">
                           <div className="relative flex items-start gap-2 p-1">
                              <textarea
                               ref={commentInputRef}
@@ -945,7 +945,7 @@ function RequestDetailsPage() {
                               className="flex-1 bg-transparent p-3 text-sm font-medium outline-none placeholder:text-muted-foreground resize-none min-h-[60px]"
                              />
                              {mentionState.open && filteredMentions.length > 0 ? (
-                               <div className="absolute bottom-[calc(100%+6px)] left-3 z-40 max-h-56 w-96 max-w-[calc(100%-7.5rem)] overflow-y-auto rounded-md border-2 border-ink bg-card p-1 shadow-elev-lg">
+                               <div className="absolute bottom-[calc(100%+6px)] left-3 z-40 max-h-56 w-96 max-w-[calc(100%-7.5rem)] overflow-y-auto rounded-md border border-ink/10 bg-card p-1 shadow-elev-lg">
                                  {filteredMentions.map((candidate, index) => {
                                     const active = index === mentionState.activeIndex
                                     return (
@@ -976,7 +976,7 @@ function RequestDetailsPage() {
                                  size="sm"
                                  type="submit"
                                  disabled={actionState.busy || (!comment.trim() && !commentAttachment)}
-                                 className="h-8 px-4 text-[10px] font-extrabold uppercase tracking-wider border-2 border-ink shadow-sm"
+                                 className="h-8 px-4 text-[10px] font-extrabold uppercase tracking-wider border border-ink/10 shadow-sm"
                                >
                                  <Send className="h-3 w-3 mr-1.5" /> Send
                                </Button>
@@ -1010,7 +1010,7 @@ function RequestDetailsPage() {
                   <ol className="relative space-y-6 border-l-2 border-ink pl-6 ml-2">
                     {paginatedHistory.map((item, i) => (
                       <li key={i} className="relative">
-                        <span className="absolute -left-[33px] mt-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary border-2 border-ink" />
+                        <span className="absolute -left-[33px] mt-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary border border-ink/10" />
                         <div className="flex flex-col">
                           <span className="text-sm font-extrabold text-foreground leading-none">{item.title}</span>
                           <span className="text-[12px] font-medium text-foreground/80 mt-1.5 leading-relaxed">
@@ -1035,7 +1035,7 @@ function RequestDetailsPage() {
                           size="sm"
                           disabled={historyPage === 1}
                           onClick={() => setHistoryPage(p => p - 1)}
-                          className="h-8 px-3 text-[10px] uppercase border-2 border-ink shadow-brutal active:translate-y-0.5 active:translate-x-0.5"
+                          className="h-8 px-3 text-[10px] uppercase border border-ink/10 shadow-brutal active:translate-y-0.5 active:translate-x-0.5"
                          >
                            Previous
                          </Button>
@@ -1044,7 +1044,7 @@ function RequestDetailsPage() {
                           size="sm"
                           disabled={historyPage === totalHistoryPages}
                           onClick={() => setHistoryPage(p => p + 1)}
-                          className="h-8 px-3 text-[10px] uppercase border-2 border-ink shadow-brutal active:translate-y-0.5 active:translate-x-0.5"
+                          className="h-8 px-3 text-[10px] uppercase border border-ink/10 shadow-brutal active:translate-y-0.5 active:translate-x-0.5"
                          >
                            Next
                          </Button>
@@ -1067,7 +1067,7 @@ function RequestDetailsPage() {
                 <h3 className="text-[11px] font-extrabold uppercase tracking-widest">Deadline Planner</h3>
               </div>
               <p className="mb-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Approximate completion date</p>
-              <div className="rounded-xl border-2 border-ink bg-card p-2 shadow-sm mb-4">
+              <div className="rounded-xl border border-ink/10 bg-card p-2 shadow-sm mb-4">
                 <DeadlinePlanner
                   selectedDate={deadlineForm.value ? new Date(deadlineForm.value) : undefined}
                   numberOfMonths={1}
@@ -1081,7 +1081,7 @@ function RequestDetailsPage() {
               </div>
               <Button
                 size="sm"
-                className="w-full text-[11px] uppercase tracking-wider font-extrabold border-2 border-ink shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none"
+                className="w-full text-[11px] uppercase tracking-wider font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none"
                 onClick={saveDeadline}
                 disabled={!hasDeadlineEditAccess || deadlineForm.saving || !deadlineForm.value}
               >
@@ -1108,7 +1108,7 @@ function RequestDetailsPage() {
                          value={request.status}
                          onChange={e => requestStatusChange(e.target.value)}
                          disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
-                         className="w-full font-bold border-2 border-ink shadow-sm bg-surface-2"
+                         className="w-full font-bold border border-ink/10 shadow-sm bg-surface-2"
                       >
                          {statusOptions.map(s => (
                            <option key={s} value={s}>{statusLabelMap[s]}</option>
@@ -1121,7 +1121,7 @@ function RequestDetailsPage() {
                  <div className="grid grid-cols-2 gap-3 pt-2">
                    <Button
                       variant="outline"
-                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border-2 border-ink shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
+                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
                       onClick={handleAssignToMe}
                       disabled={!canAssignToMe || actionState.busy}
                    >
@@ -1129,7 +1129,7 @@ function RequestDetailsPage() {
                    </Button>
                    <Button
                       variant="outline"
-                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border-2 border-ink shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
+                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
                       onClick={() => document.getElementById('assign-tl-select')?.focus()}
                       disabled={!canManagerAssignTl}
                    >
@@ -1145,7 +1145,7 @@ function RequestDetailsPage() {
                            id="assign-tl-select"
                            value={assignmentForm.userId}
                            onChange={e => setAssignmentForm(curr => ({ ...curr, userId: e.target.value }))}
-                           className="w-full font-bold border-2 border-ink shadow-sm bg-surface-2"
+                           className="w-full font-bold border border-ink/10 shadow-sm bg-surface-2"
                         >
                            <option value="">Select individual...</option>
                            {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
@@ -1153,11 +1153,11 @@ function RequestDetailsPage() {
                      </div>
                      <textarea
                         placeholder="Assignment note..."
-                        className="w-full h-16 rounded-md border-2 border-ink bg-card p-3 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
+                        className="w-full h-16 rounded-md border border-ink/10 bg-card p-3 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
                         value={assignmentForm.note}
                         onChange={e => setAssignmentForm(curr => ({ ...curr, note: e.target.value }))}
                      />
-                     <Button size="sm" className="w-full text-[10px] uppercase tracking-wider font-extrabold border-2 border-ink shadow-brutal active:translate-y-0.5 active:translate-x-0.5 active:shadow-none" onClick={handleAssignToUser} disabled={!assignmentForm.userId || actionState.busy}>
+                     <Button size="sm" className="w-full text-[10px] uppercase tracking-wider font-extrabold border border-ink/10 shadow-brutal active:translate-y-0.5 active:translate-x-0.5 active:shadow-none" onClick={handleAssignToUser} disabled={!assignmentForm.userId || actionState.busy}>
                         Confirm Assignment
                      </Button>
                    </div>
@@ -1177,7 +1177,7 @@ function RequestDetailsPage() {
                     <p className="text-sm font-extrabold truncate text-foreground">{request.company_name || 'N/A'}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border-2 border-ink bg-surface-2 p-4 shadow-sm">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-ink/10 bg-surface-2 p-4 shadow-sm">
                   <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Source</p>
                     <p className="truncate text-xs font-extrabold text-foreground">{request.source_entity_name || 'N/A'}</p>

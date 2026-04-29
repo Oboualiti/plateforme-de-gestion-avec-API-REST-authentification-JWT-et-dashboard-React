@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Bell,
   CheckCheck,
   ClipboardList,
   UserPlus,
@@ -121,8 +120,7 @@ function NotificationsPage() {
     <main className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
-            <Bell className="h-6 w-6" />
+          <h1 className="text-3xl font-bold text-foreground">
             Notifications
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">All updates related to requests, messages and account actions.</p>
@@ -168,7 +166,7 @@ function NotificationsPage() {
             })}
           </div>
 
-          <div className="surface-card shadow-none overflow-hidden p-2">
+          <div className="surface-card border-ink/10 shadow-none overflow-hidden p-0">
             {notifications.loading ? (
               <p className="px-4 py-10 text-sm text-muted-foreground">Loading notifications...</p>
             ) : notifications.error ? (
@@ -176,7 +174,7 @@ function NotificationsPage() {
             ) : filtered.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">No notifications.</p>
             ) : (
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-ink/10">
                 {pagedItems.map((item, index) => {
                   const meta = getMetaForType(item.event_type)
                   const Icon = meta.icon
@@ -254,7 +252,7 @@ function NotificationsPage() {
           ) : null}
         </section>
 
-        <aside className="surface-card shadow-none h-fit p-4 xl:mt-[52px]">
+        <aside className="surface-card border-ink/10 shadow-none h-fit p-4 xl:mt-[42px]">
           <div className="mb-4 flex items-center justify-between">
             <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Filter className="h-4 w-4" />

@@ -493,7 +493,7 @@ function RequestsPage({ forcedScope = '' }) {
 
       {isIncomingQueueTeamLeader ? <div className="h-0.5 w-full bg-border" /> : null}
 
-      <div className={`${isIncomingQueueTeamLeader ? 'rounded-md border-2 border-ink bg-card p-4 shadow-none' : 'surface-card shadow-none mb-4 p-4'}`}>
+      <div className="surface-card p-4 shadow-none mb-4">
         <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">
           <div className="relative min-w-[260px] flex-1 xl:flex-[2_1_0%]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -598,9 +598,9 @@ function RequestsPage({ forcedScope = '' }) {
         </div>
       </div>
 
-      <div className={`${isIncomingQueueTeamLeader ? 'overflow-hidden rounded-md border-2 border-ink bg-card shadow-none' : 'surface-card shadow-none overflow-hidden'}`}>
+      <div className="surface-card shadow-none overflow-hidden">
         {canDecidePending && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 px-4 py-3">
             <div className="text-xs text-muted-foreground">
               <p>{selectedPendingIds.length} selected</p>
               {bulkProgress.active && (
@@ -657,7 +657,7 @@ function RequestsPage({ forcedScope = '' }) {
         ) : state.error ? (
           <div className="py-16 text-center text-sm font-medium text-destructive">{state.error}</div>
         ) : state.requests.length === 0 ? (
-          <div className={`${isIncomingQueueTeamLeader ? 'm-3 rounded-md border-2 border-dashed border-ink p-16 text-center' : 'py-16 text-center'}`}>
+          <div className={`${isIncomingQueueTeamLeader ? 'm-3 rounded-md border border-dashed border-ink/20 p-16 text-center' : 'py-16 text-center'}`}>
             <p className="text-sm font-medium">No requests match your filters</p>
             <p className="mt-1 text-xs text-muted-foreground">Try clearing filters or creating a new request.</p>
             {user?.request_creation_allowed && hasPermission('create_request') ? (
@@ -699,7 +699,7 @@ function RequestsPage({ forcedScope = '' }) {
               </thead>
               <tbody>
                 {state.requests.map((item) => (
-                  <tr key={item.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                  <tr key={item.id} className="border-b border-ink/5 last:border-0 hover:bg-muted/20">
                     {canDecidePending && (
                       <td className="px-4 py-3">
                         <input
