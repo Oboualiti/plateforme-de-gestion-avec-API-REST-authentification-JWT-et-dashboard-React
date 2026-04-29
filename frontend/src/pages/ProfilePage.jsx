@@ -83,7 +83,7 @@ function ProfilePage() {
         description="Manage your personal information and preferences."
       />
 
-      <section className="surface-card p-6">
+      <section className="surface-card shadow-none p-6">
         <div className="flex items-center gap-4">
           <Avatar name={fullName} size={64} />
           <div>
@@ -104,7 +104,7 @@ function ProfilePage() {
         </div>
       </section>
 
-      <section className="surface-card p-6">
+      <section className="surface-card shadow-none p-6">
         <h2 className="text-base font-semibold">Personal information</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
@@ -130,7 +130,7 @@ function ProfilePage() {
         </div>
       </section>
 
-      <section className="surface-card p-6">
+      <section className="surface-card shadow-none p-6">
         <h2 className="text-base font-semibold">Account settings</h2>
         <p className="mt-1 text-sm text-muted-foreground">Update your password and security preferences.</p>
         {passwordError && <p className="mt-2 text-sm font-medium text-destructive">{passwordError}</p>}

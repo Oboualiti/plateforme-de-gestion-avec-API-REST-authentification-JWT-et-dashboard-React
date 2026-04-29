@@ -352,7 +352,7 @@ function CustomizeRolePermissionEditorPage() {
   if (state.error) {
     return (
       <main>
-        <Card>
+        <Card className="shadow-none">
           <CardContent className="p-6 text-center text-sm font-bold text-destructive">{state.error}</CardContent>
         </Card>
       </main>
@@ -396,14 +396,14 @@ function CustomizeRolePermissionEditorPage() {
       />
 
       {message && (
-        <Card>
+        <Card className="shadow-none">
           <CardContent className="py-3">
             <p className="text-sm font-medium">{message}</p>
           </CardContent>
         </Card>
       )}
 
-      <Card className="border-2">
+      <Card className="border-2 shadow-none">
         <CardContent className="space-y-4 p-4">
           {SECTION_ORDER.map((section) => {
             const rows = rowsBySection[section] || []

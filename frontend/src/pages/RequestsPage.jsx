@@ -493,9 +493,9 @@ function RequestsPage({ forcedScope = '' }) {
 
       {isIncomingQueueTeamLeader ? <div className="h-0.5 w-full bg-border" /> : null}
 
-      <div className={`${isIncomingQueueTeamLeader ? 'rounded-md border-2 border-ink bg-card p-4 shadow-elev-sm' : 'surface-card mb-4 p-4'}`}>
-        <div className="grid gap-3 lg:grid-cols-12">
-          <div className="relative lg:col-span-4">
+      <div className={`${isIncomingQueueTeamLeader ? 'rounded-md border-2 border-ink bg-card p-4 shadow-none' : 'surface-card shadow-none mb-4 p-4'}`}>
+        <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">
+          <div className="relative min-w-[260px] flex-1 xl:flex-[2_1_0%]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={filters.search}
@@ -507,7 +507,7 @@ function RequestsPage({ forcedScope = '' }) {
 
           {canShowCompanyFilter && (
             <Select
-              className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
+              className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
               value={isGlobalAdmin ? filters.company_id : (actorCompanyId ? String(actorCompanyId) : '')}
               onChange={(event) => handleFilterChange('company_id', event.target.value)}
               disabled={!isGlobalAdmin}
@@ -528,7 +528,7 @@ function RequestsPage({ forcedScope = '' }) {
           )}
 
           <Select
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
+            className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
             value={filters.source_entity_id}
             onChange={(event) => handleFilterChange('source_entity_id', event.target.value)}
             disabled={canShowCompanyFilter ? !filters.company_id : !options.sourceEntities.length}
@@ -542,7 +542,7 @@ function RequestsPage({ forcedScope = '' }) {
           </Select>
 
           <Select
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
+            className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
             value={filters.target_entity_id}
             onChange={(event) => handleFilterChange('target_entity_id', event.target.value)}
             disabled={canShowCompanyFilter ? !filters.company_id : !options.targetEntities.length}
@@ -556,7 +556,7 @@ function RequestsPage({ forcedScope = '' }) {
           </Select>
 
           <Select
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm lg:col-span-2"
+            className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
             value={filters.status}
             onChange={(event) => handleFilterChange('status', event.target.value)}
           >
@@ -571,7 +571,7 @@ function RequestsPage({ forcedScope = '' }) {
           <Button
             variant="outline"
             size="sm"
-            className="h-10 lg:col-span-2"
+            className="h-10 min-w-[140px] xl:ml-auto"
             onClick={resetFilters}
           >
             Clear filters
@@ -582,7 +582,7 @@ function RequestsPage({ forcedScope = '' }) {
               type="button"
               size="sm"
               variant={filters.assignee === 'unassigned' ? 'default' : 'outline'}
-              className="h-10 lg:col-span-2 lg:col-start-11"
+              className="h-10 min-w-[170px]"
               onClick={() => handleFilterChange('assignee', filters.assignee === 'unassigned' ? '' : 'unassigned')}
             >
               Unassigned only
@@ -598,7 +598,7 @@ function RequestsPage({ forcedScope = '' }) {
         </div>
       </div>
 
-      <div className={`${isIncomingQueueTeamLeader ? 'overflow-hidden rounded-md border-2 border-ink bg-card shadow-elev-sm' : 'surface-card overflow-hidden'}`}>
+      <div className={`${isIncomingQueueTeamLeader ? 'overflow-hidden rounded-md border-2 border-ink bg-card shadow-none' : 'surface-card shadow-none overflow-hidden'}`}>
         {canDecidePending && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div className="text-xs text-muted-foreground">
@@ -825,7 +825,7 @@ function RequestsPage({ forcedScope = '' }) {
       </div>
       {rejectDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-md border-2 border-border bg-card p-5 shadow-elev-lg">
+          <div className="w-full max-w-md rounded-md border-2 border-border bg-card p-5 shadow-none">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reject request</p>
             <h3 className="mt-1 text-lg font-semibold text-foreground">Rejection reason</h3>
             <p className="mt-1 text-sm text-muted-foreground">This reason is required and will be saved in the request history.</p>

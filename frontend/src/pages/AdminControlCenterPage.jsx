@@ -11,6 +11,7 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
 import { Skeleton } from '../components/ui/skeleton'
+import { Activity, Building2, CheckCircle2, Users } from 'lucide-react'
 
 function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit, onDelete }) {
   if (!editState.open) return null
@@ -780,41 +781,73 @@ function AdminControlCenterPage() {
       const activeCompanies = companies.filter((item) => item.is_active).length
       const totalUsers = companies.reduce((sum, item) => sum + Number(item.user_count || 0), 0)
       const totalEntities = companies.reduce((sum, item) => sum + Number(item.entity_count || 0), 0)
+      const companyMetricCards = [
+        {
+          key: 'total-companies',
+          title: 'Total Companies',
+          value: totalCompanies,
+          hint: 'Registered companies',
+          tone: 'neutral',
+          icon: Building2,
+        },
+        {
+          key: 'active-companies',
+          title: 'Active Companies',
+          value: activeCompanies,
+          hint: 'Companies currently active',
+          tone: 'success',
+          icon: CheckCircle2,
+        },
+        {
+          key: 'total-users',
+          title: 'Total Users',
+          value: totalUsers,
+          hint: 'Across all companies',
+          tone: 'neutral',
+          icon: Users,
+        },
+        {
+          key: 'total-entities',
+          title: 'Total Entities',
+          value: totalEntities,
+          hint: 'Linked to companies',
+          tone: 'neutral',
+          icon: Activity,
+        },
+      ]
       return (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Companies</p>
-                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalCompanies}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Registered companies</p>
-              </CardContent>
-            </Card>
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Active Companies</p>
-                <p className="mt-2 text-3xl font-extrabold text-success">{activeCompanies}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Companies currently active</p>
-              </CardContent>
-            </Card>
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Users</p>
-                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalUsers}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Across all companies</p>
-              </CardContent>
-            </Card>
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Entities</p>
-                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalEntities}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Linked to companies</p>
-              </CardContent>
-            </Card>
+            {companyMetricCards.map((metric) => {
+              const Icon = metric.icon
+              const cardToneClass = metric.tone === 'success' ? 'border-success/30 bg-success/5' : 'border-ink/10'
+              const eyebrowToneClass = metric.tone === 'success' ? 'text-success' : ''
+
+              return (
+                <Card key={metric.key} className={`${cardToneClass} shadow-none`}>
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className={`eyebrow ${eyebrowToneClass}`}>{metric.title}</p>
+                        <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metric.value}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{metric.hint}</p>
+                      </div>
+                      {metric.tone === 'success' ? (
+                        <div className="rounded-sm bg-success/10 p-2">
+                          <Icon className="h-5 w-5 text-success" />
+                        </div>
+                      ) : (
+                        <Icon className="h-5 w-5 text-muted-foreground/50" />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
 
           {canManageCompanies && (
-            <Card>
+            <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Add company</CardTitle>
                 <CardDescription>Register a new legal entity in the platform.</CardDescription>
@@ -842,7 +875,7 @@ function AdminControlCenterPage() {
             </Card>
           )}
 
-          <Card className="surface-card">
+          <Card className="surface-card shadow-none">
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
@@ -947,42 +980,79 @@ function AdminControlCenterPage() {
         const matchesStatus = entityStatusFilter === 'all' || (entityStatusFilter === 'active' ? item.is_active : !item.is_active)
         return matchesCompany && matchesType && matchesStatus
       })
+      const entityMetricCards = [
+        {
+          key: 'total-entities',
+          title: 'Total Entities',
+          value: totalEntities,
+          hint: 'All entities',
+          tone: 'neutral',
+          icon: Building2,
+        },
+        {
+          key: 'active-entities',
+          title: 'Active Entities',
+          value: activeEntities,
+          hint: 'Currently active',
+          tone: 'success',
+          icon: CheckCircle2,
+        },
+        {
+          key: 'total-users',
+          title: 'Total Users',
+          value: totalUsers,
+          hint: 'Across all entities',
+          tone: 'neutral',
+          icon: Users,
+        },
+        {
+          key: 'total-companies',
+          title: 'Total Companies',
+          value: linkedCompanies,
+          hint: 'Entities linked to companies',
+          tone: 'warning',
+          icon: Activity,
+        },
+      ]
 
       return (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Entities</p>
-                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalEntities}</p>
-                <p className="mt-1 text-xs text-muted-foreground">All entities</p>
-              </CardContent>
-            </Card>
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Active Entities</p>
-                <p className="mt-2 text-3xl font-extrabold text-success">{activeEntities}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Currently active</p>
-              </CardContent>
-            </Card>
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Users</p>
-                <p className="mt-2 text-3xl font-extrabold text-foreground">{totalUsers}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Across all entities</p>
-              </CardContent>
-            </Card>
-            <Card className="surface-card">
-              <CardContent className="p-4">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Total Companies</p>
-                <p className="mt-2 text-3xl font-extrabold text-foreground">{linkedCompanies}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Entities linked to companies</p>
-              </CardContent>
-            </Card>
+            {entityMetricCards.map((metric) => {
+              const Icon = metric.icon
+              const cardToneClass =
+                metric.tone === 'success'
+                  ? 'border-success/30 bg-success/5'
+                  : metric.tone === 'warning'
+                    ? 'border-warning/30 bg-warning/5'
+                    : 'border-ink/10'
+              const eyebrowToneClass = metric.tone === 'success' ? 'text-success' : metric.tone === 'warning' ? 'text-warning' : ''
+
+              return (
+                <Card key={metric.key} className={`${cardToneClass} shadow-none`}>
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className={`eyebrow ${eyebrowToneClass}`}>{metric.title}</p>
+                        <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metric.value}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{metric.hint}</p>
+                      </div>
+                      {(metric.tone === 'success' || metric.tone === 'warning') ? (
+                        <div className={`rounded-sm p-2 ${metric.tone === 'success' ? 'bg-success/10' : 'bg-warning/10'}`}>
+                          <Icon className={`h-5 w-5 ${metric.tone === 'success' ? 'text-success' : 'text-warning'}`} />
+                        </div>
+                      ) : (
+                        <Icon className="h-5 w-5 text-muted-foreground/50" />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
 
           {canManageEntities && (
-            <Card>
+            <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Add entity</CardTitle>
                 <CardDescription>Assign and configure a new operating entity within a company.</CardDescription>
@@ -1016,7 +1086,7 @@ function AdminControlCenterPage() {
             </Card>
           )}
 
-          <Card className="surface-card">
+          <Card className="surface-card shadow-none">
             <div className="filter-bar">
               <div className="flex-1 px-4 py-2 flex items-center gap-2">
                  <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Entity directory</h2>
@@ -1207,7 +1277,7 @@ function AdminControlCenterPage() {
       }
       return (
         <>
-          <section className="panel">
+          <section className="panel shadow-none">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="eyebrow">Default role policy</p>
@@ -1220,7 +1290,7 @@ function AdminControlCenterPage() {
             </div>
           </section>
           {(isSuperAdmin || isSenior) && (
-            <section className="panel">
+            <section className="panel shadow-none">
               <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap">
                 {isSuperAdmin && (
                   <Select
@@ -1349,7 +1419,7 @@ function AdminControlCenterPage() {
 
       if (!selectedGroup) {
         return (
-          <Card className="p-8 text-center bg-muted/20 border-dashed">
+          <Card className="p-8 text-center bg-muted/20 border-dashed shadow-none">
             <CardTitle>Category not found</CardTitle>
             <CardDescription className="mt-2">The selected log category does not exist in this scope.</CardDescription>
             <Button variant="outline" className="mt-4" onClick={() => navigate('/admin/audit-logs/users')}>Open user logs</Button>
@@ -1368,7 +1438,7 @@ function AdminControlCenterPage() {
       }, {}) : null
 
       return (
-        <Card className="surface-card">
+        <Card className="surface-card shadow-none">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b bg-muted/10">
             <div>
               <CardTitle className="text-lg">{group.title}</CardTitle>
@@ -1989,34 +2059,32 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
   }
 
   return (
-    <Card className="overflow-hidden border-2 border-border">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/10 px-4 py-3">
-        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Restore defaults</span>
-        <div className="flex flex-wrap items-center gap-2">
-          {roles.map((role) => {
-            const restoreBlockReason = canEditRole(role.key) ? '' : 'You can only manage users below your role'
-            const editable = !restoreBlockReason
-            const saving = Boolean(savingByRoleId[role.id])
-            return (
-              <Button
-                key={`restore-${role.id}`}
-                variant="ghost"
-                size="sm"
-                className="hover:bg-primary hover:text-primary-foreground"
-                onClick={() => onRestoreRole(role.id)}
-                disabled={!editable || saving}
-                title={restoreBlockReason || undefined}
-              >
-                Restore {role.name}
-              </Button>
-            )
-          })}
-        </div>
-      </div>
-
+    <Card className="overflow-hidden border-2 border-border shadow-none">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1080px] border-collapse bg-card">
           <thead>
+            <tr className="border-b-2 border-foreground/90 bg-muted/10">
+              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-muted-foreground">Restore defaults</th>
+              {roles.map((role) => {
+                const restoreBlockReason = canEditRole(role.key) ? '' : 'You can only manage users below your role'
+                const editable = !restoreBlockReason
+                const saving = Boolean(savingByRoleId[role.id])
+                return (
+                  <th key={`restore-${role.id}`} className="px-4 py-3 text-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="hover:bg-primary hover:text-primary-foreground"
+                      onClick={() => onRestoreRole(role.id)}
+                      disabled={!editable || saving}
+                      title={restoreBlockReason || undefined}
+                    >
+                      Restore {role.name}
+                    </Button>
+                  </th>
+                )
+              })}
+            </tr>
             <tr>
               <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
               {roles.map((role) => (

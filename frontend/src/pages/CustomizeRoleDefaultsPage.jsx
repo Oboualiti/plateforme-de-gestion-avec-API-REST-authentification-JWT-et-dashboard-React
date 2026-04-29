@@ -41,7 +41,7 @@ function roleCardTone() {
 
 function RoleCard({ role, scopeQuery }) {
   return (
-    <Card className={`border-2 ${roleCardTone()}`}>
+    <Card className={`border-2 shadow-none ${roleCardTone()}`}>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -148,7 +148,7 @@ function CustomizeRoleDefaultsPage() {
       />
 
       {(isSuperAdmin || isSenior) && (
-        <Card className="border-2">
+        <Card className="border-2 shadow-none">
           <CardContent className="flex flex-wrap items-center gap-3 p-4 lg:flex-nowrap">
             {isSuperAdmin && (
               <Select
@@ -212,7 +212,7 @@ function CustomizeRoleDefaultsPage() {
       )}
 
       {!state.loading && state.error && (
-        <Card>
+        <Card className="shadow-none">
           <CardContent className="p-6 text-center text-sm font-bold text-destructive">{state.error}</CardContent>
         </Card>
       )}
@@ -229,5 +229,4 @@ function CustomizeRoleDefaultsPage() {
 }
 
 export default CustomizeRoleDefaultsPage
-
 

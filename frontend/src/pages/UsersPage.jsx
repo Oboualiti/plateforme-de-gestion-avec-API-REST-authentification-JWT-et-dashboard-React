@@ -225,7 +225,7 @@ function UsersPage() {
           title="Users"
           description="Manage all users, their roles, and entity assignments."
         />
-        <div className="surface-card p-4">
+        <div className="surface-card shadow-none p-4">
           <div className="grid gap-3 lg:grid-cols-12">
             <Skeleton className="h-10 lg:col-span-5" />
             <Skeleton className="h-10 lg:col-span-3" />
@@ -261,9 +261,9 @@ function UsersPage() {
       <input ref={importInputRef} type="file" accept=".csv,.xlsx" onChange={importUsers} className="hidden" />
 
       {error ? (
-        <div className="surface-card p-6 text-center text-destructive">{error}</div>
+        <div className="surface-card shadow-none p-6 text-center text-destructive">{error}</div>
       ) : (
-        <div className="surface-card">
+        <div className="surface-card shadow-none">
           {isFetching ? (
             <div className="px-4 pt-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               Refreshing...

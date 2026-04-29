@@ -269,7 +269,7 @@ function PermissionDetailPage() {
   if (state.loading) {
     return (
       <main className="space-y-6">
-        <section className="surface-card p-6">
+        <section className="surface-card shadow-none p-6">
           <p className="text-sm text-muted-foreground">Loading user...</p>
         </section>
       </main>
@@ -279,7 +279,7 @@ function PermissionDetailPage() {
   if (state.error) {
     return (
       <main className="space-y-6">
-        <section className="surface-card p-6">
+        <section className="surface-card shadow-none p-6">
           <p className="text-sm font-medium text-destructive">{state.error}</p>
         </section>
       </main>
@@ -305,44 +305,49 @@ function PermissionDetailPage() {
       />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="surface-card p-4">
-          <p className="text-xs text-muted-foreground">Email</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{user.email || '-'}</p>
+        <article className="surface-card border-ink/10 shadow-none p-5">
+          <p className="eyebrow">Email</p>
+          <p className="mt-2 text-xl font-bold text-foreground">{user.email || '-'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">Primary login email</p>
         </article>
-        <article className="surface-card p-4">
-          <p className="text-xs text-muted-foreground">Company</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{user.company_name || '-'}</p>
+        <article className="surface-card border-ink/10 shadow-none p-5">
+          <p className="eyebrow">Company</p>
+          <p className="mt-2 text-xl font-bold text-foreground">{user.company_name || '-'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">Assigned company scope</p>
         </article>
-        <article className="surface-card p-4">
-          <p className="text-xs text-muted-foreground">Entity</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">
+        <article className="surface-card border-ink/10 shadow-none p-5">
+          <p className="eyebrow">Entity</p>
+          <p className="mt-2 text-xl font-bold text-foreground">
             {user.entity_name || '-'} ({user.entity_type || '-'})
           </p>
+          <p className="mt-1 text-sm text-muted-foreground">Current operational unit</p>
         </article>
-        <article className="surface-card p-4">
-          <p className="text-xs text-muted-foreground">Status</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">{user.is_active ? 'Active' : 'Inactive'}</p>
+        <article className="surface-card border-ink/10 shadow-none p-5">
+          <p className="eyebrow">Status</p>
+          <p className="mt-2 text-xl font-bold text-foreground">{user.is_active ? 'Active' : 'Inactive'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">Account availability</p>
         </article>
       </section>
 
-      <section className="surface-card p-5">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Profile</p>
-        <h2 className="mt-1 text-lg font-semibold text-foreground">User Information</h2>
-        {!canEdit && <p className="mt-2 text-sm text-muted-foreground">Read only: same-level users cannot be modified.</p>}
-        {message && (
-          <p className={`mt-2 text-sm font-medium ${messageIsError ? 'text-destructive' : 'text-success'}`}>
-            {message}
-          </p>
-        )}
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(360px,1fr)]">
+        <article className="surface-card shadow-none h-full max-h-[750px] p-5 overflow-y-auto">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Profile</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">User Information</h2>
+          {!canEdit && <p className="mt-2 text-sm text-muted-foreground">Read only: same-level users cannot be modified.</p>}
+          {message && (
+            <p className={`mt-2 text-sm font-medium ${messageIsError ? 'text-destructive' : 'text-success'}`}>
+              {message}
+            </p>
+          )}
 
-        <form
-          className="mt-4 space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault()
-            saveProfile()
-          }}
-        >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <form
+            className="mt-5 space-y-6"
+            onSubmit={(event) => {
+              event.preventDefault()
+              saveProfile()
+            }}
+          >
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-1.5">
               <label htmlFor="username" className="text-sm font-medium text-foreground">Username</label>
               <input
@@ -423,9 +428,9 @@ function PermissionDetailPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3 border-t border-border/70 pt-4">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Security</p>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="space-y-1.5">
                 <label htmlFor="password" className="text-sm font-medium text-foreground">New Password (Optional)</label>
                 <input
@@ -442,9 +447,9 @@ function PermissionDetailPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3 border-t border-border/70 pt-4">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Organization & Access</p>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {canShowCompany && (
                 <div className="space-y-1.5">
                   <label htmlFor="company_id" className="text-sm font-medium text-foreground">Company</label>
@@ -542,10 +547,10 @@ function PermissionDetailPage() {
           </div>
 
 
-          <div className="space-y-2">
+          <div className="space-y-3 border-t border-border/70 pt-4">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Roles</p>
             <h3 className="text-sm font-semibold text-foreground">Assigned Role</h3>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {roleOptions.map((role) => (
                 <div key={role.key} className="flex flex-col gap-1.5">
                   <button
@@ -590,70 +595,65 @@ function PermissionDetailPage() {
               {message}
             </p>
           )}
-        </form>
-      </section>
+          </form>
+        </article>
 
-      <section className="surface-card p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Permissions</p>
-            <h2 className="mt-1 text-lg font-semibold text-foreground">Permission Matrix</h2>
+        <article className="surface-card shadow-none flex h-full max-h-[750px] flex-col p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Permissions</p>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Permission Matrix</h2>
+            </div>
+            <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
           </div>
-          <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="data-table bg-card">
-            <thead>
-              <tr>
-                <th>Permission</th>
-                <th className="text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groupedPermissions.map((group) => (
-                <Fragment key={group.sectionKey}>
-                  <tr className="bg-surface-2">
-                    <td colSpan={2} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
-                      {group.sectionLabel}
-                    </td>
-                  </tr>
-                  {group.items.map((permission) => (
-                    <tr key={permission.key} className="bg-card">
-                      <td className="px-4 py-3 align-top">
-                        <div className="text-base font-bold leading-tight">{permission.name}</div>
-                        <div className="text-sm text-muted-foreground">{permission.key}</div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
-                            permission.effective
-                              ? 'border-transparent text-emerald-600'
-                              : 'border-muted-foreground/40 text-muted-foreground'
-                          } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
-                          onClick={() => updatePermission(permission.key, !permission.effective)}
-                          disabled={!canEdit}
-                          aria-label={`${permission.effective ? 'Revoke' : 'Grant'} ${permission.name}`}
-                        >
-                          {permission.effective ? '\u2713' : '-'}
-                        </button>
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto">
+            <table className="data-table bg-card">
+              <thead>
+                <tr>
+                  <th>Permission</th>
+                  <th className="text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupedPermissions.map((group) => (
+                  <Fragment key={group.sectionKey}>
+                    <tr className="bg-surface-2">
+                      <td colSpan={2} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
+                        {group.sectionLabel}
                       </td>
                     </tr>
-                  ))}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    {group.items.map((permission) => (
+                      <tr key={permission.key} className="bg-card">
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-base font-bold leading-tight">{permission.name}</div>
+                          <div className="text-sm text-muted-foreground">{permission.key}</div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
+                              permission.effective
+                                ? 'border-transparent text-emerald-600'
+                                : 'border-muted-foreground/40 text-muted-foreground'
+                            } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                            onClick={() => updatePermission(permission.key, !permission.effective)}
+                            disabled={!canEdit}
+                            aria-label={`${permission.effective ? 'Revoke' : 'Grant'} ${permission.name}`}
+                          >
+                            {permission.effective ? '\u2713' : '-'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
       </section>
     </main>
   )
 }
 
 export default PermissionDetailPage
-
-
-
-
-
-
