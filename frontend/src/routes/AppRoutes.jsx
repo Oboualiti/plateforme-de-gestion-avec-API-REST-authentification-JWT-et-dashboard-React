@@ -27,7 +27,7 @@ import wServiceLogoDark from '../assets/logo_dark_mode.png'
 function LoginPage() {
   const navigate = useNavigate()
   const { login, isAuthenticated } = useAuth()
-  const [form, setForm] = useState({ username: 'prod', password: 'test12345' })
+  const [form, setForm] = useState({ username: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { isDarkMode } = useTheme()
