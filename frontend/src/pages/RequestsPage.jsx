@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Loader2, PlusCircle, Search } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, PlusCircle, Search, XCircle } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
 import PageHeader from '../components/layout/PageHeader'
@@ -23,34 +23,34 @@ const statusLabelMap = {
 }
 
 const statusToneMap = {
-  NEW: 'bg-slate-100 text-slate-700 border-slate-400',
-  ACCEPTED: 'bg-blue-100 text-blue-700 border-blue-400',
-  IN_PROGRESS: 'bg-amber-100 text-amber-800 border-amber-400',
-  REJECTED: 'bg-red-100 text-red-700 border-red-400',
-  COMPLETED: 'bg-emerald-100 text-emerald-700 border-emerald-400',
-  CLOSED: 'bg-slate-200 text-slate-700 border-slate-500',
+  NEW: 'bg-primary/10 text-primary border-primary/20 dark:bg-primary/10 dark:text-primary dark:border-primary/20',
+  ACCEPTED: 'bg-indigo-500/10 text-indigo-700 border-indigo-500/20 dark:text-indigo-400',
+  IN_PROGRESS: 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-500',
+  REJECTED: 'bg-rose-500/10 text-rose-700 border-rose-500/20 dark:text-rose-500',
+  COMPLETED: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-500',
+  CLOSED: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400',
 }
 
 const priorityToneMap = {
-  HIGH: 'bg-rose-100 text-rose-700 border-rose-400',
-  MEDIUM: 'bg-amber-100 text-amber-800 border-amber-400',
-  LOW: 'bg-emerald-100 text-emerald-700 border-emerald-400',
+  HIGH: 'bg-rose-500/10 text-rose-700 border-rose-500/20 dark:text-rose-500',
+  MEDIUM: 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-500',
+  LOW: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-500',
 }
 
 function statusPillClass(status) {
-  return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${statusToneMap[status] || 'bg-slate-100 text-slate-700 border-slate-400'}`
+  return `inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusToneMap[status] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`
 }
 
 function priorityPillClass(priority) {
-  return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${priorityToneMap[priority] || 'bg-slate-100 text-slate-700 border-slate-400'}`
+  return `inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${priorityToneMap[priority] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`
 }
 
 function typePillClass(type) {
-  let baseClass = 'bg-slate-100 text-slate-700 border-slate-400'
-  if (type === 'SCRIPT') baseClass = 'bg-indigo-100 text-indigo-700 border-indigo-400'
-  if (type === 'TOOL') baseClass = 'bg-cyan-100 text-cyan-700 border-cyan-400'
-  if (type === 'APP_PROJECT') baseClass = 'bg-purple-100 text-purple-700 border-purple-400'
-  return `inline-flex items-center rounded-md border-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${baseClass}`
+  let baseClass = 'bg-primary/10 text-primary border-primary/20'
+  if (type === 'SCRIPT') baseClass = 'bg-indigo-500/10 text-indigo-700 border-indigo-500/20 dark:text-indigo-400'
+  if (type === 'TOOL') baseClass = 'bg-cyan-500/10 text-cyan-700 border-cyan-500/20 dark:text-cyan-400'
+  if (type === 'APP_PROJECT') baseClass = 'bg-purple-500/10 text-purple-700 border-purple-500/20 dark:text-purple-400'
+  return `inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${baseClass}`
 }
 
 function formatUpdated(value) {
@@ -493,7 +493,7 @@ function RequestsPage({ forcedScope = '' }) {
 
       {isIncomingQueueTeamLeader ? <div className="h-0.5 w-full bg-border" /> : null}
 
-      <div className="surface-card p-4 shadow-none mb-4">
+      <div className="surface-card p-4 shadow-sm border-border/50">
         <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">
           <div className="relative min-w-[260px] flex-1 xl:flex-[2_1_0%]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -571,7 +571,7 @@ function RequestsPage({ forcedScope = '' }) {
           <Button
             variant="outline"
             size="sm"
-            className="h-10 min-w-[140px] xl:ml-auto"
+            className="h-10 min-w-[140px] xl:ml-auto font-bold text-xs"
             onClick={resetFilters}
           >
             Clear filters
@@ -598,9 +598,9 @@ function RequestsPage({ forcedScope = '' }) {
         </div>
       </div>
 
-      <div className="surface-card shadow-none overflow-hidden">
+      <div className="surface-card shadow-sm border-border/50 overflow-hidden">
         {canDecidePending && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/10 px-4 py-3 bg-card backdrop-blur-sm">
             <div className="text-xs text-muted-foreground">
               <p>{selectedPendingIds.length} selected</p>
               {bulkProgress.active && (
@@ -611,10 +611,24 @@ function RequestsPage({ forcedScope = '' }) {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={approveSelectedPending} disabled={!selectedPendingIds.length || bulkActionLoading}>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={approveSelectedPending} 
+                disabled={!selectedPendingIds.length || bulkActionLoading}
+                className="border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10 shadow-none !rounded-md h-9 px-4 font-bold text-[11px] uppercase tracking-widest disabled:opacity-40 disabled:bg-muted"
+              >
+                <CheckCircle2 className="mr-2 h-4 w-4" />
                 Approve selected
               </Button>
-              <Button size="sm" variant="destructive" onClick={rejectSelectedPending} disabled={!selectedPendingIds.length || bulkActionLoading}>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={rejectSelectedPending} 
+                disabled={!selectedPendingIds.length || bulkActionLoading}
+                className="border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 shadow-none !rounded-md h-9 px-4 font-bold text-[11px] uppercase tracking-widest disabled:opacity-40 disabled:bg-muted"
+              >
+                <XCircle className="mr-2 h-4 w-4" />
                 Reject selected
               </Button>
             </div>
@@ -625,7 +639,7 @@ function RequestsPage({ forcedScope = '' }) {
           <div className="overflow-x-auto p-4">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr className="border-b border-ink/10 bg-muted/10 text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
                   {canDecidePending && <th className="px-4 py-3 text-left font-medium">Select</th>}
                   <th className="px-4 py-3 text-left font-medium">Reference</th>
                   <th className="px-4 py-3 text-left font-medium">Title</th>
@@ -674,7 +688,7 @@ function RequestsPage({ forcedScope = '' }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr className="border-b border-ink/10 bg-muted/10 text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
                   {canDecidePending && (
                     <th className="px-4 py-3 text-left font-medium">
                       <input
@@ -699,7 +713,7 @@ function RequestsPage({ forcedScope = '' }) {
               </thead>
               <tbody>
                 {state.requests.map((item) => (
-                  <tr key={item.id} className="border-b border-ink/5 last:border-0 hover:bg-muted/20">
+                  <tr key={item.id} className="border-b border-ink/5 last:border-0 hover:bg-muted/10 transition-colors">
                     {canDecidePending && (
                       <td className="px-4 py-3">
                         <input
@@ -769,19 +783,24 @@ function RequestsPage({ forcedScope = '' }) {
                     {canDecidePending && (
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handlePendingDecision(item.id, 'ACCEPTED')}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 border border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
+                            onClick={() => handlePendingDecision(item.id, 'ACCEPTED')} 
                             disabled={item.status !== 'NEW' || bulkActionLoading}
                           >
+                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                             Accept
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => openRejectDialog('single', [item.id])}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 border border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
+                            onClick={() => openRejectDialog('single', [item.id])} 
                             disabled={item.status !== 'NEW' || bulkActionLoading}
                           >
+                            <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Reject
                           </Button>
                         </div>

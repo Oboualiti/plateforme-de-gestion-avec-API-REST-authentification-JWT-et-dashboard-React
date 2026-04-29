@@ -770,7 +770,7 @@ function RequestDetailsPage() {
               </div>
               <h2 className="text-sm font-extrabold uppercase text-foreground tracking-widest">AI Synopsis</h2>
               <span className="rounded-md bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">Beta</span>
-              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="ml-auto h-7 px-2 border border-ink/10 shadow-sm bg-surface-2 text-[10px] uppercase font-extrabold">
+              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="ml-auto h-7 px-2 border border-ink/10 shadow-sm bg-card text-[10px] uppercase font-extrabold">
                 {aiSummary.loading ? 'Parsing...' : <><Sparkles className="h-3 w-3 mr-1" /> Re-trigger</>}
               </Button>
             </div>
@@ -875,7 +875,7 @@ function RequestDetailsPage() {
 
           {/* Discussion / History Tab Box */}
           <article className="surface-card overflow-hidden flex flex-col">
-            <div className="flex border-b-2 border-ink bg-surface-2 font-extrabold text-xs">
+            <div className="flex border-b-2 border-ink bg-card font-extrabold text-xs">
               <button
                 onClick={() => canViewRequestDiscussion && setActiveTab('comments')}
                 disabled={!canViewRequestDiscussion}
@@ -929,7 +929,7 @@ function RequestDetailsPage() {
                                    </div>
                                    <span className="text-[10px] font-bold text-muted-foreground shrink-0 uppercase tracking-widest">{formatRelative(c.created_at)}</span>
                                 </div>
-                                <div className="rounded-lg rounded-tl-none border border-ink/10 bg-surface-2 p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
+                                <div className="rounded-lg rounded-tl-none border border-ink/10 bg-card p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
                                   {c.message}
                                 </div>
                               </div>
@@ -987,7 +987,7 @@ function RequestDetailsPage() {
                                </Button>
                              </div>
                           </div>
-                          <div className="border-t-2 border-ink bg-surface-2 px-4 py-2 flex items-center justify-between">
+                          <div className="border-t-2 border-ink bg-card px-4 py-2 flex items-center justify-between">
                             <div className="flex items-center gap-4">
                                <input
                                 type="file"
@@ -1113,7 +1113,7 @@ function RequestDetailsPage() {
                          value={request.status}
                          onChange={e => requestStatusChange(e.target.value)}
                          disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
-                         className="w-full font-bold border border-ink/10 shadow-sm bg-surface-2"
+                         className="w-full font-bold border border-ink/10 shadow-sm bg-card"
                       >
                          {statusOptions.map(s => (
                            <option key={s} value={s}>{statusLabelMap[s]}</option>
@@ -1126,7 +1126,7 @@ function RequestDetailsPage() {
                  <div className="grid grid-cols-2 gap-3 pt-2">
                    <Button
                       variant="outline"
-                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
+                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-card"
                       onClick={handleAssignToMe}
                       disabled={!canAssignToMe || actionState.busy}
                    >
@@ -1134,7 +1134,7 @@ function RequestDetailsPage() {
                    </Button>
                    <Button
                       variant="outline"
-                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-surface-2"
+                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-card"
                       onClick={() => document.getElementById('assign-tl-select')?.focus()}
                       disabled={!canManagerAssignTl}
                    >
@@ -1150,7 +1150,7 @@ function RequestDetailsPage() {
                            id="assign-tl-select"
                            value={assignmentForm.userId}
                            onChange={e => setAssignmentForm(curr => ({ ...curr, userId: e.target.value }))}
-                           className="w-full font-bold border border-ink/10 shadow-sm bg-surface-2"
+                           className="w-full font-bold border border-ink/10 shadow-sm bg-card"
                         >
                            <option value="">Select individual...</option>
                            {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
@@ -1182,7 +1182,7 @@ function RequestDetailsPage() {
                     <p className="text-sm font-extrabold truncate text-foreground">{request.company_name || 'N/A'}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-ink/10 bg-surface-2 p-4 shadow-sm">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-ink/10 bg-card p-4 shadow-sm">
                   <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Source</p>
                     <p className="truncate text-xs font-extrabold text-foreground">{request.source_entity_name || 'N/A'}</p>

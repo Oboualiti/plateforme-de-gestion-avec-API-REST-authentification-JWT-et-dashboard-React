@@ -121,50 +121,50 @@
 
 @layer base {
   :root {
-    --background: 60 14% 95%;
-    --foreground: 217 38% 17%;
+    --background: 0 0% 100%;
+    --foreground: 217 43% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 217 38% 17%;
+    --card-foreground: 217 43% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 217 38% 17%;
+    --popover-foreground: 217 43% 14%;
 
     --surface-1: 0 0% 100%;
-    --surface-2: 56 22% 92%;
-    --surface-3: 53 25% 88%;
+    --surface-2: 225 10% 94%;
+    --surface-3: 221 15% 90%;
 
     --primary: 47 99% 49%;
     --primary-foreground: 217 38% 12%;
     --primary-soft: 49 100% 90%;
     --primary-glow: 47 100% 58%;
 
-    --secondary: 247 67% 51%;
+    --secondary: 217 14% 42%;
     --secondary-foreground: 0 0% 100%;
-    --accent: 247 67% 51%;
+    --accent: 217 14% 42%;
     --accent-foreground: 0 0% 100%;
 
-    --muted: 54 24% 90%;
-    --muted-foreground: 217 20% 33%;
+    --muted: 225 10% 92%;
+    --muted-foreground: 217 12% 42%;
 
-    --ink: 217 38% 12%;
-    --border: 217 38% 12%;
-    --input: 217 38% 12%;
-    --ring: 247 67% 51%;
+    --ink: 217 43% 14%;
+    --border: 221 21% 88%;
+    --input: 221 21% 88%;
+    --ring: 217 43% 14%;
 
-    --destructive: 0 73% 51%;
+    --destructive: 0 74% 63%;
     --destructive-foreground: 0 0% 100%;
-    --success: 142 71% 38%;
+    --success: 142 60% 41%;
     --success-foreground: 0 0% 100%;
-    --warning: 30 92% 44%;
+    --warning: 32 95% 44%;
     --warning-foreground: 0 0% 100%;
-    --info: 247 67% 51%;
+    --info: 217 43% 20%;
     --info-foreground: 0 0% 100%;
 
-    --status-new: 217 20% 40%;
-    --status-accepted: 247 67% 51%;
-    --status-progress: 30 92% 44%;
-    --status-rejected: 0 73% 51%;
-    --status-completed: 142 71% 38%;
+    --status-new: 217 14% 40%;
+    --status-accepted: 217 43% 14%;
+    --status-progress: 32 95% 44%;
+    --status-rejected: 0 74% 63%;
+    --status-completed: 142 60% 41%;
     --status-closed: 217 28% 22%;
 
     --sidebar-background: 0 0% 100%;
@@ -355,7 +355,7 @@
   }
 
   .filter-bar {
-    @apply flex flex-wrap items-center gap-3 border-b border-ink/10 bg-surface-2 p-4;
+    @apply flex flex-wrap items-center gap-3 border-b border-ink/10 bg-card p-4;
   }
 
   .app-select {

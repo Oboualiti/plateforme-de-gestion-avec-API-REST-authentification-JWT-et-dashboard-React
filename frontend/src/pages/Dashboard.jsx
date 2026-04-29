@@ -777,7 +777,7 @@ function Dashboard() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           {isProdNormalUser ? (
-            <Card className="border-ink/10 bg-surface-2 lg:col-span-2 rounded-sm shadow-none">
+            <Card className="border-ink/10 bg-card lg:col-span-2 rounded-sm shadow-none">
               <CardHeader className="pb-3">
                 <p className="eyebrow text-info">Personal Overview</p>
                 <h3 className="text-3xl font-extrabold tracking-tight">My Request Journey</h3>
@@ -805,7 +805,7 @@ function Dashboard() {
                       <AlertCircle className="h-5 w-5 text-muted-foreground/50" />
                     </div>
                   </div>
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="eyebrow">Submitted By Me</p>
@@ -830,7 +830,7 @@ function Dashboard() {
                 </div>
 
                 <div className="mb-4 grid gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">My request summary</p>
                     <p className="mt-2 text-xs text-muted-foreground">Total requests</p>
                     <p className="text-4xl font-bold tabular-nums">{formatCompactVolume(userResponseMetrics.totalRequests)}</p>
@@ -895,7 +895,7 @@ function Dashboard() {
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">My request lifecycle</p>
                     <div className="space-y-2">
                       {STATUS_ORDER.map((status) => {
@@ -915,7 +915,7 @@ function Dashboard() {
                       })}
                     </div>
                   </div>
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Requests needing action</p>
                     <div className="space-y-1 text-sm">
                       {[
@@ -944,7 +944,7 @@ function Dashboard() {
               </CardContent>
             </Card>
           ) : isSupportDevNormalUser ? (
-            <Card className="border-ink/10 bg-surface-2 rounded-sm shadow-none lg:col-span-2">
+            <Card className="border-ink/10 bg-card rounded-sm shadow-none lg:col-span-2">
               <CardHeader className="pb-3">
                 <p className="eyebrow text-info">Personal Operations</p>
                 <h3 className="text-3xl font-extrabold tracking-tight">My Delivery Queue</h3>
@@ -972,7 +972,7 @@ function Dashboard() {
                       <AlertCircle className="h-5 w-5 text-muted-foreground/50" />
                     </div>
                   </div>
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="eyebrow">In Progress</p>
@@ -997,7 +997,7 @@ function Dashboard() {
                 </div>
 
                 <div className="mb-4 grid gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">My work summary</p>
                     <p className="mt-2 text-xs text-muted-foreground">Total assigned</p>
                     <p className="text-3xl font-bold tabular-nums">{formatCompactVolume(supportDeliveryMetrics.totalAssigned)}</p>
@@ -1005,7 +1005,7 @@ function Dashboard() {
                     <p className="text-xs text-muted-foreground">Average completion</p>
                     <p className="text-2xl font-bold tabular-nums">{supportDeliveryMetrics.avgDays}</p>
                   </div>
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Assigned vs completed</p>
                       <ChartRangeSelect value={trendRange} onChange={setTrendRange} className="w-auto" />
@@ -1033,7 +1033,7 @@ function Dashboard() {
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Assigned request lifecycle</p>
                     <div className="space-y-2">
                       {supportLifecycleRows.map((row) => (
@@ -1049,7 +1049,7 @@ function Dashboard() {
                       ))}
                     </div>
                   </div>
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Top target entities</p>
                     <div className="space-y-3">
                       {supportTopEntities.map((row) => (
@@ -1180,7 +1180,7 @@ function Dashboard() {
                   metrics.ownership.slice(0, 5).map((owner) => (
                     <Link key={owner.name} to={`/requests?assignee=${encodeURIComponent(owner.name)}`} className="flex items-center justify-between transition-colors hover:bg-muted/30">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-card text-[10px] font-bold uppercase">
                           {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                         </div>
                         <div>
@@ -1352,7 +1352,7 @@ function Dashboard() {
               </CardHeader>
               <CardContent className="p-5 pt-3">
                 <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="eyebrow">Target entities</p>
@@ -1362,7 +1362,7 @@ function Dashboard() {
                       <Users className="h-5 w-5 text-muted-foreground/50" />
                     </div>
                   </div>
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="eyebrow">Total volume</p>
@@ -1395,7 +1395,7 @@ function Dashboard() {
                 </div>
 
                 <div className="mb-4 grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Request Lifecycle</p>
                     <div className="space-y-2">
                       {prodLifecycleRows.map((row) => (
@@ -1415,7 +1415,7 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Top Target Entities</p>
                     <div className="space-y-3">
                       {prodTopEntities.map((row) => (
@@ -1439,7 +1439,7 @@ function Dashboard() {
                   </div>
                 </div>
 
-                <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                <div className="rounded-sm border border-ink/10 bg-card p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">7-Day Request Activity</p>
@@ -1528,7 +1528,7 @@ function Dashboard() {
               {showScopedSingleConcentration ? (
                 <div className="space-y-5">
                   <div className="grid items-stretch gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-                    <div className="rounded-sm border border-ink/10 bg-surface-2 p-5">
+                    <div className="rounded-sm border border-ink/10 bg-card p-5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Single-Entity Scope</p>
                     <p className="mt-3 truncate text-4xl font-extrabold uppercase tracking-tight text-foreground">
                       {singleEntity?.code}
@@ -1545,7 +1545,7 @@ function Dashboard() {
                     <p className="text-sm leading-relaxed text-muted-foreground">No cross-entity split for this role scope.</p>
                   </div>
 
-                    <div className="rounded-sm border border-ink/10 bg-surface-2 p-5">
+                    <div className="rounded-sm border border-ink/10 bg-card p-5">
                       <div className="mb-4 flex items-center justify-between">
                         <div>
                           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Request Activity Trend</p>
@@ -1633,7 +1633,7 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-5">
+                  <div className="rounded-sm border border-ink/10 bg-card p-5">
                     <div className="mb-4 flex items-center justify-between">
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Volume by Status</p>
                       <Link to="/requests" className="text-sm font-semibold text-primary hover:underline">View details</Link>
@@ -1760,7 +1760,7 @@ function Dashboard() {
                   metrics.ownership.slice(0, 5).map((owner) => (
                     <Link key={owner.name} to={`/requests?assignee=${encodeURIComponent(owner.name)}`} className="flex items-center justify-between transition-colors hover:bg-muted/30">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-card text-[10px] font-bold uppercase">
                           {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                         </div>
                         <div>
@@ -1916,7 +1916,7 @@ function Dashboard() {
             </CardHeader>
             <CardContent className="p-5 pt-3">
               <div className="grid gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
-                <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                <div className="rounded-sm border border-ink/10 bg-card p-4">
                   <div className="flex h-full min-h-[640px] flex-col justify-between">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{primaryRole === 'senior' ? 'Company Overview' : 'Platform Scope'}</p>
@@ -1955,7 +1955,7 @@ function Dashboard() {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <div className="mb-4 flex items-center justify-between">
                       <div>
                         <p className="text-xl font-bold tracking-tight text-foreground">{primaryRole === 'senior' ? '7-Day Request Activity' : '7-Day Queue Activity'}</p>
@@ -1991,7 +1991,7 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-sm border border-ink/10 bg-surface-2 p-4">
+                  <div className="rounded-sm border border-ink/10 bg-card p-4">
                     <p className="mb-4 text-xl font-bold tracking-tight text-foreground">{primaryRole === 'senior' ? 'Top Entities by Volume' : 'Workload Concentration'}</p>
                     <div className="space-y-3">
                       {superAdminTopConcentrationRows.map((row) => (
@@ -2170,7 +2170,7 @@ function Dashboard() {
                   metrics.ownership.slice(0, 5).map((owner) => (
                     <Link key={owner.name} to={`/requests?assignee=${encodeURIComponent(owner.name)}`} className="flex items-center justify-between transition-colors hover:bg-muted/30">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-surface-2 text-[10px] font-bold uppercase">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-ink/10 bg-card text-[10px] font-bold uppercase">
                           {owner.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                         </div>
                         <div>
@@ -2211,7 +2211,7 @@ function Dashboard() {
     <main className="space-y-8">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-extrabold tracking-tight">Platform Overview</h1>
-        <p className="text-sm text-muted-foreground">{roleLabel} · {scopeLabel}</p>
+        <p className="text-sm text-muted-foreground">{roleLabel} · {scopeLabel} — team operational workspace</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-8 rounded-sm border border-ink/10 bg-surface-2 p-6">

@@ -123,7 +123,7 @@ function SidebarContent({ onNavigate, isDarkMode }) {
           <LogOut className="h-4 w-4" />
           Sign out
         </button>
-        <div className="rounded-md border border-ink/10 bg-surface-2 p-3 shadow-none">
+        <div className="rounded-md border border-ink/10 bg-card p-3 shadow-none">
           <div className="eyebrow">Signed in as</div>
           {user ? (
             <div className="mt-1.5 flex items-center gap-2">

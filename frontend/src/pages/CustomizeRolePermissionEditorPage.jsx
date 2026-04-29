@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import PageHeader from '../components/layout/PageHeader'
@@ -8,6 +8,13 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
+import { 
+  Building2, 
+  ShieldCheck, 
+  ClipboardList, 
+  Activity, 
+  LayoutGrid 
+} from 'lucide-react'
 
 const SECTION_ORDER = ['organization', 'access_control', 'requests', 'monitoring', 'other']
 const SECTION_TITLE = {
@@ -111,6 +118,14 @@ const PERMISSION_META_BY_KEY = {
   view_logs_scope_entity: { title: 'Entity Log Scope', description: 'Logs limited to entity scope', section: 'monitoring' },
   view_logs_scope_company: { title: 'Company Log Scope', description: 'Logs limited to company scope', section: 'monitoring' },
   view_logs_scope_global: { title: 'Global Log Scope', description: 'Logs visible across all companies', section: 'monitoring' },
+}
+
+const SECTION_ICON = {
+  organization: Building2,
+  access_control: ShieldCheck,
+  requests: ClipboardList,
+  monitoring: Activity,
+  other: LayoutGrid,
 }
 
 function toScopePayload(searchParams) {
@@ -410,8 +425,19 @@ function CustomizeRolePermissionEditorPage() {
             if (!rows.length) return null
             return (
               <section key={section} className="rounded-sm border border-border/80 bg-card">
-                <div className="border-b bg-surface-2 px-3 py-2 text-xs font-bold uppercase tracking-[0.16em] text-foreground">
-                  {SECTION_TITLE[section] || section}
+                <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-2 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const Icon = SECTION_ICON[section] || SECTION_ICON.other
+                      return <Icon className="h-4 w-4 text-muted-foreground" />
+                    })()}
+                    <span className="text-xs font-bold uppercase tracking-[0.16em] text-foreground">
+                      {SECTION_TITLE[section] || section}
+                    </span>
+                    <span className="text-[11px] font-medium text-muted-foreground/60">
+                       · {rows.length} permissions
+                    </span>
+                  </div>
                 </div>
                 <div className="divide-y divide-border/60">
                   {rows.map((row) => {

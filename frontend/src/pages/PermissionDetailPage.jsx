@@ -5,6 +5,14 @@ import PageHeader from '../components/layout/PageHeader'
 import { Select } from '../components/ui/select'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { 
+  Building2, 
+  ShieldCheck, 
+  ClipboardList, 
+  Activity, 
+  FileSearch,
+  LayoutGrid 
+} from 'lucide-react'
 
 function getApiErrorMessage(error, fallback) {
   const payload = error?.response?.data
@@ -41,6 +49,15 @@ const PERMISSION_SECTION_LABELS = {
   requests: 'Requests',
   reports: 'Reports',
   logs: 'Logs',
+}
+
+const PERMISSION_SECTION_ICON = {
+  organization: Building2,
+  access_control: ShieldCheck,
+  requests: ClipboardList,
+  reports: Activity,
+  logs: FileSearch,
+  other: LayoutGrid,
 }
 
 const PERMISSION_SECTION_BY_KEY = {
@@ -617,9 +634,20 @@ function PermissionDetailPage() {
               <tbody>
                 {groupedPermissions.map((group) => (
                   <Fragment key={group.sectionKey}>
-                    <tr className="bg-surface-2">
-                      <td colSpan={2} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
-                        {group.sectionLabel}
+                    <tr className="sticky top-0 z-10 bg-surface-2">
+                      <td colSpan={2} className="border-y border-ink/10 px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const Icon = PERMISSION_SECTION_ICON[group.sectionKey] || PERMISSION_SECTION_ICON.other
+                            return <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                          })()}
+                          <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-foreground">
+                            {group.sectionLabel}
+                          </span>
+                          <span className="text-[10px] font-medium text-muted-foreground/60">
+                             · {group.items.length} permissions
+                          </span>
+                        </div>
                       </td>
                     </tr>
                     {group.items.map((permission) => (

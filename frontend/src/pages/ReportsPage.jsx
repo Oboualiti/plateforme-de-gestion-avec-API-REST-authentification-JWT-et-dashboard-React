@@ -83,7 +83,10 @@ function getRequestDeadline(item) {
 }
 
 function formatCount(value) {
-  return Number(value || 0).toLocaleString()
+  const num = Number(value || 0)
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
+  return String(num)
 }
 
 function exportCsv(filename, rows) {
@@ -473,7 +476,7 @@ function ReportsPage() {
                   <p className="eyebrow">Total requests</p>
                 <HelpTip text="Total number of requests recorded in the selected scope." />
                 </div>
-                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{parsed.totalRequests}</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{formatCount(parsed.totalRequests)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">All time volume</p>
               </div>
               <Inbox className="h-5 w-5 text-muted-foreground/50" />
@@ -489,7 +492,7 @@ function ReportsPage() {
                   <p className="eyebrow text-warning">Open queue</p>
                 <HelpTip text="Requests currently in active workflow and not yet resolved." />
                 </div>
-                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{parsed.openQueue}</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{formatCount(parsed.openQueue)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">In active workflow</p>
               </div>
               <div className="rounded-sm bg-warning/10 p-2">
@@ -507,7 +510,7 @@ function ReportsPage() {
                   <p className="eyebrow text-success">Resolved</p>
                 <HelpTip text="Requests that reached completed or closed status." />
                 </div>
-                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{parsed.resolved}</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{formatCount(parsed.resolved)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">Completed requests</p>
               </div>
               <div className="rounded-sm bg-success/10 p-2">
@@ -543,7 +546,7 @@ function ReportsPage() {
                   <p className="eyebrow text-warning">Unassigned</p>
                 <HelpTip text="Open requests that still have no owner assigned." />
                 </div>
-                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{parsed.unassigned}</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{formatCount(parsed.unassigned)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">Needs ownership</p>
               </div>
               <div className="rounded-sm bg-warning/10 p-2">
@@ -580,7 +583,7 @@ function ReportsPage() {
                 <HelpTip text="Percentage of resolved requests out of total requests in scope." />
                 </div>
                 <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{parsed.resolutionRate}%</p>
-                <p className="mt-1 text-sm text-muted-foreground">{parsed.resolved} closed in scope</p>
+                <p className="mt-1 text-sm text-muted-foreground">{formatCount(parsed.resolved)} closed in scope</p>
               </div>
               <div className="rounded-sm bg-success/10 p-2">
                 <Target className="h-5 w-5 text-success" />
@@ -659,7 +662,7 @@ function ReportsPage() {
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">Needs ownership</p>
               </div>
-              <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.unassigned}</p>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{formatCount(parsed.unassigned)}</p>
             </div>
             <div className="flex items-center justify-between rounded-md border-ink/10 bg-card p-4">
               <div>
@@ -669,7 +672,7 @@ function ReportsPage() {
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">Demand vs completions</p>
               </div>
-              <p className="text-2xl font-bold tabular-nums text-foreground">{parsed.workloadPressure}</p>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{formatCount(parsed.workloadPressure)}</p>
             </div>
             <div className="flex items-center justify-between rounded-md border-ink/10 bg-card p-4">
               <div>
@@ -911,7 +914,7 @@ function ReportsPage() {
                     <div className="h-2 w-2 rounded-full bg-warning" />
                     <p className="text-xs font-bold uppercase tracking-tight text-warning">Coverage Risk</p>
                   </div>
-                  <p className="text-sm font-bold tabular-nums text-warning">{parsed.unassigned} items unassigned</p>
+                  <p className="text-sm font-bold tabular-nums text-warning">{formatCount(parsed.unassigned)} items unassigned</p>
                 </div>
               )}
               </div>

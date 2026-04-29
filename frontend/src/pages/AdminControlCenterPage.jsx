@@ -787,7 +787,7 @@ function AdminControlCenterPage() {
           title: 'Total Companies',
           value: totalCompanies,
           hint: 'Registered companies',
-          tone: 'neutral',
+          tone: 'warning',
           icon: Building2,
         },
         {
@@ -811,7 +811,7 @@ function AdminControlCenterPage() {
           title: 'Total Entities',
           value: totalEntities,
           hint: 'Linked to companies',
-          tone: 'neutral',
+          tone: 'warning',
           icon: Activity,
         },
       ]
@@ -820,8 +820,13 @@ function AdminControlCenterPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {companyMetricCards.map((metric) => {
               const Icon = metric.icon
-              const cardToneClass = metric.tone === 'success' ? 'border-success/30 bg-success/5' : 'border-ink/10'
-              const eyebrowToneClass = metric.tone === 'success' ? 'text-success' : ''
+              const cardToneClass =
+                metric.tone === 'success'
+                  ? 'border-success/30 bg-success/5'
+                  : metric.tone === 'warning'
+                    ? 'border-warning/30 bg-warning/5'
+                    : 'border-ink/10'
+              const eyebrowToneClass = metric.tone === 'success' ? 'text-success' : metric.tone === 'warning' ? 'text-warning' : ''
 
               return (
                 <Card key={metric.key} className={`${cardToneClass} shadow-none`}>
@@ -832,9 +837,9 @@ function AdminControlCenterPage() {
                         <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{metric.value}</p>
                         <p className="mt-1 text-sm text-muted-foreground">{metric.hint}</p>
                       </div>
-                      {metric.tone === 'success' ? (
-                        <div className="rounded-sm bg-success/10 p-2">
-                          <Icon className="h-5 w-5 text-success" />
+                      {(metric.tone === 'success' || metric.tone === 'warning') ? (
+                        <div className={`rounded-sm p-2 ${metric.tone === 'success' ? 'bg-success/10' : 'bg-warning/10'}`}>
+                          <Icon className={`h-5 w-5 ${metric.tone === 'success' ? 'text-success' : 'text-warning'}`} />
                         </div>
                       ) : (
                         <Icon className="h-5 w-5 text-muted-foreground/50" />
@@ -917,31 +922,33 @@ function AdminControlCenterPage() {
                         {canManageCompanies && (
                           <td className="text-right">
                             <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-primary font-bold hover:text-primary/80 hover:bg-primary/5"
+                                  disabled={!canEditCompany}
+                                  onClick={() => {
+                                    setCompanyEditState({
+                                      open: true,
+                                      saving: false,
+                                      companyId: item.id,
+                                      currentSeniorName: item.senior_name || '',
+                                      seniorOptions: companySeniors,
+                                      form: {
+                                        name: item.name || '',
+                                        code: item.code || '',
+                                        senior_user_id: '',
+                                        is_active: Boolean(item.is_active),
+                                      },
+                                    })
+                                  }}
+                                >
+                                  Edit
+                                </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                disabled={!canEditCompany}
-                                onClick={() => {
-                                  setCompanyEditState({
-                                    open: true,
-                                    saving: false,
-                                    companyId: item.id,
-                                    currentSeniorName: item.senior_name || '',
-                                    seniorOptions: companySeniors,
-                                    form: {
-                                      name: item.name || '',
-                                      code: item.code || '',
-                                      senior_user_id: '',
-                                      is_active: Boolean(item.is_active),
-                                    },
-                                  })
-                                }}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                                className="text-destructive font-bold hover:text-destructive/80 hover:bg-destructive/5"
                                 disabled={!canEditCompany}
                                 onClick={() => patchRecord(`/admin/companies/${item.id}/`, { is_active: !item.is_active }, 'Company updated.')}
                               >
@@ -986,7 +993,7 @@ function AdminControlCenterPage() {
           title: 'Total Entities',
           value: totalEntities,
           hint: 'All entities',
-          tone: 'neutral',
+          tone: 'warning',
           icon: Building2,
         },
         {
@@ -1152,33 +1159,35 @@ function AdminControlCenterPage() {
                         {canManageEntities && (
                           <td className="text-right">
                             <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-primary font-bold hover:text-primary/80 hover:bg-primary/5"
+                                  disabled={!canEditEntity}
+                                  onClick={() => {
+                                    setEntityEditState({
+                                      open: true,
+                                      saving: false,
+                                      entityId: item.id,
+                                      currentManagerName: item.manager_name || '',
+                                      managerOptions: entityManagers,
+                                      form: {
+                                        name: item.name || '',
+                                        code: item.code || '',
+                                        entity_type: item.entity_type || 'PROD',
+                                        company: String(item.company || ''),
+                                        manager_user_id: '',
+                                        is_active: Boolean(item.is_active),
+                                      },
+                                    })
+                                  }}
+                                >
+                                  Edit
+                                </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                disabled={!canEditEntity}
-                                onClick={() => {
-                                  setEntityEditState({
-                                    open: true,
-                                    saving: false,
-                                    entityId: item.id,
-                                    currentManagerName: item.manager_name || '',
-                                    managerOptions: entityManagers,
-                                    form: {
-                                      name: item.name || '',
-                                      code: item.code || '',
-                                      entity_type: item.entity_type || 'PROD',
-                                      company: String(item.company || ''),
-                                      manager_user_id: '',
-                                      is_active: Boolean(item.is_active),
-                                    },
-                                  })
-                                }}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                                className="text-destructive font-bold hover:text-destructive/80 hover:bg-destructive/5"
                                 disabled={!canEditEntity}
                                 onClick={() => patchRecord(`/admin/entities/${item.id}/`, { is_active: !item.is_active }, 'Entity updated.')}
                               >
@@ -2100,7 +2109,7 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
               if (!rows.length) return null
               return (
                 <Fragment key={section}>
-                  <tr className="bg-surface-2">
+                  <tr className="bg-muted/10">
                     <td colSpan={roles.length + 1} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
                       {permissionSectionTitle[section] || section}
                     </td>
