@@ -26,12 +26,14 @@ import {
   CircleHelp
 } from 'lucide-react'
 
+import ChartRangeSelect from '../components/charts/ChartRangeSelect'
 import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { buildRangeBuckets, CHART_RANGE_OPTIONS } from '../lib/chartRanges'
 import { useScopedRequests } from '../lib/requestsQueries'
 
 const RESOLVED_SET = new Set(['COMPLETED', 'CLOSED'])
@@ -78,10 +80,6 @@ function toDate(value) {
 
 function getRequestDeadline(item) {
   return item?.deadline_date || item?.deadlineDate || item?.deadline || item?.approximate_deadline || item?.due_date || item?.dueDate || null
-}
-
-function formatDay(date) {
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function formatCount(value) {
@@ -138,6 +136,10 @@ function toTagLabel(value) {
   return cleanLabel(value, 'other').replaceAll('_', ' ').toUpperCase()
 }
 
+function getRangeLabel(value) {
+  return CHART_RANGE_OPTIONS.find((option) => option.value === value)?.label || 'Last 7 days'
+}
+
 const STATUS_TONE = {
   NEW: '#f2c200',
   ACCEPTED: '#60a5fa',
@@ -161,6 +163,7 @@ function HelpTip({ text }) {
 function ReportsPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', reports: null, dashboard: null, requests: [] })
+  const [trendRange, setTrendRange] = useState('7d')
 
   const role = getPrimaryRole(user)
   const effectivePermissionKeys = useMemo(
@@ -261,13 +264,11 @@ function ReportsPage() {
     const resolutionRate = Number(summary.resolution_rate ?? (totalRequests ? Math.round((resolved / totalRequests) * 100) : 0))
     const workloadPressure = openQueue - resolved
 
-    const timelineBase = []
-    for (let index = 6; index >= 0; index -= 1) {
-      const date = new Date()
-      date.setHours(0, 0, 0, 0)
-      date.setDate(date.getDate() - index)
-      timelineBase.push({ key: date.toISOString().slice(0, 10), label: formatDay(date), created: 0, resolved: 0 })
-    }
+    const timelineBase = buildRangeBuckets(trendRange).map((entry) => ({
+      ...entry,
+      created: 0,
+      resolved: 0,
+    }))
 
     const timelineMap = new Map(timelineBase.map((entry) => [entry.key, { ...entry }]))
 
@@ -289,7 +290,7 @@ function ReportsPage() {
       }
     })
 
-    const trend = Array.isArray(summary.trend) && summary.trend.length ? summary.trend : [...timelineMap.values()]
+    const trend = [...timelineMap.values()]
 
     const statusRows = (reports.requests_by_status || [])
       .map((entry) => ({
@@ -413,7 +414,7 @@ function ReportsPage() {
       showExecutiveCards: canSeeExecutiveCards,
       summaryRows,
     }
-  }, [canSeeCompanyVolume, canSeeExecutiveCards, isSuperAdmin, requestsQuery.data?.items, requestsQuery.data?.summary, state.dashboard, state.reports])
+  }, [canSeeCompanyVolume, canSeeExecutiveCards, isSuperAdmin, requestsQuery.data?.items, requestsQuery.data?.summary, state.dashboard, state.reports, trendRange])
 
   if (state.loading || requestsQuery.isLoading) {
     return (
@@ -594,14 +595,17 @@ function ReportsPage() {
           <CardHeader className="flex-row items-center justify-between border-b pb-4">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold text-foreground">Request Flow (Last 7 Days)</h3>
+                <h3 className="text-lg font-semibold text-foreground">Request Flow ({getRangeLabel(trendRange)})</h3>
                 <HelpTip text="Daily trend comparing newly created requests versus resolved requests." />
               </div>
               <p className="text-sm text-muted-foreground">Created vs resolved volume to monitor backlog trends.</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => exportCsv('request-flow-7-days.csv', parsed.trend)} disabled={!canExportData}>
-              <Download className="mr-2 h-4 w-4" /> Export
-            </Button>
+            <div className="flex items-center gap-2">
+              <ChartRangeSelect value={trendRange} onChange={setTrendRange} className="w-auto" />
+              <Button variant="outline" size="sm" onClick={() => exportCsv(`request-flow-${trendRange}.csv`, parsed.trend)} disabled={!canExportData}>
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-5 pt-6">
             <div className="h-[300px]">

@@ -18,7 +18,7 @@ import {
 
 import { useNotifications } from '../hooks/useNotifications'
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 5
 
 function withNotificationContext(link) {
   if (!link) return '/notifications'
@@ -40,11 +40,11 @@ function getMetaForType(eventType) {
   const key = String(eventType || '').toUpperCase()
   if (key.includes('ASSIGN')) return { icon: UserPlus, dot: 'bg-success', tag: 'bg-success/15 text-success' }
   if (key.includes('DEADLINE')) return { icon: AlertCircle, dot: 'bg-warning', tag: 'bg-warning/15 text-warning' }
-  if (key.includes('COMMENT') || key.includes('DISCUSSION')) return { icon: MessageSquare, dot: 'bg-secondary', tag: 'bg-secondary/15 text-secondary' }
-  if (key.includes('STATUS')) return { icon: RefreshCw, dot: 'bg-secondary', tag: 'bg-secondary/15 text-secondary' }
+  if (key.includes('COMMENT') || key.includes('DISCUSSION')) return { icon: MessageSquare, dot: 'bg-primary', tag: 'bg-primary/15 text-primary' }
+  if (key.includes('STATUS')) return { icon: RefreshCw, dot: 'bg-primary', tag: 'bg-primary/15 text-primary' }
   if (key.includes('COMPLETE') || key.includes('CLOSE') || key.includes('RESOLVE')) return { icon: CheckCircle2, dot: 'bg-success', tag: 'bg-success/15 text-success' }
   if (key.includes('SYSTEM')) return { icon: Settings, dot: 'bg-muted-foreground', tag: 'bg-muted text-muted-foreground' }
-  return { icon: ClipboardList, dot: 'bg-secondary', tag: 'bg-secondary/15 text-secondary' }
+  return { icon: ClipboardList, dot: 'bg-primary', tag: 'bg-primary/15 text-primary' }
 }
 
 function NotificationsPage() {
@@ -153,14 +153,14 @@ function NotificationsPage() {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                  className={`inline-flex items-center gap-2 rounded-none border-b-2 px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest transition-all ${
                     active
-                      ? 'border-secondary bg-secondary/15 text-secondary'
-                      : 'border-border bg-card text-foreground hover:bg-muted/60'
+                      ? 'border-primary text-foreground'
+                      : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/30'
                   }`}
                 >
                   {tab.label}
-                  <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${active ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`inline-flex min-w-5 items-center justify-center rounded-none px-1.5 text-[10px] font-bold ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
                     {tab.count}
                   </span>
                 </button>
@@ -168,7 +168,7 @@ function NotificationsPage() {
             })}
           </div>
 
-          <div className="surface-card overflow-hidden p-2">
+          <div className="surface-card shadow-none overflow-hidden p-2">
             {notifications.loading ? (
               <p className="px-4 py-10 text-sm text-muted-foreground">Loading notifications...</p>
             ) : notifications.error ? (
@@ -182,8 +182,8 @@ function NotificationsPage() {
                   const Icon = meta.icon
                   const highlighted = !item.is_read && index === 0
                   return (
-                    <article key={item.id} className={`relative flex gap-3 px-4 py-4 ${highlighted ? 'bg-secondary/10' : ''}`}>
-                      {highlighted ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-secondary" /> : null}
+                    <article key={item.id} className={`relative flex gap-3 px-4 py-4 ${highlighted ? 'bg-primary/10' : ''}`}>
+                      {highlighted ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-primary" /> : null}
                       <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/60">
                         <Icon className="h-5 w-5 text-foreground" />
                       </div>
@@ -254,7 +254,7 @@ function NotificationsPage() {
           ) : null}
         </section>
 
-        <aside className="surface-card h-fit p-4">
+        <aside className="surface-card shadow-none h-fit p-4 xl:mt-[52px]">
           <div className="mb-4 flex items-center justify-between">
             <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Filter className="h-4 w-4" />
@@ -262,7 +262,7 @@ function NotificationsPage() {
             </p>
             <button
               type="button"
-              className="text-xs font-semibold text-secondary hover:underline"
+              className="text-xs font-semibold text-primary hover:underline"
               onClick={() => {
                 setSelectedTypes([])
                 setDateRange('all')
@@ -311,13 +311,7 @@ function NotificationsPage() {
               </div>
             </div>
 
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Read status</p>
-              <button type="button" className="flex h-10 w-full items-center justify-between rounded-md border border-border bg-background px-3 text-sm text-foreground">
-                {activeTab === 'unread' ? 'Unread only' : 'All'}
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              </button>
-            </div>
+
           </div>
         </aside>
       </div>

@@ -251,7 +251,7 @@ function NotificationsBell() {
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
-            <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full border border-background bg-destructive px-1 text-[10px] font-bold leading-4 text-destructive-foreground">
+            <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-sm border border-primary/35 bg-primary/15 px-1 text-[10px] font-bold leading-4 text-primary shadow-none">
               {unread > 99 ? "99+" : unread}
             </span>
           ) : null}
@@ -440,4 +440,3 @@ export function AppShell({ children }) {
     </div>
   );
 }
-

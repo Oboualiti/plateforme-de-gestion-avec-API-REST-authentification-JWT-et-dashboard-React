@@ -12,6 +12,12 @@ function ProtectedRoute({
 }) {
   const { isAuthenticated, loading, user } = useAuth()
   const location = useLocation()
+  const permissionKeys = new Set(user?.effective_permission_keys || [])
+  const reportsPermissionKeys = [
+    'view_global_reports',
+    'view_company_reports',
+    'view_entity_reports',
+  ]
 
   if (loading) {
     return (
@@ -51,7 +57,6 @@ function ProtectedRoute({
   }
 
   if (requireAnyPermission?.length) {
-    const permissionKeys = new Set(user?.effective_permission_keys || [])
     const allowed = requireAnyPermission.some((permissionKey) => permissionKeys.has(permissionKey))
     if (!allowed) {
       return (
@@ -76,8 +81,12 @@ function ProtectedRoute({
     return <Navigate to={redirectTo} replace />
   }
 
-  if (requireReportsPageAccess && !user?.reports_page_access_allowed) {
-    return <Navigate to={redirectTo} replace />
+  if (requireReportsPageAccess) {
+    const hasReportsPermission = reportsPermissionKeys.some((permissionKey) => permissionKeys.has(permissionKey))
+    const fallbackLegacyAccess = Boolean(user?.reports_page_access_allowed)
+    if (!hasReportsPermission && !fallbackLegacyAccess) {
+      return <Navigate to={redirectTo} replace />
+    }
   }
 
   return <Outlet />

@@ -465,3 +465,60 @@
   }
 }
 
+@layer components {
+  .journey-chart-panel {
+    background: hsl(var(--surface-2));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.125rem;
+    padding: 16px;
+    min-height: 340px;
+  }
+
+  .journey-chart-legend {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    color: #cbd5e1;
+    font-size: 13px;
+  }
+
+  .journey-chart-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    display: inline-block;
+  }
+
+  .legend-dot.submitted { background: #f59e0b; }
+  .legend-dot.resolved { background: #22c55e; }
+
+  .journey-chart-tooltip {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.125rem;
+    padding: 10px 12px;
+    color: #f8fafc;
+    box-shadow: none;
+  }
+
+  .journey-chart-tooltip strong {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .journey-chart-tooltip p {
+    margin: 4px 0;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .tooltip-submitted { color: #f59e0b; }
+  .tooltip-resolved { color: #22c55e; }
+}
