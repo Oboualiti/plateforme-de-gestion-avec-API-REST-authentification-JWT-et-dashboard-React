@@ -19,12 +19,16 @@ MANAGE_PERMISSION_SCOPE_ORDER = [
     "manage_users_global",
     "manage_users_company",
     "manage_users_entity",
+    "manage_assigned_users",
 ]
 
 REPORT_PERMISSION_KEYS = {
     "view_global_reports",
     "view_company_reports",
     "view_entity_reports",
+}
+ROLE_LOCKED_PERMISSION_KEYS = {
+    "manage_assigned_users": {"team_leader"},
 }
 
 ROLE_PERMISSION_HIERARCHY_ERROR = "You can only manage users below your role."
@@ -97,7 +101,12 @@ def get_effective_permission_keys(user):
     }
     allowed = inherited | delegated | {key for key, value in overrides.items() if value}
     denied = {key for key, value in overrides.items() if not value}
-    return sorted(allowed - denied)
+    effective = allowed - denied
+    primary_role_key = get_primary_role_key(user)
+    for permission_key, allowed_roles in ROLE_LOCKED_PERMISSION_KEYS.items():
+        if permission_key in effective and primary_role_key not in allowed_roles:
+            effective.discard(permission_key)
+    return sorted(effective)
 
 
 def get_explicit_user_permission_keys(user):
@@ -119,7 +128,12 @@ def get_explicit_user_permission_keys(user):
     }
     allowed = delegated | {key for key, value in overrides.items() if value}
     denied = {key for key, value in overrides.items() if not value}
-    return allowed - denied
+    effective = allowed - denied
+    primary_role_key = get_primary_role_key(user)
+    for permission_key, allowed_roles in ROLE_LOCKED_PERMISSION_KEYS.items():
+        if permission_key in effective and primary_role_key not in allowed_roles:
+            effective.discard(permission_key)
+    return effective
 
 
 def has_permission(user, permission_key):
@@ -270,6 +284,8 @@ def get_manage_scope_filter(user):
         return Q(company_id=user.company_id)
     if "manage_users_entity" in effective_permissions and user.entity_id:
         return Q(entity_id=user.entity_id)
+    if "manage_assigned_users" in effective_permissions:
+        return Q(team_leader_id=user.id)
     return None
 
 
@@ -295,6 +311,7 @@ def get_view_scope(user):
             or "manage_users_entity" in effective_permissions
         )
     )
+    has_assigned = "manage_assigned_users" in effective_permissions
 
     if has_global:
         return "view_users_global"
@@ -302,6 +319,8 @@ def get_view_scope(user):
         return "view_users_company"
     if has_entity:
         return "view_users_entity"
+    if has_assigned:
+        return "view_users_assigned"
     return None
 
 
@@ -313,6 +332,8 @@ def get_view_scope_filter(user):
         return Q(company_id=user.company_id)
     if scope == "view_users_entity" and user.entity_id:
         return Q(entity_id=user.entity_id)
+    if scope == "view_users_assigned":
+        return Q(team_leader_id=user.id)
     return None
 
 
@@ -331,6 +352,8 @@ def can_manage_any_users(user):
         return bool(user.company_id)
     if scope == "manage_users_entity":
         return bool(user.company_id and user.entity_id)
+    if scope == "manage_assigned_users":
+        return True
     return False
 
 
@@ -387,6 +410,19 @@ def can_manage_target_user(actor, target):
     if actor_scope == "manage_users_entity":
         if target.company_id != actor.company_id or target.entity_id != actor.entity_id:
             return False
+    if actor_scope == "manage_assigned_users":
+        if target.team_leader_id != actor.id:
+            return False
+    return get_user_max_role_level(target) < get_user_max_role_level(actor)
+
+
+def can_manage_target_user_permissions(actor, target):
+    if actor.id == target.id:
+        return False
+    if not has_permission(actor, "permission_management"):
+        return False
+    if not can_view_target_user(actor, target):
+        return False
     return get_user_max_role_level(target) < get_user_max_role_level(actor)
 
 

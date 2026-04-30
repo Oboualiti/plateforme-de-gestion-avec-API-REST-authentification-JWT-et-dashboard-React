@@ -36,6 +36,7 @@ from .import_export import (
 from .services import (
     ROLE_HIERARCHY,
     can_manage_any_users,
+    can_manage_target_user_permissions,
     can_view_any_users,
     can_manage_target_user,
     can_view_target_user,
@@ -51,6 +52,9 @@ from .services import (
 class BaseManageUsersView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def allows_permission_management_only(self):
+        return False
+
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if request.method in SAFE_METHODS:
@@ -61,6 +65,10 @@ class BaseManageUsersView(APIView):
                 message="You do not have permission to view users.",
             )
         if not can_manage_any_users(request.user):
+            if self.allows_permission_management_only() and has_permission(
+                request.user, "permission_management"
+            ):
+                return
             self.permission_denied(
                 request,
                 message="You do not have permission to manage users.",
@@ -645,9 +653,13 @@ class ManageableUserImportView(BaseManageUsersView):
 
 
 class ManageUserDetailView(BaseManageUsersView):
+    def allows_permission_management_only(self):
+        return True
+
     def build_payload(self, request, target):
         actor_level = get_user_max_role_level(request.user)
         can_edit = can_manage_target_user(request.user, target)
+        can_manage_permissions = can_manage_target_user_permissions(request.user, target)
         delegatable_permission_keys = get_delegatable_permission_keys(request.user)
         available_roles = [
             {
@@ -661,8 +673,9 @@ class ManageUserDetailView(BaseManageUsersView):
         payload = UserPermissionAdminDetailSerializer(
             target, context={"editor_user": request.user}
         ).data
-        payload["available_roles"] = available_roles if can_edit else []
+        payload["available_roles"] = available_roles if can_manage_permissions else []
         payload["can_edit"] = can_edit
+        payload["can_manage_permissions"] = can_manage_permissions
         payload["delegatable_permission_keys"] = delegatable_permission_keys
         return payload
 
@@ -673,7 +686,12 @@ class ManageUserDetailView(BaseManageUsersView):
 
     def patch(self, request, user_id):
         target = self.get_target_user(user_id)
-        self.ensure_manageable(request, target)
+        self.ensure_viewable(request, target)
+        if not can_manage_target_user_permissions(request.user, target):
+            self.permission_denied(
+                request,
+                message="You do not have permission to manage user roles and permissions.",
+            )
         serializer = UserRoleUpdateSerializer(
             data=request.data,
             context={
@@ -710,6 +728,9 @@ class ManageUserDetailView(BaseManageUsersView):
 
 
 class ManageUserPermissionOverrideView(BaseManageUsersView):
+    def allows_permission_management_only(self):
+        return True
+
     @staticmethod
     def enforce_status_permission_dependency(user, reason="Auto-adjusted by status permission policy."):
         effective_keys = set(get_effective_permission_keys(user))
@@ -727,6 +748,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
     def build_payload(self, request, target):
         actor_level = get_user_max_role_level(request.user)
         can_edit = can_manage_target_user(request.user, target)
+        can_manage_permissions = can_manage_target_user_permissions(request.user, target)
         delegatable_permission_keys = get_delegatable_permission_keys(request.user)
         available_roles = [
             {
@@ -740,14 +762,20 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
         payload = UserPermissionAdminDetailSerializer(
             target, context={"editor_user": request.user}
         ).data
-        payload["available_roles"] = available_roles if can_edit else []
+        payload["available_roles"] = available_roles if can_manage_permissions else []
         payload["can_edit"] = can_edit
+        payload["can_manage_permissions"] = can_manage_permissions
         payload["delegatable_permission_keys"] = delegatable_permission_keys
         return payload
 
     def post(self, request, user_id):
         target = self.get_target_user(user_id)
-        self.ensure_manageable(request, target)
+        self.ensure_viewable(request, target)
+        if not can_manage_target_user_permissions(request.user, target):
+            self.permission_denied(
+                request,
+                message="You do not have permission to manage user roles and permissions.",
+            )
         serializer = UserPermissionOverrideSerializer(
             data=request.data,
             context={
@@ -776,7 +804,12 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
 
     def delete(self, request, user_id):
         target = self.get_target_user(user_id)
-        self.ensure_manageable(request, target)
+        self.ensure_viewable(request, target)
+        if not can_manage_target_user_permissions(request.user, target):
+            self.permission_denied(
+                request,
+                message="You do not have permission to manage user roles and permissions.",
+            )
         serializer = UserPermissionOverrideSerializer(
             data=request.data,
             context={

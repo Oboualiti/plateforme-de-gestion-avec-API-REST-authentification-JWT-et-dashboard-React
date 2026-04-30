@@ -341,6 +341,7 @@ function AdminControlCenterPage() {
   const isTeamLeader = roleKeys.includes('team_leader')
   const canManageCompanies = effectivePermissionKeys.has('manage_companies')
   const canManageEntities = effectivePermissionKeys.has('manage_entities') || effectivePermissionKeys.has('manage_company_entities')
+  const canManagePermissions = effectivePermissionKeys.has('permission_management')
   const actorCompanyId = Number(user?.company_id ?? user?.company ?? 0) || null
   const [companyEditState, setCompanyEditState] = useState({
     open: false,
@@ -376,6 +377,15 @@ function AdminControlCenterPage() {
   })
 
   async function loadSection() {
+    if (sectionKey === 'roles' && !canManagePermissions) {
+      setState({
+        loading: false,
+        error: 'You do not have permission to manage roles and permissions.',
+        data: null,
+        sectionKey,
+      })
+      return
+    }
     setState({ loading: true, error: '', data: null, sectionKey })
     try {
       let requestConfig
@@ -456,7 +466,7 @@ function AdminControlCenterPage() {
   useEffect(() => {
     setAuditGroupPages({})
     loadSection()
-  }, [sectionKey, auditCategoryKey, roleScopeFilter.company_id, roleScopeFilter.entity_id])
+  }, [sectionKey, auditCategoryKey, roleScopeFilter.company_id, roleScopeFilter.entity_id, canManagePermissions])
 
   function setAuditGroupPage(groupKey, nextPage) {
     setAuditGroupPages((current) => ({ ...current, [groupKey]: nextPage }))
@@ -1133,7 +1143,12 @@ function AdminControlCenterPage() {
                 </thead>
                 <tbody>
                   {filteredEntities.map((item) => {
-                    const canEditEntity = canManageEntities
+                    const canEditEntity = effectivePermissionKeys.has('manage_entities')
+                      || (
+                        effectivePermissionKeys.has('manage_company_entities')
+                        && actorCompanyId
+                        && Number(item.company_id || item.company) === Number(actorCompanyId)
+                      )
                     const entityManagers = managerOptions.filter((opt) => Number(opt.company_id) === Number(item.company))
                     return (
                       <tr key={item.id}>
@@ -1793,6 +1808,8 @@ const permissionMetaByKey = {
   manage_users_global: { title: 'Manage Users Global', description: 'Invite / deactivate globally', section: 'access_control' },
   manage_users_company: { title: 'Manage Users Company', description: 'Invite / deactivate within company', section: 'access_control' },
   manage_users_entity: { title: 'Manage Users Entity', description: 'Invite / deactivate within entity', section: 'access_control' },
+  manage_assigned_users: { title: 'Manage Assigned Users', description: 'Manage users assigned to team leader', section: 'access_control' },
+  permission_management: { title: 'Permission Management', description: 'Manage user roles and permission assignments', section: 'access_control' },
   view_users_global: { title: 'View Users Global', description: 'View users globally', section: 'access_control' },
   view_users_company: { title: 'View Users Company', description: 'View users within company', section: 'access_control' },
   view_users_entity: { title: 'View Users Entity', description: 'View users within entity', section: 'access_control' },

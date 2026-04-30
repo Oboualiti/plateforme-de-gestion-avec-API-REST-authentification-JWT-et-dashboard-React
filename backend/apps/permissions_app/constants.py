@@ -63,6 +63,18 @@ PERMISSION_DEFINITIONS = [
         "category": "user_management",
     },
     {
+        "key": "manage_assigned_users",
+        "name": "Manage Assigned Users",
+        "description": "Manage users directly assigned to the current team leader.",
+        "category": "user_management",
+    },
+    {
+        "key": "permission_management",
+        "name": "Permission Management",
+        "description": "Manage user roles and permission assignments within allowed scope.",
+        "category": "user_management",
+    },
+    {
         "key": "view_users_global",
         "name": "View Users Global",
         "description": "View users globally.",
@@ -241,6 +253,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
         "manage_users_company",
         "view_users_company",
         "view_users_entity",
+        "permission_management",
         "create_request",
         "view_all_requests",
         "view_company_requests",
@@ -265,7 +278,9 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
     "manager": {
         "view_company_entities",
         "manage_users_entity",
+        "manage_assigned_users",
         "view_users_entity",
+        "permission_management",
         "create_request",
         "view_entity_requests",
         "view_team_requests",
@@ -286,6 +301,7 @@ DEFAULT_ROLE_PERMISSION_MATRIX = {
     },
     "team_leader": {
         "view_company_entities",
+        "permission_management",
         "create_request",
         "view_team_requests",
         "view_own_requests",

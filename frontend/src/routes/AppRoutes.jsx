@@ -164,6 +164,7 @@ function AppRoutes() {
               'manage_users_global',
               'manage_users_company',
               'manage_users_entity',
+              'manage_assigned_users',
               'view_users_global',
               'view_users_company',
               'view_users_entity',
@@ -198,8 +199,11 @@ function AppRoutes() {
           <Route element={<ProtectedRoute requireReportsPageAccess redirectTo="/dashboard" />}>
             <Route path="/admin/reports" element={<ReportsPage />} />
           </Route>
-          <Route path="/admin/roles/customize" element={<CustomizeRoleDefaultsPage />} />
-          <Route path="/admin/roles/customize/:roleId" element={<CustomizeRolePermissionEditorPage />} />
+          <Route element={<ProtectedRoute requireAnyPermission={['permission_management']} redirectTo="/dashboard" />}>
+            <Route path="/admin/roles/customize" element={<CustomizeRoleDefaultsPage />} />
+            <Route path="/admin/roles/customize/:roleId" element={<CustomizeRolePermissionEditorPage />} />
+            <Route path="/admin/roles" element={<AdminControlCenterPage />} />
+          </Route>
           <Route path="/admin/:section" element={<AdminControlCenterPage />} />
         </Route>
       </Route>

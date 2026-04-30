@@ -70,6 +70,8 @@ const PERMISSION_SECTION_BY_KEY = {
   manage_users_global: 'access_control',
   manage_users_company: 'access_control',
   manage_users_entity: 'access_control',
+  manage_assigned_users: 'access_control',
+  permission_management: 'access_control',
   view_users_global: 'access_control',
   view_users_company: 'access_control',
   view_users_entity: 'access_control',
@@ -188,7 +190,12 @@ function PermissionDetailPage() {
     setIsSaving(true)
     try {
       const currentRole = user?.roles?.[0]?.key || ''
+      let roleUpdated = false
       if (selectedRole !== currentRole) {
+        if (!canManagePermissions) {
+          setMessage('You do not have permission to change user role.')
+          return
+        }
         const rolePayload = { role_keys: [selectedRole] }
         if (selectedRole === 'user') {
           rolePayload.team_leader_id = profileForm.team_leader_id
@@ -197,37 +204,47 @@ function PermissionDetailPage() {
         }
         const roleResponse = await api.patch(`/admin/users/${userId}/`, rolePayload)
         setState((current) => ({ ...current, user: roleResponse.data }))
+        roleUpdated = true
       }
 
-      const payload = {
-        username: profileForm.username,
-        email: profileForm.email,
-        first_name: profileForm.first_name,
-        last_name: profileForm.last_name,
-        job_title: profileForm.job_title,
-        phone_number: profileForm.phone_number,
-        is_active: profileForm.is_active,
+      let infoUpdated = false
+      if (canEditProfile) {
+        const payload = {
+          username: profileForm.username,
+          email: profileForm.email,
+          first_name: profileForm.first_name,
+          last_name: profileForm.last_name,
+          job_title: profileForm.job_title,
+          phone_number: profileForm.phone_number,
+          is_active: profileForm.is_active,
+        }
+        if (profileForm.password.trim()) {
+          payload.password = profileForm.password
+        }
+        if (canShowCompany && profileForm.company_id) {
+          payload.company_id = Number(profileForm.company_id)
+        }
+        if (canShowEntity) {
+          payload.entity_id = profileForm.entity_id ? Number(profileForm.entity_id) : null
+        }
+        if (canShowTeamLeader) {
+          payload.team_leader_id = profileForm.team_leader_id
+            ? Number(profileForm.team_leader_id)
+            : null
+        }
+        await api.patch(`/admin/users/manageable/${userId}/`, payload)
+        infoUpdated = true
       }
-      if (profileForm.password.trim()) {
-        payload.password = profileForm.password
+
+      if (roleUpdated || infoUpdated) {
+        setMessage('User updated.')
+        setProfileForm((current) => ({ ...current, password: '' }))
+        navigate('/admin/users', {
+          state: { successMessage: 'Saved successfully.' },
+        })
+      } else {
+        setMessage('No changes to save.')
       }
-      if (canShowCompany && profileForm.company_id) {
-        payload.company_id = Number(profileForm.company_id)
-      }
-      if (canShowEntity) {
-        payload.entity_id = profileForm.entity_id ? Number(profileForm.entity_id) : null
-      }
-      if (canShowTeamLeader) {
-        payload.team_leader_id = profileForm.team_leader_id
-          ? Number(profileForm.team_leader_id)
-          : null
-      }
-      await api.patch(`/admin/users/manageable/${userId}/`, payload)
-      setMessage('User updated.')
-      setProfileForm((current) => ({ ...current, password: '' }))
-      navigate('/admin/users', {
-        state: { successMessage: 'Saved successfully: user and role updated.' },
-      })
     } catch (error) {
       setMessage(getApiErrorMessage(error, 'Could not update user.'))
     } finally {
@@ -250,8 +267,9 @@ function PermissionDetailPage() {
   }
 
   const user = state.user
-  const canEdit = Boolean(user?.can_edit)
-  const roleOptions = canEdit ? user?.available_roles || [] : user?.roles || []
+  const canEditProfile = Boolean(user?.can_edit)
+  const canManagePermissions = Boolean(user?.can_manage_permissions)
+  const roleOptions = canManagePermissions ? user?.available_roles || [] : user?.roles || []
   const targetRole = selectedRole || user?.roles?.[0]?.key || ''
   const isSuperAdmin = (actor?.role_keys || []).includes('super_admin')
   const canShowCompany = isSuperAdmin
@@ -350,7 +368,7 @@ function PermissionDetailPage() {
         <article className="surface-card shadow-none h-full max-h-[750px] p-5 overflow-y-auto">
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Profile</p>
           <h2 className="mt-1 text-lg font-semibold text-foreground">User Information</h2>
-          {!canEdit && <p className="mt-2 text-sm text-muted-foreground">Read only: same-level users cannot be modified.</p>}
+          {!canEditProfile && <p className="mt-2 text-sm text-muted-foreground">Read only: same-level users cannot be modified.</p>}
           {message && (
             <p className={`mt-2 text-sm font-medium ${messageIsError ? 'text-destructive' : 'text-success'}`}>
               {message}
@@ -374,7 +392,7 @@ function PermissionDetailPage() {
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, username: event.target.value }))
                 }
-                disabled={!canEdit}
+                disabled={!canEditProfile}
                 required
               />
             </div>
@@ -388,7 +406,7 @@ function PermissionDetailPage() {
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, email: event.target.value }))
                 }
-                disabled={!canEdit}
+                disabled={!canEditProfile}
               />
             </div>
 
@@ -401,7 +419,7 @@ function PermissionDetailPage() {
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, phone_number: event.target.value }))
                 }
-                disabled={!canEdit}
+                disabled={!canEditProfile}
               />
             </div>
 
@@ -414,7 +432,7 @@ function PermissionDetailPage() {
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, first_name: event.target.value }))
                 }
-                disabled={!canEdit}
+                disabled={!canEditProfile}
               />
             </div>
 
@@ -427,7 +445,7 @@ function PermissionDetailPage() {
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, last_name: event.target.value }))
                 }
-                disabled={!canEdit}
+                disabled={!canEditProfile}
               />
             </div>
 
@@ -440,7 +458,7 @@ function PermissionDetailPage() {
                 onChange={(event) =>
                   setProfileForm((current) => ({ ...current, job_title: event.target.value }))
                 }
-                disabled={!canEdit}
+                disabled={!canEditProfile}
               />
             </div>
           </div>
@@ -458,7 +476,7 @@ function PermissionDetailPage() {
                   onChange={(event) =>
                     setProfileForm((current) => ({ ...current, password: event.target.value }))
                   }
-                  disabled={!canEdit}
+                  disabled={!canEditProfile}
                 />
               </div>
             </div>
@@ -482,7 +500,7 @@ function PermissionDetailPage() {
                         team_leader_id: '',
                       }))
                     }
-                    disabled={!canEdit}
+                    disabled={!canEditProfile}
                     required
                   >
                     <option value="">Select company</option>
@@ -509,7 +527,7 @@ function PermissionDetailPage() {
                         team_leader_id: '',
                       }))
                     }
-                    disabled={!canEdit}
+                    disabled={!canEditProfile}
                     required
                   >
                     <option value="">Select entity</option>
@@ -531,7 +549,7 @@ function PermissionDetailPage() {
                   onChange={(event) =>
                     setProfileForm((current) => ({ ...current, is_active: event.target.value === 'active' }))
                   }
-                  disabled={!canEdit}
+                  disabled={!canEditProfile}
                 >
                   <option value="">Select status</option>
                   <option value="active">Activate</option>
@@ -549,7 +567,7 @@ function PermissionDetailPage() {
                     onChange={(event) =>
                       setProfileForm((current) => ({ ...current, team_leader_id: event.target.value }))
                     }
-                    disabled={!canEdit}
+                    disabled={!canEditProfile}
                   >
                     <option value="">Select team leader</option>
                     {filteredTeamLeaders.map((item) => (
@@ -564,38 +582,40 @@ function PermissionDetailPage() {
           </div>
 
 
-          <div className="space-y-3 border-t border-border/70 pt-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Roles</p>
-            <h3 className="text-sm font-semibold text-foreground">Assigned Role</h3>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {roleOptions.map((role) => (
-                <div key={role.key} className="flex flex-col gap-1.5">
-                  <button
-                    type="button"
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
-                      selectedRole === role.key
-                        ? 'border-transparent text-emerald-600'
-                        : 'border-muted-foreground/40 text-muted-foreground'
-                    } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
-                    onClick={() => setSelectedRole(role.key)}
-                    disabled={!canEdit}
-                    aria-label={`Select ${role.name} role`}
-                  >
-                    {selectedRole === role.key ? '\u2713' : '-'}
-                  </button>
-                  <label className="text-sm text-foreground">
-                    {role.name} <small className="text-muted-foreground">(level {role.level})</small>
-                  </label>
-                </div>
-              ))}
+          {canManagePermissions && (
+            <div className="space-y-3 border-t border-border/70 pt-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Roles</p>
+              <h3 className="text-sm font-semibold text-foreground">Assigned Role</h3>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {roleOptions.map((role) => (
+                  <div key={role.key} className="flex flex-col gap-1.5">
+                    <button
+                      type="button"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-lg leading-none transition ${
+                        selectedRole === role.key
+                          ? 'border-transparent text-emerald-600'
+                          : 'border-muted-foreground/40 text-muted-foreground'
+                      } ${canManagePermissions ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                      onClick={() => setSelectedRole(role.key)}
+                      disabled={!canManagePermissions}
+                      aria-label={`Select ${role.name} role`}
+                    >
+                      {selectedRole === role.key ? '\u2713' : '-'}
+                    </button>
+                    <label className="text-sm text-foreground">
+                      {role.name} <small className="text-muted-foreground">(level {role.level})</small>
+                    </label>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
               className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-              disabled={!canEdit || isSaving}
+              disabled={(!canEditProfile && !canManagePermissions) || isSaving}
             >
               {isSaving ? 'Saving...' : 'Save User'}
             </button>
@@ -663,9 +683,9 @@ function PermissionDetailPage() {
                               permission.effective
                                 ? 'border-transparent text-emerald-600'
                                 : 'border-muted-foreground/40 text-muted-foreground'
-                            } ${canEdit ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
+                            } ${canManagePermissions ? 'cursor-pointer hover:border-primary hover:text-primary' : 'cursor-not-allowed opacity-80'}`}
                             onClick={() => updatePermission(permission.key, !permission.effective)}
-                            disabled={!canEdit}
+                            disabled={!canManagePermissions}
                             aria-label={`${permission.effective ? 'Revoke' : 'Grant'} ${permission.name}`}
                           >
                             {permission.effective ? '\u2713' : '-'}

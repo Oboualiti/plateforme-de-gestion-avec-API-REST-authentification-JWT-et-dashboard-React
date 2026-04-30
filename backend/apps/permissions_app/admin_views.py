@@ -74,8 +74,8 @@ ADMIN_MODULE_PERMISSIONS = {
     "entities": {"manage_entities", "view_company_entities"},
     "hierarchy": {"view_company_entities", "manage_users_entity", "manage_users_company"},
     "users": {"manage_users_global", "manage_users_company", "manage_users_entity"},
-    "roles": {"manage_users_global", "manage_users_company", "manage_users_entity", "view_own_requests"},
-    "permissions": {"manage_users_global", "manage_users_company", "manage_users_entity"},
+    "roles": {"manage_users_global", "manage_users_company", "manage_users_entity", "permission_management"},
+    "permissions": {"manage_users_global", "manage_users_company", "manage_users_entity", "permission_management"},
     "requests": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
     "assignments": {"assign_request"},
     "status_tracking": {"view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests"},
@@ -91,6 +91,7 @@ AUDIT_LOG_MODULES_BY_PERMISSION = {
 }
 
 ROLE_PERMISSION_IMPLICATIONS = {
+    "manage_company_entities": {"view_company_entities"},
     "manage_users_global": {"view_users_global", "manage_users_company", "manage_users_entity"},
     "manage_users_company": {"view_users_company", "manage_users_entity"},
     "manage_users_entity": {"view_users_entity"},
@@ -109,6 +110,10 @@ LOG_SCOPE_COMPANY_KEY = "view_logs_scope_company"
 LOG_SCOPE_ENTITY_KEY = "view_logs_scope_entity"
 LOG_SCOPE_TEAM_KEY = "view_logs_scope_team"
 logger = logging.getLogger(__name__)
+
+
+def has_permission_management_access(user):
+    return has_permission(user, "permission_management")
 
 
 def normalize_log_scope_permission_keys(role_key, permission_keys):
@@ -138,6 +143,21 @@ def normalize_request_status_permission_keys(permission_keys):
 
 
 HIDDEN_ROLE_PERMISSION_KEYS = {"view_audit_logs"}
+ROLE_LOCKED_PERMISSION_KEYS = {
+    "manage_assigned_users": {"team_leader"},
+}
+
+
+def validate_role_locked_permission_keys(role_key, permission_keys):
+    for permission_key, allowed_roles in ROLE_LOCKED_PERMISSION_KEYS.items():
+        if permission_key in set(permission_keys) and role_key not in allowed_roles:
+            return (
+                False,
+                f"{permission_key} can only be enabled for: {', '.join(sorted(allowed_roles))}.",
+            )
+    return True, ""
+
+
 def get_saved_default_permission_keys(role):
     custom_keys = set(
         RoleDefaultPermission.objects.filter(role=role).values_list("permission__key", flat=True)
@@ -796,6 +816,8 @@ class AdminRolesView(AdminBaseView):
     module_key = "roles"
 
     def get(self, request):
+        if not has_permission_management_access(request.user):
+            return Response({"detail": "You do not have permission to manage roles and permissions."}, status=status.HTTP_403_FORBIDDEN)
         actor_role = self.role_key(request.user)
         company_id_param = request.query_params.get("company_id")
         entity_id_param = request.query_params.get("entity_id")
@@ -1064,6 +1086,8 @@ class AdminRoleDetailView(AdminBaseView):
         return sorted(expanded)
 
     def patch(self, request, role_id):
+        if not has_permission_management_access(request.user):
+            return Response({"detail": "You do not have permission to manage roles and permissions."}, status=status.HTTP_403_FORBIDDEN)
         role = Role.objects.filter(id=role_id).first()
         if role is None:
             return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -1076,6 +1100,9 @@ class AdminRoleDetailView(AdminBaseView):
         permission_keys = self._expand_permission_keys(serializer.validated_data["permission_keys"])
         permission_keys = normalize_log_scope_permission_keys(role.key, permission_keys)
         permission_keys = normalize_request_status_permission_keys(permission_keys)
+        is_valid_role_lock, role_lock_error = validate_role_locked_permission_keys(role.key, permission_keys)
+        if not is_valid_role_lock:
+            return Response({"detail": role_lock_error}, status=status.HTTP_400_BAD_REQUEST)
         company_id = serializer.validated_data.get("company_id")
         entity_id = serializer.validated_data.get("entity_id")
         entity_type = serializer.validated_data.get("entity_type")
@@ -1342,6 +1369,8 @@ class AdminRoleDetailView(AdminBaseView):
         return Response({"detail": "You do not have permission to update roles."}, status=status.HTTP_403_FORBIDDEN)
 
     def post(self, request, role_id):
+        if not has_permission_management_access(request.user):
+            return Response({"detail": "You do not have permission to manage roles and permissions."}, status=status.HTTP_403_FORBIDDEN)
         role = Role.objects.filter(id=role_id).first()
         if role is None:
             return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -1596,6 +1625,8 @@ class AdminRoleDefaultDetailView(AdminBaseView):
     module_key = "roles"
 
     def patch(self, request, role_id):
+        if not has_permission_management_access(request.user):
+            return Response({"detail": "You do not have permission to manage roles and permissions."}, status=status.HTTP_403_FORBIDDEN)
         role = Role.objects.filter(id=role_id).first()
         if role is None:
             return Response({"detail": "Role not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -1608,6 +1639,9 @@ class AdminRoleDefaultDetailView(AdminBaseView):
         serializer.is_valid(raise_exception=True)
         permission_keys = normalize_log_scope_permission_keys(role.key, serializer.validated_data["permission_keys"])
         permission_keys = normalize_request_status_permission_keys(permission_keys)
+        is_valid_role_lock, role_lock_error = validate_role_locked_permission_keys(role.key, permission_keys)
+        if not is_valid_role_lock:
+            return Response({"detail": role_lock_error}, status=status.HTTP_400_BAD_REQUEST)
 
         known_permission_keys = set(AppPermission.objects.values_list("key", flat=True))
         unknown_permission_keys = sorted(set(permission_keys) - known_permission_keys)
@@ -1655,6 +1689,8 @@ class AdminPermissionsView(AdminBaseView):
     module_key = "permissions"
 
     def get(self, request):
+        if not has_permission_management_access(request.user):
+            return Response({"detail": "You do not have permission to manage roles and permissions."}, status=status.HTTP_403_FORBIDDEN)
         payload = {
             "catalog": PermissionCatalogSerializer(AppPermission.objects.order_by("category", "key"), many=True).data,
             "delegatable_permission_keys": get_delegatable_permission_keys(request.user),

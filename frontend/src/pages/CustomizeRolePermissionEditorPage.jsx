@@ -96,6 +96,8 @@ const PERMISSION_META_BY_KEY = {
   manage_users_global: { title: 'Manage Users Global', description: 'Invite / deactivate globally', section: 'access_control' },
   manage_users_company: { title: 'Manage Users Company', description: 'Invite / deactivate within company', section: 'access_control' },
   manage_users_entity: { title: 'Manage Users Entity', description: 'Invite / deactivate within entity', section: 'access_control' },
+  manage_assigned_users: { title: 'Manage Assigned Users', description: 'Manage users assigned to team leader', section: 'access_control' },
+  permission_management: { title: 'Permission Management', description: 'Manage user roles and permission assignments', section: 'access_control' },
   create_request: { title: 'Create Request', description: 'Create new requests', section: 'requests' },
   view_all_requests: { title: 'View All Requests', description: 'View all requests', section: 'requests' },
   view_company_requests: { title: 'View Company Requests', description: 'View company requests', section: 'requests' },

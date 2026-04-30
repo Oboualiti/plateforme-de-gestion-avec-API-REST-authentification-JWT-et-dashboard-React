@@ -46,10 +46,18 @@ export function getNavForRole(role, user = null) {
   ]);
   const canAccessReports = Boolean(user?.reports_page_access_allowed);
   const canExportReports = has("export_data");
-  const canManageUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
-  const canAccessUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity"]);
+  const canManageUsers = hasAny(["manage_users_global", "manage_users_company", "manage_users_entity", "manage_assigned_users"]);
+  const canAccessUsers = hasAny([
+    "manage_users_global",
+    "manage_users_company",
+    "manage_users_entity",
+    "manage_assigned_users",
+    "view_users_global",
+    "view_users_company",
+    "view_users_entity",
+  ]);
   const canAccessHierarchy = has("view_company_entities");
-  const canAccessRoles = canAccessUsers || has("view_own_requests");
+  const canAccessRoles = has("permission_management");
   const canAccessAuditLogs = hasAny(["view_user_audit_logs", "view_access_audit_logs", "view_org_audit_logs"]);
   const auditLogItems = [
     ...(has("view_user_audit_logs") ? [{ label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText }] : []),
@@ -123,6 +131,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessCompanies ? [{ label: "Companies", to: "/admin/companies", icon: Building2 }] : []),
             ...(canAccessEntities ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }] : []),
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
+            ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
           ],
         },
@@ -214,7 +223,7 @@ export function getNavForRole(role, user = null) {
           label: "Access Control",
           items: [
             { label: "Users", to: "/admin/users", icon: Users },
-            { label: "Roles", to: "/admin/roles", icon: ShieldCheck },
+            ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
           ],
         },
         {
