@@ -250,7 +250,7 @@ class ManageableUserListView(BaseManageUsersView):
         serialized_rows = ManageableUserListSerializer(
             page if page is not None else queryset,
             many=True,
-            context={"actor_level": actor_level},
+            context={"actor_level": actor_level, "request": request},
         ).data
 
         data = {
@@ -297,7 +297,7 @@ class ManageableUserListView(BaseManageUsersView):
             target_label=user.username,
         )
         payload = ManageableUserListSerializer(
-            user, context={"actor_level": get_user_max_role_level(request.user)}
+            user, context={"actor_level": get_user_max_role_level(request.user), "request": request}
         ).data
         return Response(payload, status=status.HTTP_201_CREATED)
 
@@ -407,7 +407,7 @@ class ManageableUserCrudView(BaseManageUsersView):
             metadata={"updated_by_user_id": request.user.id},
         )
         payload = ManageableUserListSerializer(
-            user, context={"actor_level": get_user_max_role_level(request.user)}
+            user, context={"actor_level": get_user_max_role_level(request.user), "request": request}
         ).data
         return Response(payload)
 
@@ -627,7 +627,7 @@ class ManageableUserImportView(BaseManageUsersView):
             created_count += 1
             created_users.append(
                 ManageableUserListSerializer(
-                    user, context={"actor_level": actor_level}
+                    user, context={"actor_level": actor_level, "request": request}
                 ).data
             )
 
@@ -663,7 +663,7 @@ class ManageUserDetailView(BaseManageUsersView):
             if level < actor_level or (actor_level == ROLE_HIERARCHY["senior"] and role_key == "senior")
         ]
         payload = UserPermissionAdminDetailSerializer(
-            target, context={"editor_user": request.user}
+            target, context={"editor_user": request.user, "request": request}
         ).data
         payload["available_roles"] = available_roles if can_manage_permissions else []
         payload["can_edit"] = can_edit
@@ -752,7 +752,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
             if level < actor_level or (actor_level == ROLE_HIERARCHY["senior"] and role_key == "senior")
         ]
         payload = UserPermissionAdminDetailSerializer(
-            target, context={"editor_user": request.user}
+            target, context={"editor_user": request.user, "request": request}
         ).data
         payload["available_roles"] = available_roles if can_manage_permissions else []
         payload["can_edit"] = can_edit

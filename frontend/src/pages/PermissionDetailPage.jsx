@@ -351,7 +351,7 @@ function PermissionDetailPage() {
               type="submit"
               form="user-detail-form"
               className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-              disabled={!canEdit || isSaving}
+              disabled={(!canEditProfile && !canManagePermissions) || isSaving}
             >
               {isSaving ? 'Saving...' : 'Save changes'}
             </button>
