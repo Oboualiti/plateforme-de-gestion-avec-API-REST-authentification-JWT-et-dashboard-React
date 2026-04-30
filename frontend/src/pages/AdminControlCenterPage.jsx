@@ -11,7 +11,7 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
 import { Skeleton } from '../components/ui/skeleton'
-import { Activity, Building2, CheckCircle2, Users } from 'lucide-react'
+import { Activity, Building2, CheckCircle2, Users, ShieldCheck, ClipboardList, LayoutGrid } from 'lucide-react'
 
 function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit, onDelete }) {
   if (!editState.open) return null
@@ -1309,7 +1309,9 @@ function AdminControlCenterPage() {
                 <p className="muted-text">Open the dedicated screen to customize default permissions by role.</p>
               </div>
               <Link to="/admin/roles/customize">
-                <Button variant="outline">Customize Default Permissions</Button>
+                <Button>
+                  Customize Default Permissions
+                </Button>
               </Link>
             </div>
           </section>
@@ -1850,6 +1852,15 @@ const permissionSectionTitle = {
   other: 'Other',
 }
 
+const permissionSectionIcon = {
+  organization: Building2,
+  access_control: ShieldCheck,
+  requests: ClipboardList,
+  reports: Activity,
+  logs: Activity,
+  other: LayoutGrid,
+}
+
 const LOG_PERMISSION_ORDER = [
   'view_audit_logs',
   'view_logs_scope_global',
@@ -2090,7 +2101,9 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
         <table className="w-full min-w-[1080px] border-collapse bg-card">
           <thead>
             <tr className="border-b-2 border-foreground/90 bg-muted/10">
-              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-muted-foreground">Restore defaults</th>
+              <th className="sticky left-0 z-20 bg-muted/10 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Restore defaults
+              </th>
               {roles.map((role) => {
                 const restoreBlockReason = canEditRole(role.key) ? '' : 'You can only manage users below your role'
                 const editable = !restoreBlockReason
@@ -2112,7 +2125,9 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
               })}
             </tr>
             <tr>
-              <th className="border-b-2 border-foreground/90 px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">Permission</th>
+              <th className="sticky left-0 z-20 border-b-2 border-foreground/90 bg-card px-4 py-3 text-left text-xs font-bold uppercase tracking-widest">
+                Permission
+              </th>
               {roles.map((role) => (
                 <th key={role.id} className="border-b-2 border-foreground/90 px-4 py-3 text-center text-xs font-bold uppercase tracking-widest">
                   {role.name}
@@ -2124,16 +2139,23 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
             {permissionSectionOrder.map((section) => {
               const rows = rowsBySection[section] || []
               if (!rows.length) return null
+              const SectionIcon = permissionSectionIcon[section] || permissionSectionIcon.other
               return (
                 <Fragment key={section}>
                   <tr className="bg-muted/10">
                     <td colSpan={roles.length + 1} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
-                      {permissionSectionTitle[section] || section}
+                      <div className="flex items-center gap-2">
+                        <SectionIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{permissionSectionTitle[section] || section}</span>
+                        <span className="text-[11px] font-medium normal-case tracking-normal text-muted-foreground/70">
+                          {rows.length} permissions
+                        </span>
+                      </div>
                     </td>
                   </tr>
                   {rows.map((row) => (
                     <tr key={row.key} className="border-b border-border/80 bg-card">
-                      <td className="bg-card px-4 py-3 align-top">
+                      <td className="sticky left-0 z-10 bg-card px-4 py-3 align-top">
                         <div className="text-base font-bold leading-tight">{row.title}</div>
                         <div className="text-sm text-muted-foreground">{row.description}</div>
                       </td>

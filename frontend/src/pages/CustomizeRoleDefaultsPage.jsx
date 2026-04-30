@@ -49,13 +49,12 @@ function RoleCard({ role, scopeQuery }) {
             <p className="mt-1 text-sm text-muted-foreground">{role.description || `Default role: ${role.name}`}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Level {role.level || 0}</Badge>
-            <Badge variant="secondary">{role.user_count || 0} users</Badge>
+            <Badge className="border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-100">{role.user_count || 0} users</Badge>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Link to={`/admin/roles/customize/${role.id}${scopeQuery}`}>
-            <Button type="button" variant="outline" size="sm">Edit permissions</Button>
+            <Button type="button" size="sm">Edit permissions</Button>
           </Link>
         </div>
       </CardHeader>
@@ -142,7 +141,7 @@ function CustomizeRoleDefaultsPage() {
         description="Open a role and edit its default permissions on a dedicated page."
         actions={(
           <Link to="/admin/roles">
-            <Button variant="outline">Back to Roles</Button>
+            <Button>Back to Roles</Button>
           </Link>
         )}
       />
@@ -229,4 +228,3 @@ function CustomizeRoleDefaultsPage() {
 }
 
 export default CustomizeRoleDefaultsPage
-

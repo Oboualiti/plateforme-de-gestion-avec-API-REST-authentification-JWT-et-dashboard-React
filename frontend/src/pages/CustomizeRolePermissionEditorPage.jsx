@@ -149,6 +149,36 @@ function toTitleCaseFromKey(key) {
     .join(' ')
 }
 
+function resolveSectionForPermissionKey(key) {
+  if (!key) return 'other'
+  if (
+    key.includes('request')
+    || key.includes('approve_')
+    || key.includes('assign_')
+    || key.includes('deadline')
+  ) return 'requests'
+  if (
+    key.includes('user')
+    || key.includes('role')
+    || key.includes('permission')
+    || key.includes('access')
+  ) return 'access_control'
+  if (
+    key.includes('company')
+    || key.includes('entity')
+    || key.includes('entities')
+    || key.includes('organization')
+    || key.includes('org_')
+  ) return 'organization'
+  if (
+    key.includes('report')
+    || key.includes('audit')
+    || key.includes('log')
+    || key.includes('export')
+  ) return 'monitoring'
+  return 'other'
+}
+
 function collectImpliedPermissions(permissionKey, visited = new Set()) {
   if (visited.has(permissionKey)) return []
   visited.add(permissionKey)
@@ -202,7 +232,7 @@ function buildPermissionRows(permissionKeys) {
         key,
         title: metadata?.title || toTitleCaseFromKey(key),
         description: metadata?.description || key.replaceAll('_', ' '),
-        section: metadata?.section || 'other',
+        section: metadata?.section || resolveSectionForPermissionKey(key),
       }
     })
     .sort((a, b) => {
@@ -406,7 +436,6 @@ function CustomizeRolePermissionEditorPage() {
         )}
         meta={(
           <>
-            <Badge variant="outline">Level {selectedRole.level || 0}</Badge>
             <Badge variant="secondary">{selectedRole.user_count || 0} users</Badge>
           </>
         )}

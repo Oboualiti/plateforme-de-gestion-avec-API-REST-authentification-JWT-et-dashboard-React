@@ -305,13 +305,6 @@ class ManageableUserListView(BaseManageUsersView):
 class ManageableUserFormOptionsView(BaseManageUsersView):
     def get(self, request):
         actor = request.user
-        cache_key = (
-            f"users:manageable:options:{actor.id}:"
-            f"{actor.company_id}:{actor.entity_id}:{','.join(sorted(actor.assigned_roles.values_list('role__key', flat=True)))}"
-        )
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached)
 
         actor_level = get_user_max_role_level(actor)
         role_options = [
@@ -384,7 +377,6 @@ class ManageableUserFormOptionsView(BaseManageUsersView):
             "entity_options": entities,
             "team_leader_options": team_leaders,
         }
-        cache.set(cache_key, payload, timeout=600)
         return Response(payload)
 
 

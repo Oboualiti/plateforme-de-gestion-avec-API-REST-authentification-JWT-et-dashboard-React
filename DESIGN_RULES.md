@@ -1,469 +1,549 @@
 ## 1. Purpose
-This file defines the **BRUTAL DESIGN** visual and layout rules for the EMD platform UI.
+This file is the current design source of truth for the website.
 
-**Design Philosophy:** Bold, Direct, High-Contrast, No-Nonsense
+It reflects what is actually implemented now in the frontend:
+- React + Vite + Tailwind CSS v4
+- shared layout shell
+- shared buttons, cards, badges, inputs, and selects
+- light and dark themes
+- admin-first data-heavy pages
 
-Goal: Keep the product:
-- unified and confident
-- bold and direct
-- professional with personality
-- scalable and consistent
-- intentional and purposeful across all roles
-
-These rules must be followed on all current and future pages:
-- admin pages
-- manager pages
-- team leader pages
-- production user pages
-- support/dev pages
-- auth pages
+Goal:
+- keep the product consistent
+- document the real design system in use now
+- prevent one-off styling
+- guide future pages to match the existing app
 
 ---
 
-## 2. Design North Star - BRUTAL DESIGN
+## 2. Current Design Direction
 
-The UI must feel like a **bold, confident enterprise operations platform**.
+The product no longer follows the older "brutal design" spec as a full-page rule.
 
-**Brutal Design Definition:**
-- Not soft or calm — direct and bold
-- Not tonal layering — hard edges and clear visual boundaries
-- Not subtle borders — 2px solid borders with presence
-- Not whisper typography — UPPERCASE, BOLD, TRACKING, IMPACT
-- Hard shadows — offset, physical, shadow-brutal style
-- High contrast — saturation and visual weight matter
-- Punchy and purposeful — every element has presence
+What the UI is now:
+- clean enterprise admin UI
+- strong typography with restrained borders
+- white or near-white surfaces in light mode
+- dark slate surfaces in dark mode
+- yellow primary action in light mode
+- indigo/violet primary action in dark mode
+- simple cards and tables with low-noise borders
+- selective brutal accents on primary buttons and active sidebar items
 
-Target qualities:
-- bold and direct
-- structured and intentional
-- confident and purposeful
-- high-clarity with visual impact
-- product-like with personality
-- professional without being stiff
-- table-first where appropriate
-- visually unified with punch
+Overall feel:
+- structured
+- readable
+- admin-focused
+- practical
+- modern but not flashy
 
 Avoid:
-- soft, blurred shadows
-- thin 1px borders everywhere
-- tonal layering instead of hard edges
-- lowercase headers or subtle text
-- overly rounded designs
-- generic template-looking pages
-- wimpy colors or muted tones
+- inventing a new page style per screen
+- mixing soft rounded SaaS cards with heavy brutal elements randomly
+- adding decorative gradients or loud effects to data-heavy pages
+- introducing role/page-specific color systems
 
 ---
 
-## 3. Color System
+## 3. Theme Tokens
 
-### Primary Variables (CSS HSL-based)
+All theme values come from `frontend/src/index.css`.
 
-#### Surface & Background
-- \`--background:  228 65% 96%\` — Main app background
-- \`--foreground:  228 10% 12%\` — Main text color
-- \`--card:        228 68% 99%\` — Card surface
-- \`--card-foreground: 228 10% 12%\` — Card text
-- \`--surface-1:   228 32% 96%\` — Tonal layer 1
-- \`--surface-2:   228 32% 90%\` — Tonal layer 2
-- \`--surface-3:   228 32% 85%\` — Tonal layer 3
+### Light Theme
 
-#### Primary Accent (Dominant Brand Color)
-- \`--primary:     228 100% 50%\` — Bold primary action color
-- \`--primary-foreground: 0 0% 100%\` — Text on primary
-- \`--primary-soft: 228 50% 92%\` — Soft primary background
-- \`--primary-glow: 228 100% 60%\` — Glow/hover state
+#### Core colors
+- `--background: 0 0% 100%`
+- `--foreground: 217 43% 14%`
+- `--card: 0 0% 100%`
+- `--card-foreground: 217 43% 14%`
 
-#### Secondary & Support
-- \`--secondary:   228 68% 92%\` — Secondary actions
-- \`--secondary-foreground: 228 10% 12%\`
-- \`--accent:      228 100% 50%\` — Accent highlights
-- \`--accent-foreground: 0 0% 100%\`
-- \`--muted:       228 18% 75%\` — Muted text
-- \`--muted-foreground: 228 12% 45%\` — Muted foreground
+#### Surface layers
+- `--surface-1: 0 0% 100%`
+- `--surface-2: 225 10% 94%`
+- `--surface-3: 221 15% 90%`
 
-#### Semantic Status Colors
-- \`--destructive: 0   84% 60%\` — Red - Errors, delete
-- \`--destructive-foreground: 0 0% 100%\`
-- \`--success:     120 61% 47%\` — Green - Success
-- \`--success-foreground: 0 0% 100%\`
-- \`--warning:     38  92% 50%\` — Amber - Warning
-- \`--warning-foreground: 0 0% 0%\`
-- \`--info:        210 100% 50%\` — Blue - Info
-- \`--info-foreground: 0 0% 100%\`
+#### Brand / action colors
+- `--primary: 47 99% 49%`
+- `--primary-foreground: 217 38% 12%`
+- `--primary-soft: 49 100% 90%`
+- `--primary-glow: 47 100% 58%`
 
-#### Request Status Colors (Specific)
-- \`--status-new:       210 100% 50%\` — Blue - New
-- \`--status-accepted:  120 61% 47%\` — Green - Accepted
-- \`--status-progress:  38  92% 50%\` — Amber - In Progress
-- \`--status-rejected:  0   84% 60%\` — Red - Rejected
-- \`--status-completed: 120 61% 47%\` — Green - Completed
-- \`--status-closed:    228 12% 45%\` — Gray - Closed
+#### Support colors
+- `--secondary: 217 14% 42%`
+- `--secondary-foreground: 0 0% 100%`
+- `--accent: 217 14% 42%`
+- `--accent-foreground: 0 0% 100%`
+- `--muted: 225 10% 92%`
+- `--muted-foreground: 217 12% 42%`
+
+#### Utility colors
+- `--ink: 217 43% 14%`
+- `--border: 221 21% 88%`
+- `--input: 221 21% 88%`
+- `--ring: 217 43% 14%`
+
+#### Semantic colors
+- `--destructive: 0 74% 63%`
+- `--success: 142 60% 41%`
+- `--warning: 32 95% 44%`
+- `--info: 217 43% 20%`
+
+#### Status colors
+- `--status-new: 217 14% 40%`
+- `--status-accepted: 217 43% 14%`
+- `--status-progress: 32 95% 44%`
+- `--status-rejected: 0 74% 63%`
+- `--status-completed: 142 60% 41%`
+- `--status-closed: 217 28% 22%`
 
 #### Sidebar
-- \`--sidebar-background: 228 22% 10%\` — Dark sidebar
-- \`--sidebar-foreground: 0 0% 95%\` — Light text
-- \`--sidebar-primary:    228 100% 50%\` — Active state
-- \`--sidebar-primary-foreground: 0 0% 100%\`
-- \`--sidebar-accent:     228 100% 50%\` — Accent in sidebar
-- \`--sidebar-accent-foreground: 0 0% 100%\`
-- \`--sidebar-border:     228 10% 22%\` — Border in sidebar
-- \`--sidebar-ring:       228 100% 60%\` — Focus ring
+- `--sidebar-background: 0 0% 100%`
+- `--sidebar-foreground: 217 30% 20%`
+- `--sidebar-primary: 47 99% 49%`
+- `--sidebar-primary-foreground: 217 38% 12%`
+- `--sidebar-accent: 49 100% 90%`
+- `--sidebar-accent-foreground: 217 38% 12%`
+- `--sidebar-border: 217 38% 12%`
 
-#### Utility
-- \`--border:    228 32% 85%\` — Default borders
-- \`--input:     228 68% 99%\` — Input field background
-- \`--ring:      228 100% 50%\` — Focus ring color
-- \`--ink:       228 10% 12%\` — Text / deep ink
+### Dark Theme
 
----
+#### Core colors
+- `--background: 220 18% 13%`
+- `--foreground: 55 18% 95%`
+- `--card: 220 19% 15%`
+- `--card-foreground: 55 18% 95%`
 
-## 4. Shadow System (BRUTAL)
+#### Surface layers
+- `--surface-1: 220 19% 15%`
+- `--surface-2: 220 19% 15%`
+- `--surface-3: 220 18% 17%`
 
-All shadows are **hard, offset shadows** — not soft blur:
+#### Brand / action colors
+- `--primary: 247 74% 62%`
+- `--primary-foreground: 0 0% 100%`
+- `--primary-soft: 247 38% 28%`
+- `--primary-glow: 247 78% 68%`
 
-- \`--shadow-brutal:       4px 4px 0 0 hsl(var(--ink))\` — 4px hard offset
-- \`--shadow-brutal-lg:    6px 6px 0 0 hsl(var(--ink))\` — 6px hard offset
-- \`--shadow-elev-sm:      2px 2px 0 0 hsl(var(--ink))\` — 2px elevation
-- \`--shadow-elev-md:      4px 4px 0 0 hsl(var(--ink))\` — 4px elevation
-- \`--shadow-elev-lg:      6px 6px 0 0 hsl(var(--ink))\` — 6px elevation
-- \`--shadow-elev-xl:      8px 8px 0 0 hsl(var(--ink))\` — 8px elevation
-- \`--shadow-glow:         0 0 0 3px hsl(var(--ring))\` — Focus glow
+#### Utility colors
+- `--ink: 0 0% 100%`
+- `--border: 0 0% 100%`
+- `--input: 0 0% 100%`
+- `--ring: 247 74% 62%`
 
-**Rule:** Every UI element with shadow gets a **brutal offset shadow**, never blur.
+#### Sidebar
+- `--sidebar-background: 222 20% 14%`
+- `--sidebar-foreground: 210 20% 90%`
+- `--sidebar-primary: 247 74% 62%`
+- `--sidebar-primary-foreground: 0 0% 100%`
+- `--sidebar-accent: 222 20% 20%`
+- `--sidebar-accent-foreground: 55 18% 95%`
+- `--sidebar-border: 0 0% 100%`
 
----
-
-## 5. Typography System
-
-### Font Stack
-- **Primary Font:** Inter (imported from Google Fonts)
-- **Monospace:** JetBrains Mono (optional for code/data)
-
-### Text Styles & Cases
-- **UPPERCASE** — primary, buttons, labels, headers
-- **Tracking-widest** — \`letter-spacing: 0.16em\`
-- **Font-bold** — 700 weight for impact
-- **Font-semibold** — 600 weight for secondary emphasis
-
-### Hierarchy
-
-| Element | Size | Weight | Case | Tracking | Line Height |
-|---------|------|--------|------|----------|-------------|
-| Page Title | 2xl | 900/800 | UPPERCASE | widest | 1.2 |
-| Section Title | xl | 800 | UPPERCASE | widest | 1.2 |
-| Card Title | lg | 800 | UPPERCASE | tight | 1.2 |
-| Eyebrow | xs | 700 | UPPERCASE | widest | 1.3 |
-| Body Text | sm | 400 | Normal | normal | 1.5 |
-| Labels | xs | 600 | UPPERCASE | widest | 1.3 |
-| Table Header | xs | 600 | UPPERCASE | wider | 1.3 |
-| Badges | xs/11px | 600 | UPPERCASE | wider | 1.3 |
+### Radius
+- `--radius: 0.25rem`
+- visual default is compact, not pill-shaped
 
 ---
 
-## 6. Border System (2px Hard Borders)
+## 4. Typography
 
-### Border Widths
-- **Primary border:** \`border-2\` (2px solid)
-- **Thin border:** \`border\` (1px solid)
-- **No border:** \`border-0\` or \`border-transparent\`
+### Font
+- primary font: `Inter`
+- app-wide font family: `--font-sans`
 
-### Border Color
-- **Dark text/ink border:** \`border-ink\` (uses \`--ink\`)
-- **Muted border:** \`border-border\` (uses \`--border\`)
-- **Sidebar border:** \`border-sidebar-border\`
+### Base text
+- body font size is `17px`
+- body text uses `text-foreground`
+- body is antialiased with OpenType features enabled
 
-### Border Radius (Controlled, Not Playful)
-- **Cards/buttons/modals:** \`rounded-md\` (8px)
-- **Small elements:** \`rounded-md\` (8px)
-- **Avoid:** Overly rounded designs, no 20px+ radius
+### Heading behavior
+- `h1`, `h2`, `h3`, `h4` use `font-extrabold tracking-tight`
 
----
+### Shared title patterns
+- eyebrow: `text-[11px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground`
+- page title: `text-2xl sm:text-3xl font-extrabold uppercase tracking-tight`
+- card title: `text-xl font-extrabold uppercase`
+- description/body support text: `text-sm text-muted-foreground`
 
-## 7. Spacing System
-
-**Strict Tailwind spacing scale** (4px base):
-- \`4px\` (1 unit)
-- \`8px\` (2 units)
-- \`12px\` (3 units)
-- \`16px\` (4 units)
-- \`20px\` (5 units)
-- \`24px\` (6 units)
-- \`28px\` (7 units)
-- \`32px\` (8 units)
-
-### Default Values
-- **Card padding:** \`p-6\` (24px)
-- **Card header:** \`p-6\` with \`border-b-2 border-ink\`
-- **Card footer:** \`p-6\` with \`border-t-2 border-ink\`
-- **Section spacing:** \`gap-6\` (24px)
-- **Related controls:** \`gap-2\` or \`gap-3\` (8-12px)
-- **Label-to-field:** \`space-y-1.5\` (6px)
+### Text style rules
+- use uppercase for navigation labels, eyebrows, badges, and many action labels
+- do not force uppercase for all body text
+- prefer readable sentence case for descriptions and help text
 
 ---
 
-## 8. Component Specifications
+## 5. Layout System
 
-### 8.1 Buttons
+### App shell
+The site uses a shared shell:
+- fixed sidebar on desktop
+- slide-out sidebar on mobile
+- sticky top header
+- centered content container
 
-**Base Classes:**
-\`\`\`
-brutal-press
-inline-flex items-center justify-center gap-2
-whitespace-nowrap rounded-md
-border-2 border-ink
-text-sm font-bold
-ring-offset-background
-transition-colors
-focus-visible:outline-none focus-visible:ring-2
-\`\`\`
+### Main content spacing
+- page wrapper inside shell: `px-4 py-6 sm:px-6 lg:px-8`
+- standard content width: `max-w-7xl`
+- common page rhythm: `space-y-6`
 
-**Variants:**
-
-| Variant | Background | Text | Shadow | Hover |
-|---------|-----------|------|--------|-------|
-| default | \`bg-primary\` | \`text-primary-foreground\` | \`shadow-brutal\` | \`bg-primary/90\` |
-| destructive | \`bg-destructive\` | \`text-destructive-foreground\` | \`shadow-brutal\` | \`bg-destructive/90\` |
-| outline | \`bg-card\` | \`text-foreground\` | \`shadow-brutal\` | \`bg-accent text-accent-foreground\` |
-| secondary | \`bg-secondary\` | \`text-secondary-foreground\` | \`shadow-brutal\` | \`bg-secondary/90\` |
-| ghost | \`border-transparent bg-transparent\` | \`text-foreground\` | \`shadow-none\` | \`bg-primary-soft\` |
-| link | \`border-transparent bg-transparent\` | \`text-primary\` | \`shadow-none\` | \`underline\` |
-
-**Sizes:**
-- \`sm\`: \`h-9 rounded-md px-3\`
-- \`default\`: \`h-10 px-4 py-2\`
-- \`lg\`: \`h-11 rounded-md px-8\`
-- \`icon\`: \`h-10 w-10\`
-
-### 8.2 Cards
-
-**Structure:**
-\`\`\`
-<Card>
-  <CardHeader className="border-b-2 border-ink">
-    <CardTitle>UPPERCASE TITLE</CardTitle>
-    <CardDescription>Description text</CardDescription>
-  </CardHeader>
-  <CardContent>Content here</CardContent>
-  <CardFooter className="border-t-2 border-ink">Actions</CardFooter>
-</Card>
-\`\`\`
-
-**Classes:**
-\`\`\`
-rounded-md
-border-2 border-ink
-bg-card
-text-card-foreground
-shadow-brutal
-\`\`\`
-
-### 8.3 Inputs & Textareas
-
-**Classes:**
-\`\`\`
-flex h-10 w-full
-rounded-md
-border border-input
-bg-card px-3 py-2 text-sm font-medium
-ring-offset-background
-file:border-0 file:bg-transparent
-file:text-sm file:font-medium
-placeholder:text-muted-foreground
-focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary
-disabled:cursor-not-allowed disabled:opacity-50
-\`\`\`
-
-### 8.4 Select Dropdowns
-
-- Use same height as inputs: \`h-10\`
-- Use same border style: \`border border-input\`
-- Padding: \`px-3 py-2 text-sm\`
-- Background: \`bg-background\` or \`bg-card\`
-
-### 8.5 Tables
-
-**Header Row:**
-\`\`\`
-border-b border-border
-bg-muted/30 text-xs
-uppercase tracking-wider
-text-muted-foreground font-medium
-\`\`\`
-
-**Body Rows:**
-\`\`\`
-border-b border-border
-last:border-0
-hover:bg-muted/10 transition-colors
-px-4 py-3
-\`\`\`
-
-### 8.6 Badges
-
-**Classes:**
-\`\`\`
-inline-flex items-center
-rounded-md
-text-xs font-bold uppercase tracking-wider
-px-2.5 py-0.5
-border-2 border-ink
-shadow-elev-sm
-\`\`\`
-
-**Status Badge Colors:**
-- \`bg-{status}-500 text-{status}-foreground\`
-- Examples: \`bg-success text-success-foreground\`
-
-### 8.7 Sidebar
-
-- **Background:** \`bg-sidebar\`
-- **Text:** \`text-sidebar-foreground\`
-- **Borders:** \`border-b-2 border-sidebar-border\`, \`border-t-2 border-sidebar-border\`
-- **Active State:** \`bg-primary text-primary-foreground border-2 border-ink shadow-elev-sm\`
-- **Item Spacing:** \`space-y-0.5\` between nav items
-- **Item Padding:** \`px-2.5 py-2\` per nav link
-
----
-
-## 9. Page Structure
-
-### Standard Page Shell
-\`\`\`
-<main className="space-y-6">
-  <PageHeader title="..." description="..." actions={...} />
-
-  {/* Filter/search bar */}
-  <Card>
-    {/* Filter controls */}
-  </Card>
-
-  {/* Main content */}
-  <Card>
-    {/* Data table or form */}
-  </Card>
+### Standard page pattern
+```jsx
+<main className="page-content">
+  <PageHeader ... />
+  <div className="surface-card">...</div>
+  <div className="surface-card">...</div>
 </main>
-\`\`\`
+```
 
-### Page Header Components
-- **Eyebrow:** \`text-xs font-bold uppercase tracking-widest text-muted-foreground\`
-- **Title:** \`text-2xl font-black uppercase\`
-- **Description:** \`text-sm text-muted-foreground\`
-- **Actions:** Button group with spacing \`flex gap-2\`
-- **Meta:** Status badges and scope info
+### Page header
+Use the shared `PageHeader` component.
 
----
+Structure:
+- eyebrow
+- title
+- description
+- actions on the right
+- optional meta row below
 
-## 10. Animation & Micro-interactions
-
-\`\`\`
---animate-accordion-down: accordion-down 0.2s ease-out
---animate-accordion-up: accordion-up 0.2s ease-out
---animate-fade-in: fade-in 0.25s ease-out
---animate-caret-blink: caret-blink 1s steps(1, end) infinite
-\`\`\`
-
-**Usage:**
-- Fade-in on load
-- Slide animations for drawers
-- Quick transitions on hover (no long delays)
+Rules:
+- do not build custom intro blocks if `PageHeader` fits
+- actions should align right on desktop and stack naturally on mobile
 
 ---
 
-## 11. Design Rules (BRUTAL DESIGN REQUIREMENTS)
+## 6. Component Rules
 
-### Do'''s
-- ✅ Use \`border-2 border-ink\` on interactive elements
-- ✅ Apply \`shadow-brutal\` or \`shadow-elev-md\` to cards/buttons
-- ✅ Use UPPERCASE, BOLD, TRACKING text for emphasis
-- ✅ Keep contrast high and saturation strong
-- ✅ Use hard, offset shadows (never soft blur)
-- ✅ Apply 2px borders for visual impact
-- ✅ Make typography SCREAM with uppercase
-- ✅ Use color with confidence and boldness
+### 6.1 Buttons
 
-### Don'''ts
-- ❌ Do NOT use soft, blurred shadows
-- ❌ Do NOT use thin 1px borders everywhere
-- ❌ Do NOT use lowercase body copy for headers
-- ❌ Do NOT use tonal layering instead of borders
-- ❌ Do NOT use overly rounded corners
-- ❌ Do NOT use subtle colors and muted tones for main UI
-- ❌ Do NOT use normal (non-uppercase) text for labels/buttons
-- ❌ Do NOT make the UI "calm and soft"
+Buttons still carry the strongest visual identity in the app.
+
+Base:
+- `brutal-press`
+- `inline-flex items-center justify-center gap-2`
+- `rounded-md`
+- `border-2 border-ink`
+- `text-sm font-bold`
+
+Shared variants:
+- `default`: yellow in light mode, violet in dark mode, `shadow-brutal`
+- `outline`: white/card background, dark text, `shadow-brutal`
+- `secondary`: secondary fill, `shadow-brutal`
+- `destructive`: destructive fill, `shadow-brutal`
+- `ghost`: no heavy border, no shadow
+- `link`: link-like button, no heavy border
+
+Sizes:
+- `sm`: `h-9 px-3`
+- `default`: `h-10 px-4 py-2`
+- `lg`: `h-11 px-8`
+- `icon`: `h-10 w-10`
+
+Rules:
+- use shared `Button` component
+- primary actions should usually use default variant
+- secondary actions should usually use `outline`
+- avoid custom button color overrides unless matching an existing pattern
+
+### 6.2 Cards
+
+Cards are now cleaner than the old brutal spec.
+
+Base card:
+- `rounded-md`
+- `border border-ink/10`
+- `bg-card`
+- `text-card-foreground`
+- `shadow-none`
+
+Shared sections:
+- header: `border-b border-ink/10 p-6`
+- content: `p-6`
+- footer: `border-t border-ink/10 p-6`
+
+Rules:
+- prefer `surface-card` or shared `Card`
+- do not add heavy shadows to normal data cards
+- use stronger borders only where already established
+
+### 6.3 Inputs
+
+Base input:
+- `h-10`
+- `rounded-md`
+- `border border-input`
+- `bg-card`
+- `px-3 py-2`
+- `text-sm font-medium`
+- `focus-visible:ring-1 focus-visible:ring-ring`
+
+Rules:
+- prefer standard height `h-10`
+- keep placeholders muted
+- avoid oversized form controls unless the page already uses them
+
+### 6.4 Selects
+
+Shared Radix-based select mirrors input sizing.
+
+Trigger:
+- `h-10`
+- `rounded-md`
+- `border border-input`
+- `bg-card`
+- `px-3 py-2`
+- `text-sm font-medium`
+
+Dropdown:
+- compact menu
+- border `border-ink/10`
+- subtle shadow
+- item focus uses accent background
+
+### 6.5 Badges
+
+Current badges are compact and light.
+
+Base:
+- `inline-flex items-center`
+- `rounded-sm`
+- `border border-ink/10`
+- `px-2 py-0.5`
+- `text-[10px] font-bold uppercase tracking-widest`
+
+Use badges for:
+- status
+- role labels
+- small metadata counts
+
+Do not use badges for:
+- long descriptive text
+- large KPI cards
+
+### 6.6 Tables
+
+Tables are a major design pattern in the app.
+
+Shared `.data-table`:
+- `w-full`
+- `border-separate border-spacing-0`
+- left-aligned
+- tabular numbers
+
+Header:
+- `bg-surface-2`
+- `text-[11px]`
+- `font-extrabold uppercase tracking-wider`
+- muted foreground
+
+Cells:
+- `border-b border-ink/10`
+- `bg-card`
+- `px-4 py-3`
+- `text-sm`
+
+Hover:
+- light mode: `bg-primary/15`
+- dark mode: `bg-surface-2`
+
+Rules:
+- prefer `.data-table` for admin listings
+- keep row density medium, not cramped
+- sticky section headers are acceptable in permission matrices
+
+### 6.7 Filter bars
+
+Use `.filter-bar` for search and filtering rows.
+
+Base:
+- `flex flex-wrap items-center gap-3`
+- `border-b border-ink/10`
+- `bg-card`
+- `p-4`
+
+Rules:
+- search first, filters after
+- allow horizontal scrolling on narrower widths when needed
+
+### 6.8 Sidebar
+
+The sidebar is white in light mode and dark in dark mode.
+
+Pattern:
+- grouped navigation sections
+- eyebrow-style group labels
+- active item is highlighted strongly
+
+Active nav item:
+- `border-ink`
+- `bg-primary`
+- `text-primary-foreground`
+- `shadow-elev-sm`
+
+Inactive nav item:
+- transparent border by default
+- hover uses `bg-primary-soft`
+
+Rules:
+- use the shared nav config
+- do not create page-local sidebar styles
 
 ---
 
-## 12. Component Consistency
+## 7. Shadows and Visual Weight
 
-### Before creating a new UI pattern, check if an existing one already exists.
+The app currently mixes two styles:
+- most surfaces are flat and clean
+- buttons and active navigation keep the brutal pressed treatment
 
-Always prefer:
-- shared layout components
-- shared page header
-- shared table wrapper
-- shared form section
-- shared card styles
-- shared toolbar/search pattern
-- shared badge system
+Available shadows:
+- `shadow-brutal`
+- `shadow-brutal-lg`
+- `shadow-elev-sm`
+- `shadow-elev-md`
+- `shadow-elev-lg`
+- `shadow-elev-xl`
 
-Do not create one-off versions of:
-- headers
-- cards
-- tables
-- sidebars
-- search bars
-- buttons
-- inputs
+Current rule:
+- standard cards: no shadow
+- primary/outline buttons: brutal shadow
+- active nav items: small elevation shadow
+- avoid soft blur-heavy shadows on regular admin content
+
+---
+
+## 8. Motion and Interaction
+
+Defined animations:
+- `animate-fade-in`
+- accordion open/close
+- caret blink
+
+Current interaction patterns:
+- page content fades in
+- buttons use `brutal-press` on active press
+- hover states are quick and minimal
+
+Rules:
+- keep motion short
+- prioritize clarity over spectacle
+- do not add decorative motion to tables/forms
+
+---
+
+## 9. Dark Mode Rules
+
+Dark mode is a supported first-class theme.
+
+Rules:
+- use tokens, not hardcoded colors
+- assume both light and dark mode must work
+- dark mode tables should keep clear row separation
+- dark backgrounds should not introduce gradients unless already defined
+- hover backgrounds in dark mode should resolve to `surface-2`-style behavior
+
+Before shipping UI:
+- test card contrast
+- test table hover state
+- test muted text readability
+- test primary buttons and badges
+
+---
+
+## 10. Common Patterns In Use
+
+### Admin list page
+- `PageHeader`
+- action buttons on right
+- `surface-card` with filter bar
+- `data-table`
+
+### Detail/edit page
+- `PageHeader`
+- one or two `surface-card` panels
+- form sections separated by top borders or spacing
+- permission tables/matrices on the side when needed
+
+### Permission matrix
+- compact rows
+- section labels
+- sticky subheaders when useful
+- check/minus toggles instead of large switches
+
+### Search in top bar
+- compact input
+- icon inside left
+- floating results panel
+- grouped results by entity type
+
+---
+
+## 11. What To Reuse First
+
+Before creating anything new, check:
+1. `PageHeader`
+2. `Button`
+3. `Card`
+4. `Badge`
+5. `Input`
+6. `Select`
+7. `.surface-card`
+8. `.data-table`
+9. `.filter-bar`
+10. `AppShell` layout patterns
+
+If one of these already solves the problem, use it.
+
+---
+
+## 12. Current Do / Don't
+
+### Do
+- use shared tokens from `index.css`
+- keep pages clean and readable
+- use yellow primary action in light mode through the shared button
+- keep forms and tables aligned to shared spacing
+- use compact uppercase metadata where the app already does
+- keep cards simple and flat
+- design for both light and dark themes
+
+### Don't
+- revive the old heavy brutal style for every card and section
+- create one-off button variants for single pages unless necessary
+- hardcode colors that break dark mode
+- add heavy shadows to normal content panels
+- replace table patterns with custom layouts without a clear reason
+- duplicate custom page headers when shared `PageHeader` works
 
 ---
 
 ## 13. Consistency Checklist
 
-Before merging any UI work, verify:
+Before merging UI work, verify:
+- does it use shared theme tokens?
+- does it work in light and dark mode?
+- does it reuse shared components where possible?
+- does the spacing match nearby pages?
+- does the page look like it belongs beside Users, Roles, Requests, and Reports?
+- are buttons using the standard visual language?
+- are tables using the existing table pattern if the page is data-heavy?
+- are descriptions readable and not over-stylized?
 
-- ✅ Does every button have \`border-2 border-ink\` and \`shadow-brutal\`?
-- ✅ Do all cards have \`border-2 border-ink\` and \`shadow-brutal\`?
-- ✅ Is all text uppercase where it should be (headers, labels, buttons)?
-- ✅ Are card headers/footers using \`border-b-2/border-t-2 border-ink\`?
-- ✅ Is the page using consistent spacing (\`gap-6\`, \`space-y-6\`)?
-- ✅ Do all inputs match height \`h-10\` with consistent borders?
-- ✅ Are tables using consistent header and row styles?
-- ✅ Do badges use UPPERCASE text with proper size/padding?
-- ✅ Does the page feel BOLD and CONFIDENT (not soft)?
-- ✅ Does it work correctly without requiring refresh?
-
-If the answer is no, fix before merging.
+If not, fix it before merging.
 
 ---
 
-## 14. Strict Don'''ts
+## 14. Source of Truth
 
-Do not:
-- ❌ Use soft, subtle shadows anywhere
-- ❌ Use 1px borders instead of 2px on main elements
-- ❌ Lowercase headers or button text
-- ❌ Change border radius to overly rounded (>8px)
-- ❌ Create page-specific one-off component styles
-- ❌ Use muted/pale colors for primary UI
-- ❌ Duplicate page headers or intro blocks
-- ❌ Create inconsistent table styles
-- ❌ Make sidebars or navigation look "soft"
-- ❌ Merge UI that breaks the bold design system
-
----
-
-## 15. Source of Truth
-
-If a visual decision is unclear, follow this order:
-1. Shared reusable component already used in app
-2. This DESIGN_RULES.md (Brutal Design System)
-3. Actual component files (Button.jsx, Card.jsx, etc.)
-4. Team discussion before introducing a new pattern
+If design behavior is unclear, follow this order:
+1. current shared component implementation
+2. `frontend/src/index.css`
+3. current high-traffic pages already in production style
+4. this file
+5. team discussion before introducing a new pattern
 
 ---
 
 **Last Updated:** April 2026  
-**Design System:** BRUTAL DESIGN v1.0  
-**Framework Stack:** React + Vite + Tailwind CSS v4 + Inter Font  
-**Key Principle:** BOLD. DIRECT. NO APOLOGIES.
-'@; Set-Content -Path DESIGN_RULES.md -Value $content -Encoding UTF8"
+**Design System:** Current Website UI v2  
+**Framework Stack:** React + Vite + Tailwind CSS v4 + Radix UI + Inter  
+**Key Principle:** Clean enterprise UI with shared patterns, strong actions, and consistent theming.

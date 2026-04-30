@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 
 import PageHeader from '../components/layout/PageHeader'
 import { Select } from '../components/ui/select'
@@ -11,7 +12,13 @@ import {
   ClipboardList, 
   Activity, 
   FileSearch,
-  LayoutGrid 
+  LayoutGrid,
+  ArrowLeft,
+  Mail,
+  MapPinned,
+  CircleDot,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 
 function getApiErrorMessage(error, fallback) {
@@ -107,11 +114,14 @@ function getPermissionSection(permissionKey) {
 function PermissionDetailPage() {
   const { userId } = useParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { user: actor } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', user: null })
   const [selectedRole, setSelectedRole] = useState('')
   const [message, setMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [options, setOptions] = useState({
     company_options: [],
     entity_options: [],
@@ -125,6 +135,7 @@ function PermissionDetailPage() {
     job_title: '',
     phone_number: '',
     password: '',
+    confirm_password: '',
     is_active: true,
     company_id: '',
     entity_id: '',
@@ -152,6 +163,7 @@ function PermissionDetailPage() {
             job_title: detail.job_title || '',
             phone_number: detail.phone_number || '',
             password: '',
+            confirm_password: '',
             is_active: detail.is_active !== false,
             company_id: detail.company || '',
             entity_id: detail.entity || '',
@@ -184,6 +196,10 @@ function PermissionDetailPage() {
     }
     if (selectedRole === 'user' && !actorIsTeamLeader && !profileForm.team_leader_id) {
       setMessage('Select a team leader before saving a user role.')
+      return
+    }
+    if (profileForm.password.trim() && profileForm.password !== profileForm.confirm_password) {
+      setMessage('Password confirmation does not match.')
       return
     }
 
@@ -330,35 +346,58 @@ function PermissionDetailPage() {
         title={user.username}
         description="Review profile, role, and effective permissions."
         actions={
-          <Link
-            className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60"
-            to="/admin/users"
-          >
-            Back
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              form="user-detail-form"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              disabled={!canEdit || isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save changes'}
+            </button>
+            <Link
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition hover:bg-muted/60"
+              to="/admin/users"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
+          </div>
         }
       />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <article className="surface-card border-ink/10 shadow-none p-5">
-          <p className="eyebrow">Email</p>
+          <div className="flex items-center gap-2">
+            <Mail className="h-4 w-4 text-primary" />
+            <p className="eyebrow">Email</p>
+          </div>
           <p className="mt-2 text-xl font-bold text-foreground">{user.email || '-'}</p>
           <p className="mt-1 text-sm text-muted-foreground">Primary login email</p>
         </article>
         <article className="surface-card border-ink/10 shadow-none p-5">
-          <p className="eyebrow">Company</p>
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-primary" />
+            <p className="eyebrow">Company</p>
+          </div>
           <p className="mt-2 text-xl font-bold text-foreground">{user.company_name || '-'}</p>
           <p className="mt-1 text-sm text-muted-foreground">Assigned company scope</p>
         </article>
         <article className="surface-card border-ink/10 shadow-none p-5">
-          <p className="eyebrow">Entity</p>
+          <div className="flex items-center gap-2">
+            <MapPinned className="h-4 w-4 text-primary" />
+            <p className="eyebrow">Entity</p>
+          </div>
           <p className="mt-2 text-xl font-bold text-foreground">
             {user.entity_name || '-'} ({user.entity_type || '-'})
           </p>
           <p className="mt-1 text-sm text-muted-foreground">Current operational unit</p>
         </article>
         <article className="surface-card border-ink/10 shadow-none p-5">
-          <p className="eyebrow">Status</p>
+          <div className="flex items-center gap-2">
+            <CircleDot className="h-4 w-4 text-primary" />
+            <p className="eyebrow">Status</p>
+          </div>
           <p className="mt-2 text-xl font-bold text-foreground">{user.is_active ? 'Active' : 'Inactive'}</p>
           <p className="mt-1 text-sm text-muted-foreground">Account availability</p>
         </article>
@@ -376,6 +415,7 @@ function PermissionDetailPage() {
           )}
 
           <form
+            id="user-detail-form"
             className="mt-5 space-y-6"
             onSubmit={(event) => {
               event.preventDefault()
