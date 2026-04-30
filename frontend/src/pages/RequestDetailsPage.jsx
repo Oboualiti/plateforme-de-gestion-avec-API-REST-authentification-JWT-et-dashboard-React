@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowRight,
@@ -265,11 +265,11 @@ function PendingDecisionModal({
 
 function RequestDetailsPage() {
   const { requestId } = useParams()
-  const location = useLocation()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', request: null })
-  const [activeTab, setActiveTab] = useState('comments')
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'history' ? 'history' : 'comments')
   const [comment, setComment] = useState('')
   const [commentAttachment, setCommentAttachment] = useState(null)
   const [mentionState, setMentionState] = useState({
@@ -293,12 +293,6 @@ function RequestDetailsPage() {
     error: '',
   })
   const [deadlineForm, setDeadlineForm] = useState({ value: '', saving: false, error: '' })
-  const [pendingDecisionModal, setPendingDecisionModal] = useState({
-    open: false,
-    busy: false,
-    note: '',
-    error: '',
-  })
   const discussionRef = useRef(null)
   const commentInputRef = useRef(null)
 
@@ -323,12 +317,6 @@ function RequestDetailsPage() {
   const canEditDeadline = Boolean(request?.can_edit_deadline)
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const canAssignToMe = Boolean(request?.can_assign_to_me) && (isTeamLeader || isUser)
-  const openedFromNotification = new URLSearchParams(location.search).get('from') === 'notification'
-  const isPendingApproval = Boolean(request?.is_pending_approval)
-  const isPendingLikeRequest = isPendingApproval || request?.status === 'NEW'
-  const canDecidePendingFromNotification = isPendingLikeRequest
-    && allowedStatusTransitions.includes('ACCEPTED')
-    && allowedStatusTransitions.includes('REJECTED')
   const potentialAssignees = request?.potential_assignees || []
   const assignableUsers = useMemo(() => {
     if (!isSuperAdmin) return potentialAssignees
@@ -427,10 +415,6 @@ function RequestDetailsPage() {
     }))
   }, [request?.deadline_date])
 
-  useEffect(() => {
-    if (!openedFromNotification || !isPendingLikeRequest) return
-    setPendingDecisionModal((current) => ({ ...current, open: true }))
-  }, [openedFromNotification, isPendingLikeRequest, request?.id])
 
   async function handleAction(promise) {
     setActionState({ busy: true, error: '' })
@@ -448,31 +432,6 @@ function RequestDetailsPage() {
     }
   }
 
-  async function submitPendingDecisionFromModal(status) {
-    setPendingDecisionModal((current) => ({ ...current, busy: true, error: '' }))
-    try {
-      const note = pendingDecisionModal.note.trim()
-      if (status === 'REJECTED' && !note) {
-        setPendingDecisionModal((current) => ({
-          ...current,
-          busy: false,
-          error: 'Rejection reason is required.',
-        }))
-        return
-      }
-
-      const response = await api.post(`/requests/${requestId}/status/`, { status, note })
-      setState((current) => ({ ...current, request: response.data }))
-      setPendingDecisionModal({ open: false, busy: false, note: '', error: '' })
-      navigate('/pending-requests', { replace: true })
-    } catch (error) {
-      setPendingDecisionModal((current) => ({
-        ...current,
-        busy: false,
-        error: error.response?.data?.detail || 'Could not submit decision.',
-      }))
-    }
-  }
 
   async function submitComment(e) {
     e.preventDefault()
@@ -1234,20 +1193,6 @@ function RequestDetailsPage() {
         }
         onCancel={closeStatusDialog}
         onConfirm={confirmStatusChange}
-      />
-      <PendingDecisionModal
-        open={pendingDecisionModal.open}
-        busy={pendingDecisionModal.busy}
-        error={pendingDecisionModal.error}
-        note={pendingDecisionModal.note}
-        requestData={request}
-        canDecide={canDecidePendingFromNotification}
-        onChangeNote={(value) =>
-          setPendingDecisionModal((current) => ({ ...current, note: value, error: '' }))
-        }
-        onApprove={() => submitPendingDecisionFromModal('ACCEPTED')}
-        onReject={() => submitPendingDecisionFromModal('REJECTED')}
-        onClose={() => navigate('/pending-requests')}
       />
     </main>
   )

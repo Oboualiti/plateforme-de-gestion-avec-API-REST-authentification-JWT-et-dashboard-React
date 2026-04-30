@@ -132,7 +132,8 @@ function CreateRequestPage() {
   const targetOptions = isSuperAdmin || isSenior ? scopedTargetOptions : user?.available_target_teams || []
 
   function getTargetLabel(team) {
-    return team.label || team.name || `Team ${team.id}`
+    const baseLabel = team.label || team.name || `Team ${team.id}`
+    return team.entity_type ? ` ${baseLabel} (${team.entity_type}) ` : baseLabel
   }
 
   async function handleImproveWithAi() {

@@ -203,13 +203,15 @@ function getNotificationSubtitle(item) {
   return text;
 }
 
-function withNotificationContext(link) {
-  if (!link) return "/notifications";
-  if (!link.startsWith("/requests/")) return link;
-  const [path, rawQuery = ""] = link.split("?");
-  const params = new URLSearchParams(rawQuery);
-  params.set("from", "notification");
-  return `${path}?${params.toString()}`;
+function getRequestIdFromNotificationLink(link) {
+  if (!link || !link.startsWith("/requests/")) return null;
+  const match = link.match(/^\/requests\/(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function isRequestMessageNotification(item) {
+  const eventType = String(item?.event_type || "").toUpperCase();
+  return eventType.includes("MESSAGE") || Boolean(item?.metadata?.message_id);
 }
 
 function NotificationsBell() {
@@ -247,14 +249,53 @@ function NotificationsBell() {
   }, [notifications.canViewRequestDiscussion, notifications.loadNotifications]);
 
   async function openNotification(item) {
+    const fallbackLink = item?.link || "/notifications";
+    const requestId = getRequestIdFromNotificationLink(fallbackLink);
     try {
       if (!item.is_read) {
         await notifications.markAsRead(item.id);
       }
+      if (!requestId) {
+        navigate(fallbackLink);
+        return;
+      }
+      const response = await api.get(`/requests/${requestId}/`);
+      const requestData = response.data || {};
+      const requestNumber = requestData.request_number || item?.metadata?.request_number || "";
+      const requestStatus = String(requestData.status || "").toUpperCase();
+
+      if (isRequestMessageNotification(item)) {
+        navigate(`/requests/${requestId}?tab=comments`);
+        return;
+      }
+
+      if (requestStatus === "REJECTED") {
+        const query = requestNumber ? `?search=${encodeURIComponent(requestNumber)}&status=REJECTED` : '?status=REJECTED'
+        navigate(`/pending-requests${query}`, {
+          state: {
+            rejectedFromNotification: true,
+            requestId: requestData.id,
+            requestNumber,
+            title: requestData.title || "-",
+            priority: requestData.priority || "MEDIUM",
+            sourceEntityName: requestData.source_entity_name || "-",
+            targetEntityName: requestData.target_entity_name || "-",
+            reason: requestData.rejection_reason || requestData.resolution_note || "No rejection reason provided.",
+          },
+        });
+        return;
+      }
+
+      if (requestData.is_pending_approval) {
+        navigate(`/pending-requests${requestNumber ? `?search=${encodeURIComponent(requestNumber)}` : ""}`);
+        return;
+      }
+
+      navigate(`/requests/${requestId}`);
     } catch {
+      navigate(fallbackLink);
     } finally {
       await notifications.loadNotifications(true);
-      navigate(withNotificationContext(item.link));
     }
   }
 

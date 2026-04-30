@@ -148,6 +148,14 @@ ROLE_LOCKED_PERMISSION_KEYS = {
 }
 
 
+def strip_role_locked_permission_keys(role_key, permission_keys):
+    keys = set(permission_keys or [])
+    for permission_key, allowed_roles in ROLE_LOCKED_PERMISSION_KEYS.items():
+        if role_key not in allowed_roles:
+            keys.discard(permission_key)
+    return sorted(keys)
+
+
 def validate_role_locked_permission_keys(role_key, permission_keys):
     for permission_key, allowed_roles in ROLE_LOCKED_PERMISSION_KEYS.items():
         if permission_key in set(permission_keys) and role_key not in allowed_roles:
@@ -163,15 +171,20 @@ def get_saved_default_permission_keys(role):
         RoleDefaultPermission.objects.filter(role=role).values_list("permission__key", flat=True)
     )
     if custom_keys:
-        return custom_keys
+        return set(strip_role_locked_permission_keys(role.key, custom_keys))
 
     role_keys = set(
         RolePermission.objects.filter(role=role).values_list("permission__key", flat=True)
     )
     if role_keys:
-        return role_keys
+        return set(strip_role_locked_permission_keys(role.key, role_keys))
 
-    return set(normalize_request_status_permission_keys(ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())))
+    return set(
+        strip_role_locked_permission_keys(
+            role.key,
+            normalize_request_status_permission_keys(ROLE_DEFAULT_PERMISSION_KEYS.get(role.key, set())),
+        )
+    )
 
 
 class AdminBaseView(APIView):
@@ -920,7 +933,13 @@ class AdminRolesView(AdminBaseView):
 
         for role_row in roles_payload:
             saved_keys = role_id_to_saved_defaults.get(role_row.get("id"))
-            role_row["custom_default_permissions"] = sorted(saved_keys) if saved_keys is not None else list(role_row.get("default_permissions", []))
+            role_key = role_row.get("key")
+            role_defaults = role_row.get("default_permissions", [])
+            role_row["default_permissions"] = strip_role_locked_permission_keys(role_key, role_defaults)
+            if saved_keys is not None:
+                role_row["custom_default_permissions"] = strip_role_locked_permission_keys(role_key, saved_keys)
+            else:
+                role_row["custom_default_permissions"] = list(role_row.get("default_permissions", []))
 
         company_options = []
         entity_options = []
@@ -1016,6 +1035,7 @@ class AdminRoleDetailView(AdminBaseView):
         permission_keys = self._expand_permission_keys(serializer.validated_data["permission_keys"])
         permission_keys = normalize_log_scope_permission_keys(role.key, permission_keys)
         permission_keys = normalize_request_status_permission_keys(permission_keys)
+        permission_keys = strip_role_locked_permission_keys(role.key, permission_keys)
         is_valid_role_lock, role_lock_error = validate_role_locked_permission_keys(role.key, permission_keys)
         if not is_valid_role_lock:
             return Response({"detail": role_lock_error}, status=status.HTTP_400_BAD_REQUEST)
@@ -1555,6 +1575,7 @@ class AdminRoleDefaultDetailView(AdminBaseView):
         serializer.is_valid(raise_exception=True)
         permission_keys = normalize_log_scope_permission_keys(role.key, serializer.validated_data["permission_keys"])
         permission_keys = normalize_request_status_permission_keys(permission_keys)
+        permission_keys = strip_role_locked_permission_keys(role.key, permission_keys)
         is_valid_role_lock, role_lock_error = validate_role_locked_permission_keys(role.key, permission_keys)
         if not is_valid_role_lock:
             return Response({"detail": role_lock_error}, status=status.HTTP_400_BAD_REQUEST)

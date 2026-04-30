@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   CheckCheck,
   ClipboardList,
@@ -16,16 +17,19 @@ import {
 } from 'lucide-react'
 
 import { useNotifications } from '../hooks/useNotifications'
+import { api } from '../lib/api'
 
 const PAGE_SIZE = 5
 
-function withNotificationContext(link) {
-  if (!link) return '/notifications'
-  if (!link.startsWith('/requests/')) return link
-  const [path, rawQuery = ''] = link.split('?')
-  const params = new URLSearchParams(rawQuery)
-  params.set('from', 'notification')
-  return `${path}?${params.toString()}`
+function getRequestIdFromNotificationLink(link) {
+  if (!link || !link.startsWith('/requests/')) return null
+  const match = link.match(/^\/requests\/(\d+)/)
+  return match ? Number(match[1]) : null
+}
+
+function isRequestMessageNotification(item) {
+  const eventType = String(item?.event_type || '').toUpperCase()
+  return eventType.includes('MESSAGE') || Boolean(item?.metadata?.message_id)
 }
 
 function formatEventType(value) {
@@ -47,6 +51,7 @@ function getMetaForType(eventType) {
 }
 
 function NotificationsPage() {
+  const navigate = useNavigate()
   const notifications = useNotifications()
   const [activeTab, setActiveTab] = useState('all')
   const [selectedTypes, setSelectedTypes] = useState([])
@@ -114,6 +119,58 @@ function NotificationsPage() {
         ? current.filter((value) => value !== typeKey)
         : [...current, typeKey]
     ))
+  }
+
+  async function openNotification(item) {
+    const fallbackLink = item?.link || '/notifications'
+    const requestId = getRequestIdFromNotificationLink(fallbackLink)
+    try {
+      if (!item.is_read) {
+        await notifications.markAsRead(item.id)
+      }
+      if (!requestId) {
+        navigate(fallbackLink)
+        return
+      }
+
+      const response = await api.get(`/requests/${requestId}/`)
+      const requestData = response.data || {}
+      const requestNumber = requestData.request_number || item?.metadata?.request_number || ''
+
+      const requestStatus = String(requestData.status || '').toUpperCase()
+
+      if (isRequestMessageNotification(item)) {
+        navigate(`/requests/${requestId}?tab=comments`)
+        return
+      }
+
+      if (requestStatus === 'REJECTED') {
+        const query = requestNumber ? `?search=${encodeURIComponent(requestNumber)}&status=REJECTED` : '?status=REJECTED'
+        navigate(`/pending-requests${query}`, {
+          state: {
+            rejectedFromNotification: true,
+            requestId: requestData.id,
+            requestNumber,
+            title: requestData.title || '-',
+            priority: requestData.priority || 'MEDIUM',
+            sourceEntityName: requestData.source_entity_name || '-',
+            targetEntityName: requestData.target_entity_name || '-',
+            reason: requestData.rejection_reason || requestData.resolution_note || 'No rejection reason provided.',
+          },
+        })
+        return
+      }
+      if (requestData.is_pending_approval) {
+        navigate(`/pending-requests${requestNumber ? `?search=${encodeURIComponent(requestNumber)}` : ''}`)
+        return
+      }
+
+      navigate(`/requests/${requestId}`)
+    } catch {
+      navigate(fallbackLink)
+    } finally {
+      await notifications.loadNotifications(false)
+    }
   }
 
   return (
@@ -197,9 +254,13 @@ function NotificationsPage() {
                           </span>
                           <div className="flex items-center gap-2">
                             {item.link ? (
-                              <a className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60" href={withNotificationContext(item.link)}>
+                              <button
+                                type="button"
+                                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                                onClick={() => { void openNotification(item) }}
+                              >
                                 Open
-                              </a>
+                              </button>
                             ) : null}
                             {!item.is_read ? (
                               <button

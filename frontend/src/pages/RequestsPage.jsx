@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, PlusCircle, Search, XCircle } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -68,6 +68,7 @@ function RequestsPage({ forcedScope = '' }) {
   const resolvedScope = scope
   const initialSearch = searchParams.get('search') || ''
   const initialAssignee = searchParams.get('assignee') || ''
+  const initialStatus = searchParams.get('status') || ''
 
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
   const [filters, setFilters] = useState({
@@ -75,7 +76,7 @@ function RequestsPage({ forcedScope = '' }) {
     company_id: '',
     source_entity_id: '',
     target_entity_id: '',
-    status: '',
+    status: initialStatus,
     assignee: initialAssignee,
   })
   const [options, setOptions] = useState({
@@ -104,6 +105,9 @@ function RequestsPage({ forcedScope = '' }) {
     requestIds: [],
     reason: '',
   })
+
+  const location = useLocation()
+  const [rejectedInfo, setRejectedInfo] = useState({ open: false, payload: null })
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const effectivePermissionKeys = useMemo(
@@ -322,6 +326,31 @@ function RequestsPage({ forcedScope = '' }) {
     setState({ loading: true, error: '', requests: [] })
     loadRequests()
   }, [filters, pagination.page, resolvedScope, refreshUser])
+
+  useEffect(() => {
+    // If navigated from a notification about a rejected request, show a popup with details
+    try {
+      const state = location.state || {}
+      if (state.rejectedFromNotification) {
+        setRejectedInfo({
+          open: true,
+          payload: {
+            requestId: state.requestId,
+            requestNumber: state.requestNumber,
+            title: state.title,
+            priority: state.priority,
+            sourceEntityName: state.sourceEntityName,
+            targetEntityName: state.targetEntityName,
+            reason: state.reason,
+          },
+        })
+        // clear location state so popup isn't shown again on refresh/navigation
+        navigate(location.pathname + location.search, { replace: true })
+      }
+    } catch (err) {
+      // ignore
+    }
+  }, [location.state])
 
   useEffect(() => {
     if (shouldRedirectBasicApproverFromPending) return
@@ -872,6 +901,32 @@ function RequestsPage({ forcedScope = '' }) {
                 ) : (
                   'Reject'
                 )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {rejectedInfo.open && rejectedInfo.payload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-md border-2 border-border bg-card p-5 shadow-none">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Request rejected</p>
+            <h3 className="mt-1 text-lg font-semibold text-foreground">{rejectedInfo.payload.title || rejectedInfo.payload.requestNumber || 'Request'}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Reference: <span className="font-mono">{rejectedInfo.payload.requestNumber || '-'}</span></p>
+            <p className="mt-1 text-sm text-muted-foreground">Priority: <strong>{(rejectedInfo.payload.priority || 'MEDIUM').toUpperCase()}</strong></p>
+            <p className="mt-1 text-sm text-muted-foreground">From: <strong>{rejectedInfo.payload.sourceEntityName || '-'}</strong> — To: <strong>{rejectedInfo.payload.targetEntityName || '-'}</strong></p>
+            <div className="mt-4 rounded-md border border-input bg-background p-3 text-sm">
+              <p className="text-xs font-bold text-muted-foreground">Rejection reason</p>
+              <p className="mt-1 text-sm text-foreground">{rejectedInfo.payload.reason || 'No rejection reason provided.'}</p>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRejectedInfo({ open: false, payload: null })}>Close</Button>
+              <Button
+                onClick={() => {
+                  setRejectedInfo({ open: false, payload: null })
+                  navigate(`/requests/${rejectedInfo.payload.requestId}`)
+                }}
+              >
+                View details
               </Button>
             </div>
           </div>
