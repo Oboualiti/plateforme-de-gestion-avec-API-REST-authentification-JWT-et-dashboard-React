@@ -507,6 +507,7 @@ function RequestsPage({ forcedScope = '' }) {
   return (
     <main className="space-y-6">
       <PageHeader
+        eyebrow="Operations"
         title={scopeTitle[resolvedScope] || 'Requests'}
         description="Browse, filter, and manage requests across your scope."
         actions={

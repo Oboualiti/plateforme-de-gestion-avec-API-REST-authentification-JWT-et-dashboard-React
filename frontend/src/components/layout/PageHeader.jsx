@@ -4,8 +4,8 @@ function PageHeader({ eyebrow, title, description, actions = null, meta = null }
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1.5">
           {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-          <h1 className="text-2xl font-extrabold uppercase tracking-tight text-foreground sm:text-3xl">{title}</h1>
-          {description && <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>}
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{title}</h1>
+          {description && <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}
         </div>
         {actions && <div className="flex items-center gap-3">{actions}</div>}
       </div>

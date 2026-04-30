@@ -157,7 +157,7 @@ function HierarchyPage() {
 
   if (state.loading) {
     return (
-      <main className="page-content">
+      <main className="space-y-6">
         <PageHeader
           eyebrow="Organization"
           title="Hierarchy"
@@ -170,7 +170,7 @@ function HierarchyPage() {
 
   if (state.error) {
     return (
-      <main className="page-content">
+      <main className="space-y-6">
         <PageHeader
           eyebrow="Organization"
           title="Hierarchy"
@@ -182,7 +182,7 @@ function HierarchyPage() {
   }
 
   return (
-    <main className="page-content">
+    <main className="space-y-6">
       <PageHeader
         eyebrow="Organization"
         title="Hierarchy"

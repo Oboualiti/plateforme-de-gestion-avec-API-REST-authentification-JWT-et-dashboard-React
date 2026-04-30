@@ -44,15 +44,14 @@ function Brand({ isDarkMode }) {
 
 function SidebarContent({ onNavigate, isDarkMode }) {
   const { user, logout } = useAuth();
-  const role = user?.role_keys?.[0] || user?.role || "super_admin";
-  const groups = getNavForRole(role, user).filter((group) => Array.isArray(group.items) && group.items.length > 0);
-  const location = useLocation();
   const roleKeys = user?.role_keys || [];
   const primaryRoleKey = roleKeys.length
     ? roleKeys.reduce((best, current) =>
       (ROLE_RANK[current] || 0) > (ROLE_RANK[best] || 0) ? current : best,
     roleKeys[0])
     : (user?.role || "user");
+  const groups = getNavForRole(primaryRoleKey, user).filter((group) => Array.isArray(group.items) && group.items.length > 0);
+  const location = useLocation();
   const roleLabel = ROLE_LABELS[primaryRoleKey] || "User";
   const menuNotifications = useNotifications();
 

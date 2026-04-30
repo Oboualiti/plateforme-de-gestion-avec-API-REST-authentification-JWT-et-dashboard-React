@@ -194,7 +194,7 @@ function UsersPage() {
 
   if (loading) {
     return (
-      <main className="page-content">
+      <main className="space-y-6">
         <PageHeader
           eyebrow="Access Control"
           title="Users"
@@ -213,7 +213,7 @@ function UsersPage() {
   }
 
   return (
-    <main className="page-content">
+    <main className="space-y-6">
       <PageHeader
         eyebrow="Permission management"
         title="Users"

@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 
+import PageHeader from '../components/layout/PageHeader'
 import { useNotifications } from '../hooks/useNotifications'
 import { api } from '../lib/api'
 
@@ -175,13 +176,13 @@ function NotificationsPage() {
 
   return (
     <main className="space-y-6">
+      <PageHeader
+        eyebrow="Workspace"
+        title="Notifications"
+        description="Track request updates, mentions, and system activity in one place."
+      />
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">
-            Notifications
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">All updates related to requests, messages and account actions.</p>
-        </div>
+        <div />
         <button
           type="button"
           className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-semibold text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"

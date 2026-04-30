@@ -11,7 +11,7 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
 import { Skeleton } from '../components/ui/skeleton'
-import { Activity, Building2, CheckCircle2, Users, ShieldCheck, ClipboardList, LayoutGrid } from 'lucide-react'
+import { Activity, Building2, CheckCircle2, Users, ShieldCheck, ClipboardList, LayoutGrid, ChevronDown } from 'lucide-react'
 
 function CompanyEditModal({ editState, onClose, onFieldChange, onSubmit, onDelete }) {
   if (!editState.open) return null
@@ -2011,6 +2011,7 @@ function buildPermissionRows(allPermissionKeys) {
 function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPermissionKeys, isSuperAdmin, onSaveRole, onRestoreRole }) {
   const [draftByRoleId, setDraftByRoleId] = useState({})
   const [savingByRoleId, setSavingByRoleId] = useState({})
+  const [expandedCategories, setExpandedCategories] = useState({})
   const allowedPermissionKeySet = useMemo(
     () => new Set(allPermissionKeys || []),
     [allPermissionKeys],
@@ -2035,6 +2036,25 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
     })
     return grouped
   }, [permissionRows])
+
+  useEffect(() => {
+    setExpandedCategories((current) => {
+      const next = { ...current }
+      permissionSectionOrder.forEach((section) => {
+        if (typeof next[section] !== 'boolean') {
+          next[section] = true
+        }
+      })
+      return next
+    })
+  }, [rowsBySection])
+
+  function toggleCategory(section) {
+    setExpandedCategories((current) => ({
+      ...current,
+      [section]: !current[section],
+    }))
+  }
 
   function isChecked(roleId, permissionKey) {
     const selected = draftByRoleId[roleId] || []
@@ -2140,22 +2160,36 @@ function RolesPermissionMatrix({ roles, allPermissionKeys, canEditRole, actorPer
               const rows = rowsBySection[section] || []
               if (!rows.length) return null
               const SectionIcon = permissionSectionIcon[section] || permissionSectionIcon.other
+              const isExpanded = expandedCategories[section] !== false
+              const sectionLabel = permissionSectionTitle[section] || section
+              const sectionRegionId = `permission-section-${section}`
               return (
                 <Fragment key={section}>
                   <tr className="bg-muted/10">
-                    <td colSpan={roles.length + 1} className="border-y-2 border-foreground/90 px-4 py-2 text-xs font-bold uppercase tracking-[0.16em]">
-                      <div className="flex items-center gap-2">
-                        <SectionIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{permissionSectionTitle[section] || section}</span>
-                        <span className="text-[11px] font-medium normal-case tracking-normal text-muted-foreground/70">
-                          {rows.length} permissions
-                        </span>
-                      </div>
+                    <td colSpan={roles.length + 1} className="border-y-2 border-foreground/90 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.16em]">
+                      <button
+                        type="button"
+                        onClick={() => toggleCategory(section)}
+                        aria-expanded={isExpanded}
+                        aria-controls={sectionRegionId}
+                        className="flex w-full items-center justify-between gap-3 rounded-sm px-1 py-1 text-left transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <div className="flex items-center gap-2">
+                          <SectionIcon className="h-4 w-4 text-muted-foreground" />
+                          <span>{sectionLabel}</span>
+                          <span className="text-xs font-medium normal-case tracking-normal text-muted-foreground/70">
+                            {rows.length} permissions
+                          </span>
+                        </div>
+                        <ChevronDown
+                          className={`h-4.5 w-4.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        />
+                      </button>
                     </td>
                   </tr>
-                  {rows.map((row) => (
+                  {isExpanded && rows.map((row, rowIndex) => (
                     <tr key={row.key} className="border-b border-border/80 bg-card">
-                      <td className="sticky left-0 z-10 bg-card px-4 py-3 align-top">
+                      <td id={rowIndex === 0 ? sectionRegionId : undefined} className="sticky left-0 z-10 bg-card px-4 py-3 align-top">
                         <div className="text-base font-bold leading-tight">{row.title}</div>
                         <div className="text-sm text-muted-foreground">{row.description}</div>
                       </td>

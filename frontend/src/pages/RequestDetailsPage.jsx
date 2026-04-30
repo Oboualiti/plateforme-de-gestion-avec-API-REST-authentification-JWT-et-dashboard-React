@@ -29,6 +29,7 @@ import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
 import { DeadlinePlanner } from '../components/ui/deadline-planner'
+import PageHeader from '../components/layout/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import { cn } from '../lib/utils'
@@ -631,6 +632,11 @@ function RequestDetailsPage() {
 
   if (state.loading) return (
     <main className="page-content space-y-6">
+      <PageHeader
+        eyebrow="Workspace"
+        title="Request Details"
+        description="Review request information, status, discussion, and assignment activity."
+      />
       <Skeleton className="h-6 w-32" />
       <Skeleton className="h-12 w-full rounded-lg" />
       <div className="grid gap-6 lg:grid-cols-3">
@@ -645,6 +651,11 @@ function RequestDetailsPage() {
 
   if (state.error || !request) return (
     <main className="page-content py-12 text-center">
+      <PageHeader
+        eyebrow="Workspace"
+        title="Request Details"
+        description="Review request information, status, discussion, and assignment activity."
+      />
       <div className="rounded-xl border-2 border-destructive bg-destructive/5 p-8 max-w-md mx-auto">
         <p className="text-destructive font-bold uppercase tracking-wider">{state.error || 'Request Not Found'}</p>
         <Button variant="outline" className="mt-6" asChild>
@@ -656,6 +667,11 @@ function RequestDetailsPage() {
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow="Workspace"
+        title="Request Details"
+        description="Review request information, status, discussion, and assignment activity."
+      />
       {/* Top bar: back link */}
       <button
         onClick={() => navigate(-1)}
