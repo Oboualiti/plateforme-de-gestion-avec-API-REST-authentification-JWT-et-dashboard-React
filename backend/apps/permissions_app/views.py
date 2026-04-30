@@ -789,6 +789,19 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
             target_label=target.username,
             metadata={"permission_key": serializer.validated_data["permission_key"]},
         )
+        permission_key = serializer.validated_data["permission_key"]
+        create_notification(
+            user=target,
+            event_type=UserNotification.EventType.GENERAL,
+            title="A permission was added to your account",
+            message=f"{request.user.username} granted '{permission_key}' permission to your account.",
+            link="/profile",
+            metadata={
+                "updated_by_user_id": request.user.id,
+                "permission_key": permission_key,
+                "change_type": "granted",
+            },
+        )
         return Response(
             self.build_payload(request, target),
             status=status.HTTP_200_OK,
@@ -822,6 +835,19 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
             target_id=target.id,
             target_label=target.username,
             metadata={"permission_key": serializer.validated_data["permission_key"]},
+        )
+        permission_key = serializer.validated_data["permission_key"]
+        create_notification(
+            user=target,
+            event_type=UserNotification.EventType.GENERAL,
+            title="A permission was removed from your account",
+            message=f"{request.user.username} removed '{permission_key}' permission from your account.",
+            link="/profile",
+            metadata={
+                "updated_by_user_id": request.user.id,
+                "permission_key": permission_key,
+                "change_type": "removed",
+            },
         )
         return Response(
             self.build_payload(request, target),

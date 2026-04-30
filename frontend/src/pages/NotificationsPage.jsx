@@ -40,6 +40,20 @@ function formatEventType(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function getNotificationTitle(item) {
+  const title = String(item?.title || '').replace(/\s+/g, ' ').trim()
+  if (title) return title
+  const eventType = formatEventType(item?.event_type)
+  return eventType === 'Notification' ? 'Notification' : eventType
+}
+
+function getNotificationSubtitle(item) {
+  const text = String(item?.message || '').replace(/\s+/g, ' ').trim()
+  if (!text) return 'Open to view details.'
+  if (text.length > 160) return `${text.slice(0, 157)}...`
+  return text
+}
+
 function getMetaForType(eventType) {
   const key = String(eventType || '').toUpperCase()
   if (key.includes('ASSIGN')) return { icon: UserPlus, dot: 'bg-success', tag: 'bg-success/15 text-success' }
@@ -238,17 +252,17 @@ function NotificationsPage() {
                   const Icon = meta.icon
                   const highlighted = !item.is_read && index === 0
                   return (
-                    <article key={item.id} className={`relative flex gap-3 px-4 py-4 ${highlighted ? 'bg-primary/10' : ''}`}>
+                    <article key={item.id} className={`relative flex min-h-[92px] gap-3 px-4 py-4 ${highlighted ? 'bg-primary/10' : ''}`}>
                       {highlighted ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-primary" /> : null}
                       <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/60">
                         <Icon className="h-5 w-5 text-foreground" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <h3 className="truncate text-sm font-semibold text-foreground">{item.title}</h3>
+                          <h3 className="truncate text-sm font-semibold text-foreground">{getNotificationTitle(item)}</h3>
                           <small className="shrink-0 text-xs text-muted-foreground">{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">{item.message}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{getNotificationSubtitle(item)}</p>
                         <div className="mt-2 flex items-center justify-between gap-2">
                           <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.tag}`}>
                             {formatEventType(item.event_type)}

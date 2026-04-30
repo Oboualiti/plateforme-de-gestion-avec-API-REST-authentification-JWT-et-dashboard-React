@@ -21,6 +21,17 @@ const ROLE_LABELS = {
 }
 
 const roleKeys = Object.keys(ROLE_LABELS)
+const USERS_FILTERS_STORAGE_KEY = 'users_page_filters_v1'
+
+function loadSavedUsersFilters() {
+  try {
+    const raw = window.sessionStorage.getItem(USERS_FILTERS_STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
 
 function roleBadgeClass(roleKey) {
   const toneByRole = {
@@ -60,17 +71,18 @@ function DeleteConfirmModal({ open, username, loading, onCancel, onConfirm }) {
 }
 
 function UsersPage() {
+  const savedFilters = loadSavedUsersFilters()
   const navigate = useNavigate()
   const [pagination, setPagination] = useState({
-    page: 1,
+    page: Number(savedFilters?.page) > 0 ? Number(savedFilters.page) : 1,
     pageSize: 50,
   })
-  const [q, setQ] = useState('')
-  const [qInput, setQInput] = useState('')
-  const [role, setRole] = useState('all')
-  const [companyId, setCompanyId] = useState('all')
-  const [entityId, setEntityId] = useState('all')
-  const [status, setStatus] = useState('all')
+  const [q, setQ] = useState(typeof savedFilters?.q === 'string' ? savedFilters.q : '')
+  const [qInput, setQInput] = useState(typeof savedFilters?.qInput === 'string' ? savedFilters.qInput : '')
+  const [role, setRole] = useState(typeof savedFilters?.role === 'string' ? savedFilters.role : 'all')
+  const [companyId, setCompanyId] = useState(typeof savedFilters?.companyId === 'string' ? savedFilters.companyId : 'all')
+  const [entityId, setEntityId] = useState(typeof savedFilters?.entityId === 'string' ? savedFilters.entityId : 'all')
+  const [status, setStatus] = useState(typeof savedFilters?.status === 'string' ? savedFilters.status : 'all')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState('')
   const [deleteConfirmState, setDeleteConfirmState] = useState({
@@ -90,6 +102,19 @@ function UsersPage() {
       window.clearTimeout(timer)
     }
   }, [qInput])
+
+  useEffect(() => {
+    const payload = {
+      q,
+      qInput,
+      role,
+      companyId,
+      entityId,
+      status,
+      page: pagination.page,
+    }
+    window.sessionStorage.setItem(USERS_FILTERS_STORAGE_KEY, JSON.stringify(payload))
+  }, [q, qInput, role, companyId, entityId, status, pagination.page])
 
   const usersQueryParams = useMemo(
     () => ({

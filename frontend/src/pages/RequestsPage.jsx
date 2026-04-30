@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 
 const PAGE_SIZE = 8
+const REQUESTS_FILTERS_STORAGE_KEY_PREFIX = 'requests_page_filters_v1'
 
 const statusLabelMap = {
   NEW: 'New',
@@ -60,24 +61,35 @@ function formatUpdated(value) {
   return date.toLocaleString()
 }
 
+function loadSavedRequestFilters(scopeKey) {
+  try {
+    const raw = window.sessionStorage.getItem(`${REQUESTS_FILTERS_STORAGE_KEY_PREFIX}:${scopeKey}`)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 function RequestsPage({ forcedScope = '' }) {
   const navigate = useNavigate()
   const { user, refreshUser } = useAuth()
   const [searchParams] = useSearchParams()
   const scope = forcedScope || searchParams.get('scope') || 'all'
   const resolvedScope = scope
+  const savedFilters = loadSavedRequestFilters(resolvedScope)
   const initialSearch = searchParams.get('search') || ''
   const initialAssignee = searchParams.get('assignee') || ''
   const initialStatus = searchParams.get('status') || ''
 
   const [state, setState] = useState({ loading: true, error: '', requests: [] })
   const [filters, setFilters] = useState({
-    search: initialSearch,
-    company_id: '',
-    source_entity_id: '',
-    target_entity_id: '',
-    status: initialStatus,
-    assignee: initialAssignee,
+    search: initialSearch || savedFilters?.search || '',
+    company_id: savedFilters?.company_id || '',
+    source_entity_id: savedFilters?.source_entity_id || '',
+    target_entity_id: savedFilters?.target_entity_id || '',
+    status: initialStatus || savedFilters?.status || '',
+    assignee: initialAssignee || savedFilters?.assignee || '',
   })
   const [options, setOptions] = useState({
     companies: [],
@@ -85,7 +97,7 @@ function RequestsPage({ forcedScope = '' }) {
     targetEntities: [],
   })
   const [pagination, setPagination] = useState({
-    page: 1,
+    page: Number(savedFilters?.page) > 0 ? Number(savedFilters.page) : 1,
     pageSize: PAGE_SIZE,
     count: 0,
     next: null,
@@ -176,13 +188,30 @@ function RequestsPage({ forcedScope = '' }) {
   useEffect(() => {
     const nextSearch = searchParams.get('search') || ''
     const nextAssignee = searchParams.get('assignee') || ''
+    const nextStatus = searchParams.get('status') || ''
     setFilters((current) => (
-      current.search === nextSearch && current.assignee === nextAssignee
+      current.search === nextSearch && current.assignee === nextAssignee && current.status === nextStatus
         ? current
-        : { ...current, search: nextSearch, assignee: nextAssignee }
+        : { ...current, search: nextSearch, assignee: nextAssignee, status: nextStatus }
     ))
     setPagination((current) => (current.page === 1 ? current : { ...current, page: 1 }))
   }, [searchParams])
+
+  useEffect(() => {
+    const payload = {
+      search: filters.search || '',
+      company_id: filters.company_id || '',
+      source_entity_id: filters.source_entity_id || '',
+      target_entity_id: filters.target_entity_id || '',
+      status: filters.status || '',
+      assignee: filters.assignee || '',
+      page: pagination.page,
+    }
+    window.sessionStorage.setItem(
+      `${REQUESTS_FILTERS_STORAGE_KEY_PREFIX}:${resolvedScope}`,
+      JSON.stringify(payload),
+    )
+  }, [filters, pagination.page, resolvedScope])
 
   useEffect(() => {
     if (!isGlobalAdmin) return

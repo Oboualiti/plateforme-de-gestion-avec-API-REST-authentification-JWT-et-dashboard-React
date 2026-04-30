@@ -802,7 +802,10 @@ class RequestStatusUpdateView(APIView):
             if service_request.current_assignee_id is not None:
                 service_request.current_assignee = None
                 update_fields.append("current_assignee")
-        elif service_request.current_assignee_id is None:
+        elif (
+            service_request.current_assignee_id is None
+            and effective_new_status != ServiceRequest.Status.REJECTED
+        ):
             # Seniors must delegate to a TL in the target entity instead of self-assigning.
             if get_primary_role_key(request.user) != "senior":
                 service_request.current_assignee = request.user

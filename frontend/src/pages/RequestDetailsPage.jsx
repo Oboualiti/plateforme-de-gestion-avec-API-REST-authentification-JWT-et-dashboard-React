@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
   Bot,
@@ -87,6 +88,31 @@ function formatRelative(value) {
   if (diffHours < 24) return `${diffHours}h ago`
   const diffDays = Math.floor(diffHours / 24)
   return `${diffDays}d ago`
+}
+
+function getFileNameFromUrl(url) {
+  if (!url) return 'Attached file'
+  try {
+    const cleanUrl = String(url).split('?')[0]
+    const lastPart = cleanUrl.split('/').filter(Boolean).pop()
+    return lastPart || 'Attached file'
+  } catch {
+    return 'Attached file'
+  }
+}
+
+function isImageAttachment(url, fallbackName = '') {
+  const value = String(url || fallbackName || '').toLowerCase()
+  return (
+    value.includes('.png')
+    || value.includes('.jpg')
+    || value.includes('.jpeg')
+    || value.includes('.gif')
+    || value.includes('.webp')
+    || value.includes('.bmp')
+    || value.includes('.svg')
+    || value.includes('.avif')
+  )
 }
 
 function getInitials(name) {
@@ -905,7 +931,40 @@ function RequestDetailsPage() {
                                    <span className="text-[10px] font-bold text-muted-foreground shrink-0 uppercase tracking-widest">{formatRelative(c.created_at)}</span>
                                 </div>
                                 <div className="rounded-lg rounded-tl-none border border-ink/10 bg-card p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
-                                  {c.message}
+                                  {c.message || ''}
+                                  {c.attachment_url ? (
+                                    <div className="mt-3 space-y-2">
+                                      {isImageAttachment(c.attachment_url, c.attachment) ? (
+                                        <a href={c.attachment_url} target="_blank" rel="noreferrer" className="block">
+                                          <img
+                                            src={c.attachment_url}
+                                            alt={getFileNameFromUrl(c.attachment_url)}
+                                            className="max-h-64 w-auto rounded-md border border-ink/10 object-contain"
+                                          />
+                                        </a>
+                                      ) : null}
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <a
+                                          href={c.attachment_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-2 rounded-md border border-ink/10 bg-muted/30 px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider text-primary hover:bg-muted"
+                                        >
+                                          <Paperclip className="h-3.5 w-3.5" />
+                                          {getFileNameFromUrl(c.attachment_url)}
+                                          <ExternalLink className="h-3.5 w-3.5" />
+                                        </a>
+                                        <a
+                                          href={c.attachment_url}
+                                          download
+                                          className="inline-flex items-center gap-2 rounded-md border border-ink/10 bg-card px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider hover:bg-muted/40"
+                                        >
+                                          <ArrowDown className="h-3.5 w-3.5" />
+                                          Download
+                                        </a>
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </div>
                               </div>
                             </div>

@@ -41,6 +41,28 @@ function getEntityUserCount(entity) {
   return fromLeaders
 }
 
+function getEntityPeopleCount(entity) {
+  const uniquePeople = new Set()
+
+  const managerId = entity?.manager_user_id || entity?.manager_id || entity?.manager?.id
+  const managerName = entity?.manager || entity?.manager_username || entity?.manager?.username
+  if (managerId) uniquePeople.add(`id:${managerId}`)
+  else if (managerName) uniquePeople.add(`name:${String(managerName).trim().toLowerCase()}`)
+
+  ;(entity?.team_leaders || []).forEach((leader) => {
+    if (leader?.id) uniquePeople.add(`id:${leader.id}`)
+    else if (leader?.username) uniquePeople.add(`name:${String(leader.username).trim().toLowerCase()}`)
+
+    ;(leader?.users || []).forEach((member) => {
+      if (member?.id) uniquePeople.add(`id:${member.id}`)
+      else if (member?.username) uniquePeople.add(`name:${String(member.username).trim().toLowerCase()}`)
+    })
+  })
+
+  if (uniquePeople.size === 0) return getEntityUserCount(entity)
+  return uniquePeople.size
+}
+
 function HierarchyPage() {
   const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: '', data: null })
@@ -72,7 +94,16 @@ function HierarchyPage() {
   const hierarchyStats = useMemo(() => {
     const totalCompanies = companies.length
     const totalEntities = entities.length
-    const totalUsers = entities.reduce((sum, entity) => sum + getEntityUserCount(entity), 0)
+    const totalPeopleFromEntities = entities.reduce((sum, entity) => sum + getEntityPeopleCount(entity), 0)
+    const seniorsCount = companies.reduce((sum, company) => {
+      const hasSenior =
+        Boolean(company?.senior_user_id)
+        || Boolean(company?.senior_name)
+        || Boolean(company?.senior_username)
+        || Boolean(company?.senior)
+      return sum + (hasSenior ? 1 : 0)
+    }, 0)
+    const totalUsers = totalPeopleFromEntities + seniorsCount
     const totalManagers = new Set(
       managerOptions
         .map((manager) => manager.id || manager.user_id || manager.username)
@@ -275,7 +306,7 @@ function HierarchyPage() {
                   </div>
                   <div>
                     <div className="text-base font-extrabold">{company.code}</div>
-                    <div className="text-xs text-muted-foreground">Code: {company.code} · {companyEntities.length} entities · {companyEntities.reduce((sum, entity) => sum + getEntityUserCount(entity), 0)} users</div>
+                    <div className="text-xs text-muted-foreground">Code: {company.code} · {companyEntities.length} entities · {companyEntities.reduce((sum, entity) => sum + getEntityPeopleCount(entity), 0) + (seniorName ? 1 : 0)} users</div>
                   </div>
                 </div>
                 {seniorName ? (
@@ -315,7 +346,7 @@ function HierarchyPage() {
                             <EntityTypeBadge type={entity.entity_type} />
                             <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                               <Users className="h-3.5 w-3.5" />
-                              {getEntityUserCount(entity)}
+                              {getEntityPeopleCount(entity)}
                             </div>
                           </div>
                         </div>
