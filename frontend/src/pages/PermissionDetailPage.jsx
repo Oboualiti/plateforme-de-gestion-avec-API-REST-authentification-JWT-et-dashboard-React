@@ -236,6 +236,7 @@ function PermissionDetailPage() {
         }
         if (profileForm.password.trim()) {
           payload.password = profileForm.password
+          payload.confirm_password = profileForm.confirm_password
         }
         if (canShowCompany && profileForm.company_id) {
           payload.company_id = Number(profileForm.company_id)
@@ -508,16 +509,51 @@ function PermissionDetailPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="space-y-1.5">
                 <label htmlFor="password" className="text-sm font-medium text-foreground">New Password (Optional)</label>
-                <input
-                  id="password"
-                  type="password"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                  value={profileForm.password}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, password: event.target.value }))
-                  }
-                  disabled={!canEditProfile}
-                />
+                <div className="relative">
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                    value={profileForm.password}
+                    onChange={(event) =>
+                      setProfileForm((current) => ({ ...current, password: event.target.value }))
+                    }
+                    disabled={!canEditProfile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-60"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    disabled={!canEditProfile}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="confirm_password" className="text-sm font-medium text-foreground">Confirm New Password</label>
+                <div className="relative">
+                  <input
+                    id="confirm_password"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                    value={profileForm.confirm_password}
+                    onChange={(event) =>
+                      setProfileForm((current) => ({ ...current, confirm_password: event.target.value }))
+                    }
+                    disabled={!canEditProfile}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((current) => !current)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-60"
+                    aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                    disabled={!canEditProfile}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

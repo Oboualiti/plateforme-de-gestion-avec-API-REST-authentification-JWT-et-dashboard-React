@@ -252,7 +252,7 @@ function CreateRequestPage() {
           <form className="space-y-4" onSubmit={handleSubmit}>
             <section className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-xs font-semibold text-amber-700">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
                   1
                 </span>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Request Details</p>
@@ -309,7 +309,7 @@ function CreateRequestPage() {
 
             <section className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-xs font-semibold text-amber-700">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
                   2
                 </span>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Routing</p>
@@ -412,7 +412,7 @@ function CreateRequestPage() {
 
             <section className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-xs font-semibold text-amber-700">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
                   3
                 </span>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Description</p>
@@ -433,7 +433,7 @@ function CreateRequestPage() {
 
             <section className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-xs font-semibold text-amber-700">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
                   4
                 </span>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Attachments (Optional)</p>
@@ -604,7 +604,7 @@ function CreateRequestPage() {
             <div className="mt-4 space-y-3">
               <div className="rounded-lg border border-border bg-muted/20 p-3">
                 <div className="flex items-start gap-3">
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background text-primary">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md text-primary">
                     <Workflow className="h-5 w-5" />
                   </span>
                   <div>
@@ -617,7 +617,7 @@ function CreateRequestPage() {
               </div>
               <div className="rounded-lg border border-border bg-muted/20 p-3">
                 <div className="flex items-start gap-3">
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background text-primary">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md text-primary">
                     <Target className="h-5 w-5" />
                   </span>
                   <div>
@@ -630,7 +630,7 @@ function CreateRequestPage() {
               </div>
               <div className="rounded-lg border border-border bg-muted/20 p-3">
                 <div className="flex items-start gap-3">
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background text-primary">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md text-primary">
                     <ShieldCheck className="h-5 w-5" />
                   </span>
                   <div>
@@ -665,7 +665,7 @@ function CreateRequestPage() {
           <section className="surface-card border border-border p-5">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Triage Expectation</p>
             <div className="mt-3 flex items-start gap-3">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background text-primary">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-md text-primary">
                 <Clock3 className="h-5 w-5" />
               </span>
               <div>
