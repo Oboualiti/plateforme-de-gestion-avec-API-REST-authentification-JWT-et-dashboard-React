@@ -290,6 +290,58 @@ function PendingDecisionModal({
   )
 }
 
+function ImageViewerModal({ open, imageUrl, fileName, zoom, onZoomIn, onZoomOut, onClose }) {
+  if (!open || !imageUrl) return null
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4">
+      <div className="absolute right-4 top-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onZoomOut}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/30 bg-black/40 text-white"
+          title="Zoom out"
+        >
+          -
+        </button>
+        <button
+          type="button"
+          onClick={onZoomIn}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/30 bg-black/40 text-white"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <a
+          href={imageUrl}
+          download
+          className="inline-flex h-9 items-center justify-center rounded-md border border-white/30 bg-black/40 px-3 text-xs font-bold uppercase tracking-wider text-white"
+          title="Download"
+        >
+          Download
+        </a>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex h-9 items-center justify-center rounded-md border border-white/30 bg-black/40 px-3 text-xs font-bold uppercase tracking-wider text-white"
+          title="Close"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="max-h-[90vh] max-w-[90vw] overflow-auto rounded-md border border-white/20 bg-black/20 p-2">
+        <img
+          src={imageUrl}
+          alt={fileName || 'Image attachment'}
+          style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+          className="max-h-[82vh] w-auto object-contain transition-transform duration-150"
+        />
+      </div>
+    </div>
+  )
+}
+
 function RequestDetailsPage() {
   const { requestId } = useParams()
   const [searchParams] = useSearchParams()
@@ -299,6 +351,12 @@ function RequestDetailsPage() {
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'history' ? 'history' : 'comments')
   const [comment, setComment] = useState('')
   const [commentAttachment, setCommentAttachment] = useState(null)
+  const [imageViewer, setImageViewer] = useState({
+    open: false,
+    imageUrl: '',
+    fileName: '',
+    zoom: 1,
+  })
   const [mentionState, setMentionState] = useState({
     open: false,
     query: '',
@@ -935,13 +993,22 @@ function RequestDetailsPage() {
                                   {c.attachment_url ? (
                                     <div className="mt-3 space-y-2">
                                       {isImageAttachment(c.attachment_url, c.attachment) ? (
-                                        <a href={c.attachment_url} target="_blank" rel="noreferrer" className="block">
+                                        <button
+                                          type="button"
+                                          onClick={() => setImageViewer({
+                                            open: true,
+                                            imageUrl: c.attachment_url,
+                                            fileName: getFileNameFromUrl(c.attachment_url),
+                                            zoom: 1,
+                                          })}
+                                          className="block"
+                                        >
                                           <img
                                             src={c.attachment_url}
                                             alt={getFileNameFromUrl(c.attachment_url)}
                                             className="max-h-64 w-auto rounded-md border border-ink/10 object-contain"
                                           />
-                                        </a>
+                                        </button>
                                       ) : null}
                                       <div className="flex flex-wrap items-center gap-2">
                                         <a
@@ -1268,6 +1335,19 @@ function RequestDetailsPage() {
         }
         onCancel={closeStatusDialog}
         onConfirm={confirmStatusChange}
+      />
+      <ImageViewerModal
+        open={imageViewer.open}
+        imageUrl={imageViewer.imageUrl}
+        fileName={imageViewer.fileName}
+        zoom={imageViewer.zoom}
+        onZoomIn={() =>
+          setImageViewer((current) => ({ ...current, zoom: Math.min(4, Number((current.zoom + 0.2).toFixed(2))) }))
+        }
+        onZoomOut={() =>
+          setImageViewer((current) => ({ ...current, zoom: Math.max(0.4, Number((current.zoom - 0.2).toFixed(2))) }))
+        }
+        onClose={() => setImageViewer({ open: false, imageUrl: '', fileName: '', zoom: 1 })}
       />
     </main>
   )
