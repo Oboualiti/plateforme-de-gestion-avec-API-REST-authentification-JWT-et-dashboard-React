@@ -292,6 +292,7 @@ function HierarchyPage() {
             company.senior ||
             seniorOption?.username ||
             ''
+          const seniorAvatarUrl = company.senior_avatar_url || seniorOption?.avatar_url || ''
           const companyExpanded = expandedCompanies[company.id] !== false
 
           return (
@@ -311,7 +312,7 @@ function HierarchyPage() {
                 </div>
                 {seniorName ? (
                   <div className="flex items-center gap-2 rounded-md border border-ink/10 bg-card px-3 py-1.5 shadow-none">
-                    <Avatar name={seniorName} size={24} className="border border-ink/10" />
+                    <Avatar name={seniorName} size={24} photoUrl={seniorAvatarUrl} className="border border-ink/10" />
                     <div className="text-xs text-muted-foreground">
                       Senior:{' '}
                       {seniorId ? (
@@ -331,6 +332,7 @@ function HierarchyPage() {
                   {companyEntities.map((entity) => {
                     const managerName = entity.manager || ''
                     const managerOption = managersByEntityId[entity.id]
+                    const managerAvatarUrl = entity.manager_avatar_url || managerOption?.avatar_url || ''
                     const leaders = entity.team_leaders || []
                     const managerKey = `entity-${entity.id}-manager`
                     const managerExpanded = Boolean(expandedManagers[managerKey])
@@ -359,7 +361,7 @@ function HierarchyPage() {
                               className="flex w-full items-center gap-1.5 text-left"
                             >
                               <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${managerExpanded ? 'rotate-90' : ''}`} />
-                              <Avatar name={managerName} size={22} className="border border-ink/10" />
+                              <Avatar name={managerName} size={22} photoUrl={managerAvatarUrl} className="border border-ink/10" />
                               <span className="text-xs text-muted-foreground">
                                 Manager{' '}
                                 {managerOption?.id ? (
@@ -385,7 +387,7 @@ function HierarchyPage() {
                                     className="flex w-full items-center gap-1.5 text-left"
                                   >
                                     <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${expandedTeamLeaders[leader.id] ? 'rotate-90' : ''}`} />
-                                    <Avatar name={leader.username} size={22} className="border border-ink/10" />
+                                    <Avatar name={leader.username} size={22} photoUrl={leader.avatar_url} className="border border-ink/10" />
                                     <span className="text-xs text-muted-foreground">
                                       <Link to={`/admin/users/${leader.id}`} className="font-bold text-primary underline-offset-2 hover:underline">
                                         {leader.username}
@@ -402,8 +404,9 @@ function HierarchyPage() {
                                           <Link
                                             key={member.id}
                                             to={`/admin/users/${member.id}`}
-                                            className="block text-xs font-medium text-primary underline-offset-2 hover:underline"
+                                            className="flex items-center gap-2 text-xs font-medium text-primary underline-offset-2 hover:underline"
                                           >
+                                            <Avatar name={member.username} size={18} photoUrl={member.avatar_url} className="border border-ink/10" />
                                             {member.username}
                                           </Link>
                                         ))

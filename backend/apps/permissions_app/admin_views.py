@@ -688,6 +688,11 @@ class AdminHierarchyView(AdminBaseView):
     module_key = "hierarchy"
 
     def get(self, request):
+        def avatar_url_for(user):
+            if not user or not user.avatar:
+                return ""
+            return request.build_absolute_uri(user.avatar.url)
+
         companies = []
         entities = []
         scoped_users = self.scoped_users(request.user)
@@ -703,6 +708,8 @@ class AdminHierarchyView(AdminBaseView):
                     "name": company.name,
                     "code": company.code,
                     "senior": senior.username if senior else "",
+                    "senior_user_id": senior.id if senior else None,
+                    "senior_avatar_url": avatar_url_for(senior),
                     "manager_count": User.objects.filter(
                         company_id=company.id,
                         assigned_roles__role__key="manager",
@@ -725,14 +732,25 @@ class AdminHierarchyView(AdminBaseView):
                 {
                     "id": entity.id,
                     "name": entity.name,
+                    "code": entity.code,
                     "company_name": entity.company.name,
                     "entity_type": entity.entity_type,
                     "manager": manager.username if manager else "",
+                    "manager_user_id": manager.id if manager else None,
+                    "manager_avatar_url": avatar_url_for(manager),
                     "team_leaders": [
                         {
                             "id": team_leader.id,
                             "username": team_leader.username,
-                            "users": list(team_leader.team_members.values("id", "username").order_by("username")),
+                            "avatar_url": avatar_url_for(team_leader),
+                            "users": [
+                                {
+                                    "id": member.id,
+                                    "username": member.username,
+                                    "avatar_url": avatar_url_for(member),
+                                }
+                                for member in team_leader.team_members.order_by("username")
+                            ],
                         }
                         for team_leader in team_leaders
                     ],
@@ -743,14 +761,29 @@ class AdminHierarchyView(AdminBaseView):
                 "companies": companies,
                 "entities": entities,
                 "senior_options": list(
-                    scoped_users.filter(assigned_roles__role__key="senior", is_active=True)
-                    .values("id", "username", "company_id")
-                    .order_by("username")
+                    {
+                        "id": senior.id,
+                        "username": senior.username,
+                        "company_id": senior.company_id,
+                        "avatar_url": avatar_url_for(senior),
+                    }
+                    for senior in scoped_users.filter(
+                        assigned_roles__role__key="senior",
+                        is_active=True,
+                    ).order_by("username")
                 ),
                 "manager_options": list(
-                    scoped_users.filter(assigned_roles__role__key="manager", is_active=True)
-                    .values("id", "username", "company_id", "entity_id")
-                    .order_by("username")
+                    {
+                        "id": manager_user.id,
+                        "username": manager_user.username,
+                        "company_id": manager_user.company_id,
+                        "entity_id": manager_user.entity_id,
+                        "avatar_url": avatar_url_for(manager_user),
+                    }
+                    for manager_user in scoped_users.filter(
+                        assigned_roles__role__key="manager",
+                        is_active=True,
+                    ).order_by("username")
                 ),
             }
         )

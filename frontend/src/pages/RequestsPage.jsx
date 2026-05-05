@@ -61,6 +61,30 @@ function formatUpdated(value) {
   return date.toLocaleString()
 }
 
+function getFileNameFromUrl(value) {
+  if (!value) return ''
+  try {
+    const withoutQuery = String(value).split('?')[0]
+    const parts = withoutQuery.split('/')
+    return decodeURIComponent(parts[parts.length - 1] || '')
+  } catch {
+    return ''
+  }
+}
+
+function isImageAttachment(url, fallbackName = '') {
+  const value = String(url || fallbackName || '').toLowerCase()
+  return (
+    value.includes('.png')
+    || value.includes('.jpg')
+    || value.includes('.jpeg')
+    || value.includes('.webp')
+    || value.includes('.gif')
+    || value.includes('.bmp')
+    || value.includes('.svg')
+  )
+}
+
 function loadSavedRequestFilters(scopeKey) {
   try {
     const raw = window.sessionStorage.getItem(`${REQUESTS_FILTERS_STORAGE_KEY_PREFIX}:${scopeKey}`)
@@ -120,6 +144,12 @@ function RequestsPage({ forcedScope = '' }) {
 
   const location = useLocation()
   const [rejectedInfo, setRejectedInfo] = useState({ open: false, payload: null })
+  const [pendingPreview, setPendingPreview] = useState({
+    open: false,
+    loading: false,
+    error: '',
+    data: null,
+  })
 
   const roleKeys = useMemo(() => user?.role_keys || [], [user?.role_keys])
   const effectivePermissionKeys = useMemo(
@@ -437,6 +467,41 @@ function RequestsPage({ forcedScope = '' }) {
       assignee: '',
     })
     setPagination((current) => ({ ...current, page: 1 }))
+  }
+
+  async function openPendingPreview(requestId) {
+    if (!requestId) return
+    setPendingPreview({
+      open: true,
+      loading: true,
+      error: '',
+      data: null,
+    })
+    try {
+      const response = await api.get(`/requests/${requestId}/`)
+      setPendingPreview({
+        open: true,
+        loading: false,
+        error: '',
+        data: response.data || null,
+      })
+    } catch (error) {
+      setPendingPreview({
+        open: true,
+        loading: false,
+        error: error.response?.data?.detail || 'Could not load request details.',
+        data: null,
+      })
+    }
+  }
+
+  function closePendingPreview() {
+    setPendingPreview({
+      open: false,
+      loading: false,
+      error: '',
+      data: null,
+    })
   }
 
   function togglePendingSelection(requestId) {
@@ -772,7 +837,13 @@ function RequestsPage({ forcedScope = '' }) {
               </thead>
               <tbody>
                 {state.requests.map((item) => (
-                  <tr key={item.id} className="border-b border-ink/5 last:border-0 hover:bg-muted/10 transition-colors">
+                  <tr
+                    key={item.id}
+                    className={`border-b border-ink/5 last:border-0 hover:bg-muted/10 transition-colors ${isPendingScope ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (isPendingScope) openPendingPreview(item.id)
+                    }}
+                  >
                     {canDecidePending && (
                       <td className="px-4 py-3">
                         <input
@@ -780,6 +851,7 @@ function RequestsPage({ forcedScope = '' }) {
                           className="h-4 w-4 accent-primary"
                           checked={selectedPendingIds.includes(item.id)}
                           disabled={item.status !== 'NEW' || bulkActionLoading}
+                          onClick={(event) => event.stopPropagation()}
                           onChange={() => togglePendingSelection(item.id)}
                         />
                       </td>
@@ -846,7 +918,10 @@ function RequestsPage({ forcedScope = '' }) {
                             variant="ghost" 
                             size="sm" 
                             className="h-8 border border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
-                            onClick={() => handlePendingDecision(item.id, 'ACCEPTED')} 
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handlePendingDecision(item.id, 'ACCEPTED')
+                            }}
                             disabled={item.status !== 'NEW' || bulkActionLoading}
                           >
                             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
@@ -856,7 +931,10 @@ function RequestsPage({ forcedScope = '' }) {
                             variant="ghost" 
                             size="sm" 
                             className="h-8 border border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
-                            onClick={() => openRejectDialog('single', [item.id])} 
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openRejectDialog('single', [item.id])
+                            }}
                             disabled={item.status !== 'NEW' || bulkActionLoading}
                           >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
@@ -933,6 +1011,81 @@ function RequestsPage({ forcedScope = '' }) {
                 )}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+      {pendingPreview.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-md border-2 border-border bg-card p-5 shadow-none">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Pending request</p>
+                <h3 className="mt-1 text-lg font-semibold text-foreground">
+                  {pendingPreview.data?.title || 'Request details'}
+                </h3>
+              </div>
+              <Button variant="outline" size="sm" onClick={closePendingPreview}>Close</Button>
+            </div>
+
+            {pendingPreview.loading ? (
+              <p className="mt-4 text-sm text-muted-foreground">Loading request details...</p>
+            ) : pendingPreview.error ? (
+              <p className="mt-4 text-sm text-destructive">{pendingPreview.error}</p>
+            ) : (
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <p><span className="text-muted-foreground">Reference:</span> <span className="font-mono">{pendingPreview.data?.reference_code || pendingPreview.data?.request_number || '-'}</span></p>
+                  <p><span className="text-muted-foreground">Status:</span> {pendingPreview.data?.status || '-'}</p>
+                  <p><span className="text-muted-foreground">Priority:</span> {(pendingPreview.data?.priority_label || pendingPreview.data?.priority || '-')}</p>
+                  <p><span className="text-muted-foreground">Type:</span> {pendingPreview.data?.type || '-'}</p>
+                  <p><span className="text-muted-foreground">Source:</span> {pendingPreview.data?.source_entity_name || '-'}</p>
+                  <p><span className="text-muted-foreground">Target:</span> {pendingPreview.data?.target_entity_name || '-'}</p>
+                </div>
+
+                <div className="rounded-md border border-input bg-background p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Description</p>
+                  <p className="mt-1 whitespace-pre-wrap text-foreground">{pendingPreview.data?.description || 'No description provided.'}</p>
+                </div>
+
+                {pendingPreview.data?.attachment_url ? (
+                  <div className="rounded-md border border-input bg-background p-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Attachment</p>
+                    <div className="mt-2 space-y-2">
+                      {isImageAttachment(
+                        pendingPreview.data?.attachment_url,
+                        pendingPreview.data?.attachment,
+                      ) ? (
+                        <img
+                          src={pendingPreview.data.attachment_url}
+                          alt={getFileNameFromUrl(pendingPreview.data.attachment_url) || 'Attachment'}
+                          className="max-h-72 w-auto rounded-md border border-ink/10 object-contain"
+                        />
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href={pendingPreview.data.attachment_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-md border border-ink/10 bg-muted/30 px-3 py-2 text-xs font-semibold hover:bg-muted"
+                        >
+                          Open attachment
+                        </a>
+                        <a
+                          href={pendingPreview.data.attachment_url}
+                          download
+                          className="inline-flex items-center rounded-md border border-ink/10 bg-card px-3 py-2 text-xs font-semibold hover:bg-muted/40"
+                        >
+                          Download
+                        </a>
+                        <span className="text-xs text-muted-foreground">{getFileNameFromUrl(pendingPreview.data.attachment_url)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No attachment.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
