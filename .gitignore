@@ -28,5 +28,5 @@ Thumbs.db
 
 ./emd-flow-main/*
 frontend/vite.config.js
-docs/openapi.yaml
+docs/
 swagger-preview.html

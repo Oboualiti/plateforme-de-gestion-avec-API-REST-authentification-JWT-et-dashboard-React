@@ -174,3 +174,11 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_MESSAGE_MIRROR_ENABLED = os.getenv(
     'TELEGRAM_MESSAGE_MIRROR_ENABLED', 'true'
 ).lower() in {'1', 'true', 'yes', 'y'}
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'request_project_local_cache',
+        'TIMEOUT': 300,
+    }
+}

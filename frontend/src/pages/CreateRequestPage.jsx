@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, Clock3, ShieldCheck, Target, Workflow } from 'lucide-react'
+import { CheckCircle2, Clock3, ShieldCheck, Sparkles, Target, UploadCloud, Workflow } from 'lucide-react'
 
 import PageHeader from '../components/layout/PageHeader'
 import { Select } from '../components/ui/select'
@@ -244,18 +244,14 @@ function CreateRequestPage() {
       />
 
       <section className="grid gap-5 xl:grid-cols-12">
-        <section className="surface-card border border-border p-4 sm:p-5 xl:col-span-9">
-          <div className="mb-4">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Request Details</p>
-          </div>
-
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <section className="space-y-3 rounded-lg border border-border p-4">
+        <section className="surface-card border border-border p-5 sm:p-6 xl:col-span-9">
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <section className="space-y-3 rounded-lg border border-border bg-muted/10 p-5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
                   1
                 </span>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Request Details</p>
+                <p className="text-base font-semibold text-foreground">Request Details</p>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5 md:col-span-1">
@@ -307,12 +303,12 @@ function CreateRequestPage() {
               </div>
             </section>
 
-            <section className="space-y-3 rounded-lg border border-border p-4">
+            <section className="space-y-3 rounded-lg border border-border bg-muted/10 p-5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
                   2
                 </span>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Routing</p>
+                <p className="text-base font-semibold text-foreground">Routing</p>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
@@ -410,42 +406,52 @@ function CreateRequestPage() {
               </div>
             </section>
 
-            <section className="space-y-3 rounded-lg border border-border p-4">
+            <section className="space-y-3 rounded-lg border border-border bg-muted/10 p-5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
                   3
                 </span>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Description</p>
+                <p className="text-base font-semibold text-foreground">Description</p>
               </div>
               <label htmlFor="description" className="text-sm font-medium text-foreground">
                 Describe the request, expected result, and relevant context
               </label>
               <textarea
                 id="description"
-                className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="min-h-36 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 placeholder="Describe the request, expected result, and relevant context"
                 value={form.description}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, description: event.target.value }))
                 }
               />
+              <p className="text-right text-xs text-muted-foreground">{form.description.length} / 5000</p>
             </section>
 
-            <section className="space-y-3 rounded-lg border border-border p-4">
+            <section className="space-y-3 rounded-lg border border-border bg-muted/10 p-5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-foreground dark:border-primary/40 dark:bg-primary/20 dark:text-primary">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
                   4
                 </span>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Attachments (Optional)</p>
+                <p className="text-base font-semibold text-foreground">Attachments (optional)</p>
               </div>
-              <div className="space-y-1.5">
-                <label htmlFor="request-attachment" className="sr-only">Attachment (optional)</label>
+              <div className="space-y-2">
                 <input
                   id="request-attachment"
                   type="file"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:font-semibold"
+                  className="sr-only"
                   onChange={(event) => setAttachment(event.target.files?.[0] || null)}
                 />
+                <label
+                  htmlFor="request-attachment"
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background px-4 py-8 text-center transition hover:bg-muted/30"
+                >
+                  <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    Drag and drop files here, or <span className="text-primary">browse</span>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Maximum file size: 25 MB</p>
+                </label>
                 {attachment ? (
                   <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     <span className="truncate pr-2">{attachment.name}</span>
@@ -461,15 +467,16 @@ function CreateRequestPage() {
               </div>
             </section>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/10 px-3 py-2">
-              <p className="text-xs text-muted-foreground">
-                AI can improve title and description, suggest type/team, and highlight missing details.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/10 px-4 py-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <p>AI can improve title and description, suggest type/team, and highlight missing details.</p>
+              </div>
               <button
                 type="button"
                 onClick={handleImproveWithAi}
                 disabled={aiImprove.loading}
-                className="inline-flex h-8 items-center justify-center rounded-md border border-border px-3 text-xs font-semibold text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-semibold text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {aiImprove.loading ? 'Improving...' : 'Improve with AI'}
               </button>
@@ -482,26 +489,26 @@ function CreateRequestPage() {
             ) : null}
 
             {aiImprove.result ? (
-              <section className="space-y-3 rounded-md border border-border bg-muted/10 p-3">
+              <section className="space-y-3 rounded-lg border border-border bg-muted/10 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">AI suggestions</h3>
                   <button
                     type="button"
                     onClick={applyAllAiSuggestions}
-                    className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+                    className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
                   >
                     Apply all
                   </button>
                 </div>
 
                 {aiImprove.result.suggested_title ? (
-                  <div className="rounded-md border border-border bg-background p-2">
+                  <div className="rounded-md border border-border bg-background p-3">
                     <p className="text-xs text-muted-foreground">Suggested title</p>
                     <p className="mt-1 text-sm text-foreground">{aiImprove.result.suggested_title}</p>
                     <button
                       type="button"
                       onClick={() => setForm((current) => ({ ...current, title: aiImprove.result.suggested_title }))}
-                      className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                      className="mt-2 inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
                     >
                       Apply title
                     </button>
@@ -509,13 +516,13 @@ function CreateRequestPage() {
                 ) : null}
 
                 {aiImprove.result.improved_description ? (
-                  <div className="rounded-md border border-border bg-background p-2">
+                  <div className="rounded-md border border-border bg-background p-3">
                     <p className="text-xs text-muted-foreground">Improved description</p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{aiImprove.result.improved_description}</p>
                     <button
                       type="button"
                       onClick={() => setForm((current) => ({ ...current, description: aiImprove.result.improved_description }))}
-                      className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                      className="mt-2 inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
                     >
                       Apply description
                     </button>
@@ -524,13 +531,13 @@ function CreateRequestPage() {
 
                 <div className="grid gap-2 sm:grid-cols-2">
                   {aiImprove.result.suggested_type ? (
-                    <div className="rounded-md border border-border bg-background p-2">
+                    <div className="rounded-md border border-border bg-background p-3">
                       <p className="text-xs text-muted-foreground">Suggested type</p>
                       <p className="mt-1 text-sm text-foreground">{aiImprove.result.suggested_type}</p>
                       <button
                         type="button"
                         onClick={() => setForm((current) => ({ ...current, type: aiImprove.result.suggested_type }))}
-                        className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                        className="mt-2 inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60"
                       >
                         Apply type
                       </button>
@@ -538,7 +545,7 @@ function CreateRequestPage() {
                   ) : null}
 
                   {aiImprove.result.suggested_target_team_name ? (
-                    <div className="rounded-md border border-border bg-background p-2">
+                    <div className="rounded-md border border-border bg-background p-3">
                       <p className="text-xs text-muted-foreground">Suggested target team</p>
                       <p className="mt-1 text-sm text-foreground">{aiImprove.result.suggested_target_team_name}</p>
                       <button
@@ -550,7 +557,7 @@ function CreateRequestPage() {
                             target_team: String(aiImprove.result.suggested_target_team_id),
                           }))
                         }
-                        className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="mt-2 inline-flex h-8 items-center justify-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Apply team
                       </button>
@@ -559,7 +566,7 @@ function CreateRequestPage() {
                 </div>
 
                 {Array.isArray(aiImprove.result.missing_information) && aiImprove.result.missing_information.length > 0 ? (
-                  <div className="rounded-md border border-border bg-background p-2">
+                  <div className="rounded-md border border-border bg-background p-3">
                     <p className="text-xs text-muted-foreground">Missing information</p>
                     <ul className="mt-1 list-disc pl-5 text-sm text-foreground">
                       {aiImprove.result.missing_information.map((item, index) => (
@@ -596,10 +603,9 @@ function CreateRequestPage() {
           </form>
         </section>
 
-        <aside className="space-y-4 xl:col-span-3">
+        <aside className="space-y-4 xl:col-span-3 xl:sticky xl:top-6 xl:self-start">
           <section className="surface-card border border-border p-5">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Guidance & Assistance</p>
-            <h3 className="mt-1 text-lg font-semibold text-foreground">Submission rules</h3>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Submission rules</p>
             <p className="mt-2 text-sm text-muted-foreground">Follow these guidelines for faster triage.</p>
             <div className="mt-4 space-y-3">
               <div className="rounded-lg border border-border bg-muted/20 p-3">
@@ -645,7 +651,7 @@ function CreateRequestPage() {
           </section>
 
           <section className="surface-card border border-border p-5">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">What Helps Reviewers</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">What helps reviewers</p>
             <ul className="mt-3 space-y-2 text-sm text-foreground">
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -663,7 +669,7 @@ function CreateRequestPage() {
           </section>
 
           <section className="surface-card border border-border p-5">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Triage Expectation</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Triage expectation</p>
             <div className="mt-3 flex items-start gap-3">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-md text-primary">
                 <Clock3 className="h-5 w-5" />
