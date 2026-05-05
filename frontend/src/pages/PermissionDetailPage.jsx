@@ -108,6 +108,58 @@ const PERMISSION_SECTION_BY_KEY = {
   view_logs_scope_global: 'logs',
 }
 
+const PERMISSION_IMPLICATIONS = {
+  manage_companies: [
+    'manage_entities',
+    'manage_company_entities',
+    'view_all_companies',
+    'view_all_entities',
+    'view_company_entities',
+  ],
+  manage_company_entities: ['view_company_entities'],
+  manage_users_global: ['view_users_global', 'manage_users_company', 'manage_users_entity'],
+  manage_users_company: ['view_users_company', 'manage_users_entity'],
+  manage_users_entity: ['view_users_entity'],
+  view_users_global: ['view_users_company', 'view_users_entity'],
+  view_users_company: ['view_users_entity'],
+  manage_entities: ['manage_company_entities'],
+  view_all_companies: ['view_all_entities', 'view_company_entities'],
+  view_all_entities: ['view_company_entities'],
+  view_all_requests: [
+    'view_company_requests',
+    'view_entity_requests',
+    'view_own_requests',
+    'view_team_requests',
+  ],
+  view_company_requests: ['view_entity_requests'],
+  view_global_reports: ['view_company_reports', 'view_entity_reports'],
+  view_company_reports: ['view_entity_reports'],
+  comment_request: ['view_request_discussion'],
+  view_logs_scope_global: ['view_logs_scope_company', 'view_logs_scope_entity', 'view_logs_scope_team'],
+  view_logs_scope_company: ['view_logs_scope_entity', 'view_logs_scope_team'],
+  view_logs_scope_entity: ['view_logs_scope_team'],
+}
+
+const IMPLIED_BY = Object.entries(PERMISSION_IMPLICATIONS).reduce((accumulator, [parent, children]) => {
+  children.forEach((child) => {
+    if (!accumulator[child]) {
+      accumulator[child] = []
+    }
+    accumulator[child].push(parent)
+  })
+  return accumulator
+}, {})
+
+function collectImpliedPermissions(permissionKey, visited = new Set()) {
+  if (visited.has(permissionKey)) {
+    return []
+  }
+  visited.add(permissionKey)
+  const directChildren = PERMISSION_IMPLICATIONS[permissionKey] || []
+  const nestedChildren = directChildren.flatMap((child) => collectImpliedPermissions(child, visited))
+  return [...new Set([...directChildren, ...nestedChildren])]
+}
+
 function getPermissionSection(permissionKey) {
   return PERMISSION_SECTION_BY_KEY[permissionKey] || 'requests'
 }
@@ -271,12 +323,39 @@ function PermissionDetailPage() {
 
   async function updatePermission(permissionKey, shouldAllow) {
     try {
-      const response = shouldAllow
-        ? await api.post(`/admin/users/${userId}/permissions/`, { permission_key: permissionKey })
-        : await api.delete(`/admin/users/${userId}/permissions/`, {
-            data: { permission_key: permissionKey },
-          })
-      setState((current) => ({ ...current, user: response.data }))
+      const effectiveSet = new Set(
+        (state.user?.permissions || [])
+          .filter((permission) => permission.effective)
+          .map((permission) => permission.key),
+      )
+
+      const keysToApply = shouldAllow
+        ? [permissionKey, ...collectImpliedPermissions(permissionKey)]
+        : [permissionKey, ...(IMPLIED_BY[permissionKey] || [])]
+
+      const dedupedKeys = [...new Set(keysToApply)]
+      const validPermissionKeys = new Set((state.user?.permissions || []).map((permission) => permission.key))
+
+      let latestResponseData = null
+      for (const key of dedupedKeys) {
+        if (!validPermissionKeys.has(key)) continue
+        if (shouldAllow && effectiveSet.has(key)) continue
+        if (!shouldAllow && !effectiveSet.has(key)) continue
+
+        const response = shouldAllow
+          ? await api.post(`/admin/users/${userId}/permissions/`, { permission_key: key })
+          : await api.delete(`/admin/users/${userId}/permissions/`, {
+              data: { permission_key: key },
+            })
+
+        latestResponseData = response.data
+        if (shouldAllow) effectiveSet.add(key)
+        else effectiveSet.delete(key)
+      }
+
+      if (latestResponseData) {
+        setState((current) => ({ ...current, user: latestResponseData }))
+      }
       setMessage(`${permissionKey} updated.`)
     } catch (error) {
       setMessage(getApiErrorMessage(error, `Could not update ${permissionKey}.`))
@@ -702,12 +781,6 @@ function PermissionDetailPage() {
               Cancel
             </Link>
           </div>
-
-          {message && (
-            <p className={`text-sm font-medium ${messageIsError ? 'text-destructive' : 'text-success'}`}>
-              {message}
-            </p>
-          )}
           </form>
         </article>
 
@@ -750,7 +823,7 @@ function PermissionDetailPage() {
                       <tr key={permission.key} className="bg-card">
                         <td className="px-4 py-3 align-top">
                           <div className="text-base font-bold leading-tight">{permission.name}</div>
-                          <div className="text-sm text-muted-foreground">{permission.key}</div>
+                          <div className="text-sm text-muted-foreground">{permission.description || permission.key}</div>
                         </td>
                         <td className="px-4 py-3 text-center">
                           <button
