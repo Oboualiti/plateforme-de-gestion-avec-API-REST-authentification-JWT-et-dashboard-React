@@ -697,6 +697,11 @@ class RequestCommentCreateView(APIView):
                 {"detail": "You do not have permission to comment on requests."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        if service_request.status in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.CLOSED}:
+            return Response(
+                {"detail": "Discussion is closed for rejected or closed requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = RequestCommentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         request_message = RequestMessage.objects.create(
@@ -804,7 +809,11 @@ class RequestStatusUpdateView(APIView):
                 update_fields.append("current_assignee")
         elif (
             service_request.current_assignee_id is None
-            and effective_new_status != ServiceRequest.Status.REJECTED
+            and effective_new_status not in {
+                ServiceRequest.Status.REJECTED,
+                ServiceRequest.Status.COMPLETED,
+                ServiceRequest.Status.CLOSED,
+            }
         ):
             # Seniors must delegate to a TL in the target entity instead of self-assigning.
             if get_primary_role_key(request.user) != "senior":

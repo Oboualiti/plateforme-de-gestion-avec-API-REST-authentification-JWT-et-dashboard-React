@@ -68,6 +68,7 @@ def mirror_request_created_to_telegram(service_request):
         text = text[: TELEGRAM_MAX_MESSAGE_LEN - 3] + "..."
 
     _send_telegram_message(service_request, bot_token, chat_id, text)
+    _send_telegram_service_request_attachment(service_request, bot_token, chat_id)
 
 
 def mirror_request_assignment_to_telegram(service_request, assigned_by, assignee, note=""):
@@ -276,6 +277,84 @@ def _send_telegram_attachment(service_request, bot_token, chat_id, request_messa
     except Exception as exc:
         logger.warning(
             "Telegram attachment mirror exception for %s: %s",
+            service_request.request_number,
+            exc,
+        )
+
+
+def _send_telegram_service_request_attachment(service_request, bot_token, chat_id):
+    attachment = getattr(service_request, "attachment", None)
+    if not attachment:
+        return
+
+    try:
+        file_path = attachment.path
+    except Exception:
+        logger.warning(
+            "Telegram request attachment mirror skipped for %s: attachment path unavailable.",
+            service_request.request_number,
+        )
+        return
+
+    if not file_path or not os.path.exists(file_path):
+        logger.warning(
+            "Telegram request attachment mirror skipped for %s: file not found at %s.",
+            service_request.request_number,
+            file_path,
+        )
+        return
+
+    file_name = os.path.basename(file_path)
+    guessed_type, _ = mimetypes.guess_type(file_name)
+    is_image = bool(guessed_type and guessed_type.startswith("image/"))
+
+    caption = (
+        f"Attachment on {service_request.request_number}\n"
+        f"By: {service_request.requester_user.username}\n"
+        f"File: {file_name}"
+    )
+    if len(caption) > 1024:
+        caption = caption[:1021] + "..."
+
+    endpoint = (
+        f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        if is_image
+        else f"https://api.telegram.org/bot{bot_token}/sendDocument"
+    )
+    field_name = "photo" if is_image else "document"
+
+    try:
+        with open(file_path, "rb") as file_handle:
+            file_bytes = file_handle.read()
+
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+        body = _build_multipart_body(
+            boundary=boundary,
+            fields={"chat_id": str(chat_id), "caption": caption},
+            files=[
+                {
+                    "field_name": field_name,
+                    "filename": file_name,
+                    "content_type": guessed_type or "application/octet-stream",
+                    "content": file_bytes,
+                }
+            ],
+        )
+
+        req = request.Request(endpoint, data=body, method="POST")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        with request.urlopen(req, timeout=15) as response:
+            raw_body = response.read().decode("utf-8", errors="ignore")
+            parsed = json.loads(raw_body) if raw_body else {}
+            if not parsed.get("ok", False):
+                logger.warning(
+                    "Telegram request attachment mirror failed for %s: %s",
+                    service_request.request_number,
+                    parsed,
+                )
+    except Exception as exc:
+        logger.warning(
+            "Telegram request attachment mirror exception for %s: %s",
             service_request.request_number,
             exc,
         )

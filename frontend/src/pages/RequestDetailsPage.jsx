@@ -392,7 +392,8 @@ function RequestDetailsPage() {
   const canViewRequestDiscussion = Boolean(
     request?.can_view_request_discussion ?? effectivePermissionKeys.has('view_request_discussion'),
   )
-  const canCommentRequest = canViewRequestDiscussion && effectivePermissionKeys.has('comment_request')
+  const isDiscussionClosed = request?.status === 'REJECTED' || request?.status === 'CLOSED'
+  const canCommentRequest = canViewRequestDiscussion && effectivePermissionKeys.has('comment_request') && !isDiscussionClosed
   const canChangeStatus = Boolean(request?.can_update_status)
   const allowedStatusTransitions = request?.allowed_status_transitions || []
   const statusOptions = useMemo(() => {
@@ -608,6 +609,21 @@ function RequestDetailsPage() {
     if (event.key === 'Escape') {
       event.preventDefault()
       closeMentionMenu()
+    }
+  }
+
+  function handleCommentPaste(event) {
+    const clipboardItems = event.clipboardData?.items || []
+    if (!clipboardItems.length) return
+
+    for (const item of clipboardItems) {
+      if (item.kind === 'file' && item.type?.startsWith('image/')) {
+        const pastedFile = item.getAsFile()
+        if (!pastedFile) continue
+        setCommentAttachment(pastedFile)
+        event.preventDefault()
+        return
+      }
     }
   }
 
@@ -1047,6 +1063,7 @@ function RequestDetailsPage() {
                               value={comment}
                               onChange={e => handleCommentInputChange(e.target.value)}
                               onKeyDown={handleCommentInputKeyDown}
+                              onPaste={handleCommentPaste}
                               placeholder="Type your message..."
                               className="flex-1 bg-transparent p-3 text-sm font-medium outline-none placeholder:text-muted-foreground resize-none min-h-[60px]"
                              />
@@ -1105,7 +1122,9 @@ function RequestDetailsPage() {
                         </form>
                       ) : (
                          <div className="mt-8 border-t-2 border-ink pt-6 text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest text-center">
-                           You do not have permission to comment in this discussion.
+                           {isDiscussionClosed
+                             ? `Discussion is closed because request is ${statusLabelMap[request?.status] || request?.status}.`
+                             : 'You do not have permission to comment in this discussion.'}
                          </div>
                       )}
                     </>
