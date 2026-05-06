@@ -151,6 +151,7 @@ class RequestCommentSerializer(serializers.ModelSerializer):
     attachment = serializers.FileField(read_only=True)
     attachment_url = serializers.SerializerMethodField()
     sender_avatar_url = serializers.SerializerMethodField()
+    is_edited = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestMessage
@@ -166,6 +167,8 @@ class RequestCommentSerializer(serializers.ModelSerializer):
             "message",
             "attachment",
             "attachment_url",
+            "edited_at",
+            "is_edited",
             "created_at",
         ]
 
@@ -187,6 +190,9 @@ class RequestCommentSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.sender.avatar.url)
         return obj.sender.avatar.url
+
+    def get_is_edited(self, obj):
+        return bool(obj.edited_at)
 
 
 class RequestHistorySerializer(serializers.ModelSerializer):
@@ -508,6 +514,19 @@ class RequestDetailSerializer(serializers.ModelSerializer):
                         "note": item.message,
                     }
                 )
+                if item.edited_at and item.edited_at > item.created_at:
+                    events.append(
+                        {
+                            "kind": "comment_edited",
+                            "timestamp": item.edited_at,
+                            "title": "Comment edited",
+                            "description": (
+                                f"{item.sender.username} edited a comment from "
+                                f"{item.sender.entity.name if item.sender.entity_id else 'Unknown entity'}."
+                            ),
+                            "note": item.message,
+                        }
+                    )
 
         return sorted(events, key=lambda event: event["timestamp"], reverse=True)
 
@@ -569,6 +588,10 @@ class RequestCommentCreateSerializer(serializers.Serializer):
                 {"message": "Provide a comment message or attach a file."}
             )
         return attrs
+
+
+class RequestCommentUpdateSerializer(serializers.Serializer):
+    message = serializers.CharField(required=True, allow_blank=False)
 
 
 class RequestStatusUpdateSerializer(serializers.Serializer):

@@ -219,6 +219,7 @@ class RequestMessage(models.Model):
     message = models.TextField()
     attachment = models.FileField(upload_to="request_attachments/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Message {self.id} on {self.request_id}"

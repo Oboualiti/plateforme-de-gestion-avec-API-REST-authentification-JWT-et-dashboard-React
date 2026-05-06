@@ -863,8 +863,8 @@ function Dashboard() {
                               <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.04} />
                             </linearGradient>
                             <linearGradient id="userResolvedFill" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#22c55e" stopOpacity={0.14} />
-                              <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+                              <stop offset="0%" stopColor="#22c55e" stopOpacity={0} />
+                              <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="4 4" stroke="hsl(var(--muted-foreground) / 0.18)" vertical={false} />
@@ -1464,7 +1464,7 @@ function Dashboard() {
                         <Tooltip
                           formatter={(value, _name, item) => {
                             if (item?.dataKey !== 'count' || item?.name === 'Trend fill') return null
-                            return [Number(value || 0), 'Requests updated']
+                            return [Number(value || 0), 'Requests created']
                           }}
                           labelFormatter={(label) => `Date: ${label}`}
                           contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', color: 'hsl(var(--foreground))' }}
@@ -1586,7 +1586,7 @@ function Dashboard() {
                             <Tooltip
                               formatter={(value, _name, item) => {
                                 if (item?.dataKey !== 'count' || item?.name === 'Trend fill') return null
-                                return [Number(value || 0), 'Requests updated']
+                                return [Number(value || 0), 'Requests created']
                               }}
                               labelFormatter={(label) => `Date: ${label}`}
                               contentStyle={{
@@ -1981,7 +1981,7 @@ function Dashboard() {
                           <Tooltip
                             formatter={(value, _name, item) => {
                               if (item?.dataKey !== 'count' || item?.name === 'Trend fill') return null
-                              return [Number(value || 0), 'Requests updated']
+                              return [Number(value || 0), 'Requests created']
                             }}
                             labelFormatter={(label) => `Date: ${label}`}
                             contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '6px', color: 'hsl(var(--foreground))' }}

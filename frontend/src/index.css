@@ -470,7 +470,7 @@
 
 @layer components {
   .journey-chart-panel {
-    background: hsl(var(--surface-2));
+    background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     border-radius: 0.125rem;
     padding: 16px;

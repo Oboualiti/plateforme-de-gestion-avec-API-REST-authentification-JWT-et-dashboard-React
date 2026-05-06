@@ -50,6 +50,7 @@ from .serializers import (
     MainBranchSerializer,
     OperationalUnitSerializer,
     RequestCommentCreateSerializer,
+    RequestCommentUpdateSerializer,
     RequestDeadlineUpdateSerializer,
     RequestDetailSerializer,
     RequestMessageSerializer,
@@ -66,6 +67,7 @@ from .serializers import (
 from .telegram import (
     mirror_request_assignment_to_telegram,
     mirror_request_created_to_telegram,
+    mirror_request_message_edited_to_telegram,
     mirror_request_message_to_telegram,
 )
 
@@ -735,6 +737,58 @@ class RequestCommentCreateView(APIView):
         )
 
 
+class RequestCommentUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def has_access(self, user, service_request):
+        return get_visible_requests_queryset(user).filter(id=service_request.id).exists()
+
+    def patch(self, request, request_id, comment_id):
+        service_request = ServiceRequest.objects.filter(id=request_id).first()
+        if service_request is None or not self.has_access(request.user, service_request):
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not has_permission(request.user, "view_request_discussion"):
+            return Response(
+                {"detail": "You do not have permission to view request discussion."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not has_permission(request.user, "comment_request"):
+            return Response(
+                {"detail": "You do not have permission to edit request comments."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if service_request.status in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.CLOSED}:
+            return Response(
+                {"detail": "Discussion is closed for rejected or closed requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        comment = RequestMessage.objects.filter(id=comment_id, request_id=request_id).first()
+        if comment is None:
+            return Response({"detail": "Comment not found."}, status=status.HTTP_404_NOT_FOUND)
+        if comment.sender_id != request.user.id:
+            return Response(
+                {"detail": "You can only edit your own messages."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = RequestCommentUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment.message = serializer.validated_data["message"].strip()
+        comment.edited_at = timezone.now()
+        comment.save(update_fields=["message", "edited_at"])
+        mirror_request_message_edited_to_telegram(service_request, comment)
+
+        service_request = load_request(request_id)
+        mark_request_stuck(service_request)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+
 class RequestStatusUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -815,8 +869,9 @@ class RequestStatusUpdateView(APIView):
                 ServiceRequest.Status.CLOSED,
             }
         ):
-            # Seniors must delegate to a TL in the target entity instead of self-assigning.
-            if get_primary_role_key(request.user) != "senior":
+            # Seniors and super admins should not be auto-assigned on status updates.
+            # They can explicitly assign via assignment actions.
+            if get_primary_role_key(request.user) not in {"senior", "super_admin"}:
                 service_request.current_assignee = request.user
                 update_fields.append("current_assignee")
         if (

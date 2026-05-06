@@ -46,6 +46,8 @@ const statusLabelMap = {
 
 const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
 const stepperStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED']
+const acceptedFlowStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED']
+const rejectedFlowStatuses = ['NEW', 'REJECTED']
 const priorityLabelMap = {
   HIGH: 'High',
   MEDIUM: 'Medium',
@@ -125,31 +127,38 @@ function getInitials(name) {
     .join('')
 }
 
-function StatusStepper({ currentStatus }) {
-  const currentIndex = stepperStatuses.indexOf(currentStatus)
+function StatusStepper({ currentStatus, onSelectStatus, enabledStatuses = new Set(), disabled = false, statuses = stepperStatuses }) {
+  const currentIndex = statuses.indexOf(currentStatus)
   const isTerminal = terminalStatuses.has(currentStatus) && currentStatus !== 'COMPLETED'
 
   return (
     <div className="flex w-full items-center gap-0 overflow-hidden rounded-lg border border-border bg-card">
-      {stepperStatuses.map((status, i) => {
+      {statuses.map((status, i) => {
         const isPast = i < currentIndex
         const isCurrent = i === currentIndex
         const isFuture = i > currentIndex && !isTerminal
+        const isEnabled = enabledStatuses.has(status) && !disabled
 
         return (
-          <div
+          <button
             key={status}
+            type="button"
+            onClick={() => {
+              if (isEnabled && onSelectStatus) onSelectStatus(status)
+            }}
+            disabled={!isEnabled}
             className={cn(
               "flex flex-1 items-center justify-center py-3 text-[10px] font-bold uppercase tracking-[0.14em] transition-colors relative",
               isCurrent && "bg-primary text-primary-foreground shadow-none border-x border-ink/20 z-10",
               isPast && "bg-primary/5 text-primary",
               isFuture && "text-muted-foreground bg-card",
-              isTerminal && i >= currentIndex && "opacity-40 grayscale"
+              isTerminal && i >= currentIndex && "opacity-40 grayscale",
+              isEnabled ? "cursor-pointer hover:bg-primary/10" : "cursor-not-allowed opacity-80"
             )}
           >
             {statusLabelMap[status]}
             {isPast && <CheckCircle2 className="ml-1.5 h-3 w-3" />}
-          </div>
+          </button>
         )
       })}
     </div>
@@ -366,6 +375,11 @@ function RequestDetailsPage() {
   })
   const [assignmentForm, setAssignmentForm] = useState({ userId: '', note: '' })
   const [actionState, setActionState] = useState({ busy: false, error: '' })
+  const [assignTlDialogOpen, setAssignTlDialogOpen] = useState(false)
+  const [lifecycleMenuOpen, setLifecycleMenuOpen] = useState(false)
+  const [editCommentId, setEditCommentId] = useState(null)
+  const [editCommentText, setEditCommentText] = useState('')
+  const [editCommentError, setEditCommentError] = useState('')
   const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
   const [historyPage, setHistoryPage] = useState(1)
   const [statusDialog, setStatusDialog] = useState({
@@ -383,12 +397,37 @@ function RequestDetailsPage() {
 
   const request = state.request
   const roleKeys = user?.role_keys || []
+  const normalizedRoleKeys = useMemo(() => {
+    const roles = new Set()
+    const push = (value) => {
+      const clean = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_')
+      if (clean) roles.add(clean)
+    }
+    roleKeys.forEach(push)
+    push(user?.role)
+    push(user?.primary_role)
+    ;(user?.roles || []).forEach((role) => {
+      push(role?.key)
+      push(role?.name)
+    })
+    return roles
+  }, [roleKeys, user?.primary_role, user?.role, user?.roles])
   const effectivePermissionKeys = new Set(user?.effective_permission_keys || [])
-  const isSuperAdmin = roleKeys.includes('super_admin')
-  const isManager = roleKeys.includes('manager')
-  const isSenior = roleKeys.includes('senior')
-  const isTeamLeader = roleKeys.includes('team_leader')
-  const isUser = roleKeys.includes('user')
+  const isSuperAdmin = normalizedRoleKeys.has('super_admin')
+    || normalizedRoleKeys.has('superadmin')
+    || Boolean(user?.is_superuser)
+    || String(user?.username || '').toLowerCase() === 'superadmin'
+  const isManager = normalizedRoleKeys.has('manager')
+  const isSenior = normalizedRoleKeys.has('senior')
+  const isTeamLeader = normalizedRoleKeys.has('team_leader') || normalizedRoleKeys.has('teamleader')
+  const isUser = normalizedRoleKeys.has('user')
+  const isProdEntityUser = String(user?.entity_type || '').toUpperCase() === 'PROD'
+  const isSupportOrDevEntity = ['SUPPORT', 'TDEV'].includes(String(user?.entity_type || '').toUpperCase())
+  const hideProdActionPanels = isProdEntityUser && (isUser || isTeamLeader || isManager)
+  const canUseAdvancedLifecycle = isSupportOrDevEntity || isSenior || isSuperAdmin
   const canViewRequestDiscussion = Boolean(
     request?.can_view_request_discussion ?? effectivePermissionKeys.has('view_request_discussion'),
   )
@@ -396,24 +435,84 @@ function RequestDetailsPage() {
   const canCommentRequest = canViewRequestDiscussion && effectivePermissionKeys.has('comment_request') && !isDiscussionClosed
   const canChangeStatus = Boolean(request?.can_update_status)
   const allowedStatusTransitions = request?.allowed_status_transitions || []
+  const lifecycleSelectableStatuses = useMemo(
+    () => new Set([request?.status, ...allowedStatusTransitions].filter(Boolean)),
+    [allowedStatusTransitions, request?.status],
+  )
+  const lifecycleDisplayStatuses = useMemo(() => {
+    if (request?.status === 'REJECTED') {
+      return rejectedFlowStatuses
+    }
+    if (canUseAdvancedLifecycle) {
+      return acceptedFlowStatuses
+    }
+    return stepperStatuses
+  }, [canUseAdvancedLifecycle, request?.status])
+  const canSwitchAcceptedRejected = useMemo(() => {
+    if (!canChangeStatus || actionState.busy) return false
+    if (!request?.status) return false
+    if (request.status === 'ACCEPTED') return lifecycleSelectableStatuses.has('REJECTED')
+    if (request.status === 'REJECTED') return lifecycleSelectableStatuses.has('ACCEPTED')
+    return false
+  }, [actionState.busy, canChangeStatus, lifecycleSelectableStatuses, request?.status])
   const statusOptions = useMemo(() => {
     const options = [request?.status, ...allowedStatusTransitions].filter(Boolean)
     return [...new Set(options)]
   }, [allowedStatusTransitions, request?.status])
   const canEditDeadline = Boolean(request?.can_edit_deadline)
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
-  const canAssignToMe = Boolean(request?.can_assign_to_me) && (isTeamLeader || isUser)
+  const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader && isSupportOrDevEntity
   const potentialAssignees = request?.potential_assignees || []
   const assignableUsers = useMemo(() => {
-    if (!isSuperAdmin) return potentialAssignees
+    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
     return potentialAssignees.filter((candidate) => {
-      const keys = candidate?.role_keys || candidate?.roles?.map((role) => role?.key).filter(Boolean) || []
-      return keys.includes('team_leader') || candidate?.role === 'team_leader'
+      const keys = new Set()
+      ;(candidate?.role_keys || []).forEach((key) => keys.add(normalize(key)))
+      ;(candidate?.roles || []).forEach((role) => {
+        keys.add(normalize(role?.key))
+        keys.add(normalize(role?.name))
+      })
+      keys.add(normalize(candidate?.role))
+      keys.add(normalize(candidate?.role_key))
+      keys.add(normalize(candidate?.role_name))
+      return keys.has('team_leader') || keys.has('teamleader')
     })
-  }, [isSuperAdmin, potentialAssignees])
-  const canManagerAssignTl = (isSuperAdmin || isManager || isSenior)
-    && !request?.current_assignee
-    && assignableUsers.length > 0
+  }, [potentialAssignees])
+  const isKnownSuperAdminUser = String(user?.username || '').toLowerCase() === 'superadmin'
+  const canManagerAssignTl = !request?.current_assignee && (
+    isKnownSuperAdminUser
+    || isSuperAdmin
+    || isManager
+    || isSenior
+  )
+  const assignmentActions = (canAssignToMe || canManagerAssignTl) ? (
+    <div className="flex items-center gap-2">
+      {canAssignToMe ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 px-3 text-[10px] uppercase tracking-wider font-extrabold border border-ink/10"
+          onClick={handleAssignToMe}
+          disabled={actionState.busy}
+        >
+          <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+          Assign To Me
+        </Button>
+      ) : null}
+      {canManagerAssignTl ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 px-3 text-[10px] uppercase tracking-wider font-extrabold border border-ink/10"
+          onClick={() => setAssignTlDialogOpen(true)}
+          disabled={actionState.busy}
+        >
+          <Users className="h-3.5 w-3.5 mr-1.5" />
+          Assign TL
+        </Button>
+      ) : null}
+    </div>
+  ) : null
 
   const comments = request?.comments || []
   const lastCommentId = comments.length ? comments[comments.length - 1].id : null
@@ -529,6 +628,38 @@ function RequestDetailsPage() {
     await handleAction(api.post(`/requests/${requestId}/comments/`, formData))
   }
 
+  function startEditComment(commentItem) {
+    setEditCommentId(commentItem.id)
+    setEditCommentText(commentItem.message || '')
+    setEditCommentError('')
+  }
+
+  function cancelEditComment() {
+    setEditCommentId(null)
+    setEditCommentText('')
+    setEditCommentError('')
+  }
+
+  async function saveEditedComment(commentId) {
+    const trimmed = (editCommentText || '').trim()
+    if (!trimmed) {
+      setEditCommentError('Message cannot be empty.')
+      return
+    }
+    setActionState({ busy: true, error: '' })
+    try {
+      const response = await api.patch(`/requests/${requestId}/comments/${commentId}/`, {
+        message: trimmed,
+      })
+      setState((current) => ({ ...current, request: response.data }))
+      cancelEditComment()
+      setActionState({ busy: false, error: '' })
+    } catch (error) {
+      setEditCommentError(error.response?.data?.detail || 'Could not update comment.')
+      setActionState({ busy: false, error: '' })
+    }
+  }
+
   function closeMentionMenu() {
     setMentionState((current) => ({
       ...current,
@@ -629,6 +760,7 @@ function RequestDetailsPage() {
 
   function requestStatusChange(status) {
     if (!status || status === request?.status) return
+    setLifecycleMenuOpen(false)
     const required = terminalStatuses.has(status)
     const requireDeadline = status === 'ACCEPTED' && hasDeadlineEditAccess
     setStatusDialog({
@@ -700,6 +832,7 @@ function RequestDetailsPage() {
       note: assignmentForm.note || 'Assigned via delegation'
     }))
     setAssignmentForm({ userId: '', note: '' })
+    setAssignTlDialogOpen(false)
   }
 
   async function loadAiSummary() {
@@ -736,6 +869,7 @@ function RequestDetailsPage() {
         eyebrow="Workspace"
         title="Request Details"
         description="Review request information, status, discussion, and assignment activity."
+        actions={assignmentActions}
       />
       <Skeleton className="h-6 w-32" />
       <Skeleton className="h-12 w-full rounded-lg" />
@@ -755,6 +889,7 @@ function RequestDetailsPage() {
         eyebrow="Workspace"
         title="Request Details"
         description="Review request information, status, discussion, and assignment activity."
+        actions={assignmentActions}
       />
       <div className="rounded-xl border-2 border-destructive bg-destructive/5 p-8 max-w-md mx-auto">
         <p className="text-destructive font-bold uppercase tracking-wider">{state.error || 'Request Not Found'}</p>
@@ -771,6 +906,7 @@ function RequestDetailsPage() {
         eyebrow="Workspace"
         title="Request Details"
         description="Review request information, status, discussion, and assignment activity."
+        actions={assignmentActions}
       />
       {/* Top bar: back link */}
       <button
@@ -836,7 +972,7 @@ function RequestDetailsPage() {
 
       <div className="grid gap-6 lg:grid-cols-12">
         {/* Left column */}
-        <div className="space-y-6 lg:col-span-8">
+        <div className={cn('space-y-6', hideProdActionPanels ? 'lg:col-span-12' : 'lg:col-span-8')}>
           {/* AI Summary */}
           <article className="surface-card p-5">
             <div className="mb-4 flex items-center gap-2">
@@ -850,11 +986,7 @@ function RequestDetailsPage() {
               </Button>
             </div>
             {aiSummary.data ? (
-              <div className="grid gap-5 sm:grid-cols-4">
-                <div className="sm:col-span-1">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Briefing</p>
-                  <p className="text-xs leading-relaxed text-foreground font-medium">{aiSummary.data.short_summary}</p>
-                </div>
+              <div className="grid gap-5 sm:grid-cols-2">
                 <div className="sm:col-span-1">
                   <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Current progress</p>
                   <p className="mb-1.5 text-xs text-foreground font-bold">{aiSummary.data.current_progress || '-'}</p>
@@ -881,41 +1013,10 @@ function RequestDetailsPage() {
                   </div>
                 </div>
                 <div className="sm:col-span-1">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Pending from</p>
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const pf = aiSummary.data.pending_from || 'unknown';
-                      
-                      let name = '';
-                      if (pf === 'requester') name = request.requester_name || 'Requester';
-                      else if (pf === 'handler') name = request.assignee_name || 'Handler';
-                      else if (pf === 'both') {
-                        const rName = request.requester_name || 'Requester';
-                        const hName = request.assignee_name || 'Handler';
-                        name = `${rName} & ${hName}`;
-                      }
-                      else {
-                        // Fallback instead of TBD
-                        name = request.assignee_name || request.requester_name || 'System';
-                      }
-
-                      return (
-                        <>
-                          <Avatar
-                            name={name}
-                            size={24}
-                            photoUrl={name === request.assignee_name ? request?.assignee_avatar_url : request?.requester_avatar_url}
-                            identifiers={[request.requester_user__username, request.assignee_name, name]}
-                          />
-                          <span className="text-xs font-semibold truncate">{name}</span>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-                <div className="sm:col-span-1">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Next Expected Step</p>
-                  <p className="text-xs leading-relaxed font-bold text-primary">{aiSummary.data.next_action || 'Continuous monitoring'}</p>
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Summary</p>
+                  <p className="text-xs leading-relaxed text-foreground font-medium">
+                    {aiSummary.data.short_summary || 'No summary available yet.'}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -930,8 +1031,81 @@ function RequestDetailsPage() {
 
           {/* Lifecycle */}
           <article className="surface-card p-5">
-            <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground pl-1">Request Lifecycle</p>
-            <StatusStepper currentStatus={request.status} />
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground pl-1">Request Lifecycle</p>
+              {canUseAdvancedLifecycle && canSwitchAcceptedRejected ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-ink/10 bg-card text-muted-foreground hover:text-foreground"
+                    onClick={() => setLifecycleMenuOpen((current) => !current)}
+                    aria-label="More lifecycle actions"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                  {lifecycleMenuOpen ? (
+                    <div className="absolute right-0 top-9 z-20 min-w-[150px] rounded-md border border-ink/10 bg-card p-1 shadow-lg">
+                      {request.status === 'ACCEPTED' ? (
+                        <button
+                          type="button"
+                          className="w-full rounded px-2 py-1.5 text-left text-xs font-semibold hover:bg-muted/60"
+                          onClick={() => requestStatusChange('REJECTED')}
+                        >
+                          Change to Rejected
+                        </button>
+                      ) : null}
+                      {request.status === 'REJECTED' ? (
+                        <button
+                          type="button"
+                          className="w-full rounded px-2 py-1.5 text-left text-xs font-semibold hover:bg-muted/60"
+                          onClick={() => requestStatusChange('ACCEPTED')}
+                        >
+                          Change to Accepted
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {canUseAdvancedLifecycle && request.status === 'NEW' ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-10 items-center justify-center rounded-md border text-xs font-extrabold uppercase tracking-wider",
+                    lifecycleSelectableStatuses.has('ACCEPTED') && canChangeStatus && !actionState.busy
+                      ? "border-ink/10 bg-card hover:bg-primary/10"
+                      : "border-ink/10 bg-card opacity-60 cursor-not-allowed",
+                  )}
+                  disabled={!lifecycleSelectableStatuses.has('ACCEPTED') || !canChangeStatus || actionState.busy}
+                  onClick={() => requestStatusChange('ACCEPTED')}
+                >
+                  Accepted
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-10 items-center justify-center rounded-md border text-xs font-extrabold uppercase tracking-wider",
+                    lifecycleSelectableStatuses.has('REJECTED') && canChangeStatus && !actionState.busy
+                      ? "border-ink/10 bg-card hover:bg-primary/10"
+                      : "border-ink/10 bg-card opacity-60 cursor-not-allowed",
+                  )}
+                  disabled={!lifecycleSelectableStatuses.has('REJECTED') || !canChangeStatus || actionState.busy}
+                  onClick={() => requestStatusChange('REJECTED')}
+                >
+                  Rejected
+                </button>
+              </div>
+            ) : (
+              <StatusStepper
+                currentStatus={request.status}
+                onSelectStatus={requestStatusChange}
+                enabledStatuses={lifecycleSelectableStatuses}
+                disabled={!canChangeStatus || actionState.busy}
+                statuses={lifecycleDisplayStatuses}
+              />
+            )}
           </article>
 
           {/* Request Context */}
@@ -995,17 +1169,67 @@ function RequestDetailsPage() {
                             <div key={c.id} className="flex gap-4">
                               <Avatar name={c.sender_name} size={32} photoUrl={c.sender_avatar_url} identifiers={[c.sender_username, c.sender_name]} />
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline justify-between gap-4 mb-1">
+                                 <div className="flex items-baseline justify-between gap-4 mb-1">
                                    <div className="flex items-baseline gap-2 min-w-0">
                                       <span className="text-sm font-extrabold text-foreground truncate">{c.sender_name}</span>
                                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">
                                         {c.sender_entity_name ? `${c.sender_entity_name} • ` : ''}{c.sender_role_keys?.join(', ')}
                                       </span>
                                    </div>
-                                   <span className="text-[10px] font-bold text-muted-foreground shrink-0 uppercase tracking-widest">{formatRelative(c.created_at)}</span>
+                                   <div className="flex items-center gap-2 shrink-0">
+                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{formatRelative(c.created_at)}</span>
+                                     {c.is_edited ? (
+                                       <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">
+                                         edited
+                                       </span>
+                                     ) : null}
+                                     {canCommentRequest && Number(c.sender) === Number(user?.id) ? (
+                                       <button
+                                         type="button"
+                                         className="text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
+                                         onClick={() => startEditComment(c)}
+                                       >
+                                         Edit
+                                       </button>
+                                     ) : null}
+                                   </div>
                                 </div>
                                 <div className="rounded-lg rounded-tl-none border border-ink/10 bg-card p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
-                                  {c.message || ''}
+                                  {editCommentId === c.id ? (
+                                    <div className="space-y-2">
+                                      <textarea
+                                        value={editCommentText}
+                                        onChange={(event) => setEditCommentText(event.target.value)}
+                                        className="w-full min-h-[88px] rounded-md border border-ink/10 bg-background p-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+                                      />
+                                      {editCommentError ? (
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-destructive">{editCommentError}</p>
+                                      ) : null}
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          className="h-7 px-3 text-[10px] font-extrabold uppercase tracking-wider"
+                                          disabled={actionState.busy}
+                                          onClick={() => saveEditedComment(c.id)}
+                                        >
+                                          Save
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-7 px-3 text-[10px] font-extrabold uppercase tracking-wider"
+                                          disabled={actionState.busy}
+                                          onClick={cancelEditComment}
+                                        >
+                                          Cancel
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>{c.message || ''}</>
+                                  )}
                                   {c.attachment_url ? (
                                     <div className="mt-3 space-y-2">
                                       {isImageAttachment(c.attachment_url, c.attachment) ? (
@@ -1183,113 +1407,45 @@ function RequestDetailsPage() {
         </div>
 
         {/* Sidebar */}
-        <aside className="space-y-6 lg:col-span-4">
-          <div className="lg:sticky lg:top-6 space-y-6">
-            {/* Deadline planner */}
-            <article className="surface-card p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-[11px] font-extrabold uppercase tracking-widest">Deadline Planner</h3>
-              </div>
-              <p className="mb-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Approximate completion date</p>
-              <div className="rounded-xl border border-ink/10 bg-card p-2 shadow-sm mb-4">
-                <DeadlinePlanner
-                  selectedDate={deadlineForm.value ? new Date(deadlineForm.value) : undefined}
-                  numberOfMonths={1}
-                  disabled={!hasDeadlineEditAccess}
-                  onDateSelect={(date) => {
-                    if (!date) return
-                    const formattedDate = date.toISOString().split('T')[0]
-                    setDeadlineForm((current) => ({ ...current, value: formattedDate, error: '' }))
-                  }}
-                />
-              </div>
-              <Button
-                size="sm"
-                className="w-full text-[11px] uppercase tracking-wider font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none"
-                onClick={saveDeadline}
-                disabled={!hasDeadlineEditAccess || deadlineForm.saving || !deadlineForm.value}
-              >
-                {deadlineForm.saving ? 'Saving...' : 'Save Deadline'}
-              </Button>
-              {!hasDeadlineEditAccess ? (
-                <p className="mt-3 text-[10px] font-bold text-muted-foreground text-center">
-                  Requires "Edit Request Deadline" permission.
-                </p>
-              ) : null}
-              {deadlineForm.error ? (
-                <p className="mt-3 text-[10px] font-bold text-destructive text-center uppercase">{deadlineForm.error}</p>
-              ) : null}
-            </article>
-
-            {/* Operations */}
-            <article className="surface-card p-5">
-              <h3 className="mb-4 text-[11px] font-extrabold uppercase tracking-widest pl-1">Operations</h3>
-              <div className="space-y-4">
-                 <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground pl-1">Transition Status</label>
-                    <div className="relative">
-                      <Select
-                         value={request.status}
-                         onChange={e => requestStatusChange(e.target.value)}
-                         disabled={!canChangeStatus || actionState.busy || statusOptions.length <= 1}
-                         className="w-full font-bold border border-ink/10 shadow-sm bg-card"
-                      >
-                         {statusOptions.map(s => (
-                           <option key={s} value={s}>{statusLabelMap[s]}</option>
-                         ))}
-                      </Select>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground font-medium mt-1 pl-1">Update the status to reflect current progress.</p>
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-3 pt-2">
-                   <Button
-                      variant="outline"
-                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-card"
-                      onClick={handleAssignToMe}
-                      disabled={!canAssignToMe || actionState.busy}
-                   >
-                     <UserPlus className="h-3 w-3 mr-1.5" /> Assign to me
-                   </Button>
-                   <Button
-                      variant="outline"
-                      className="w-full text-[10px] uppercase tracking-wider px-2 font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none bg-card"
-                      onClick={() => document.getElementById('assign-tl-select')?.focus()}
-                      disabled={!canManagerAssignTl}
-                   >
-                     <Users className="h-3 w-3 mr-1.5" /> Assign TL
-                   </Button>
-                 </div>
-
-                 {canManagerAssignTl && (
-                   <div className="space-y-3 pt-4 border-t-2 border-ink">
-                     <div className="space-y-1.5">
-                        <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground pl-1">Team Leader Delegation</label>
-                        <Select
-                           id="assign-tl-select"
-                           value={assignmentForm.userId}
-                           onChange={e => setAssignmentForm(curr => ({ ...curr, userId: e.target.value }))}
-                           className="w-full font-bold border border-ink/10 shadow-sm bg-card"
-                        >
-                           <option value="">Select individual...</option>
-                           {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
-                        </Select>
-                     </div>
-                     <textarea
-                        placeholder="Assignment note..."
-                        className="w-full h-16 rounded-md border border-ink/10 bg-card p-3 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
-                        value={assignmentForm.note}
-                        onChange={e => setAssignmentForm(curr => ({ ...curr, note: e.target.value }))}
-                     />
-                     <Button size="sm" className="w-full text-[10px] uppercase tracking-wider font-extrabold border border-ink/10 shadow-brutal active:translate-y-0.5 active:translate-x-0.5 active:shadow-none" onClick={handleAssignToUser} disabled={!assignmentForm.userId || actionState.busy}>
-                        Confirm Assignment
-                     </Button>
-                   </div>
-                 )}
-              </div>
-              {actionState.error && <p className="mt-4 text-[10px] font-bold text-destructive uppercase tracking-widest text-center">{actionState.error}</p>}
-            </article>
+        <aside className={cn('space-y-6', hideProdActionPanels ? 'lg:col-span-12' : 'lg:col-span-4')}>
+          <div className={cn('space-y-6', hideProdActionPanels ? '' : 'lg:sticky lg:top-6')}>
+            {!hideProdActionPanels ? (
+              <article className="surface-card p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-[11px] font-extrabold uppercase tracking-widest">Deadline Planner</h3>
+                </div>
+                <p className="mb-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Approximate completion date</p>
+                <div className="rounded-xl border border-ink/10 bg-card p-2 shadow-sm mb-4">
+                  <DeadlinePlanner
+                    selectedDate={deadlineForm.value ? new Date(deadlineForm.value) : undefined}
+                    numberOfMonths={1}
+                    disabled={!hasDeadlineEditAccess}
+                    onDateSelect={(date) => {
+                      if (!date) return
+                      const formattedDate = date.toISOString().split('T')[0]
+                      setDeadlineForm((current) => ({ ...current, value: formattedDate, error: '' }))
+                    }}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full text-[11px] uppercase tracking-wider font-extrabold border border-ink/10 shadow-brutal active:translate-y-[2px] active:translate-x-[2px] active:shadow-none"
+                  onClick={saveDeadline}
+                  disabled={!hasDeadlineEditAccess || deadlineForm.saving || !deadlineForm.value}
+                >
+                  {deadlineForm.saving ? 'Saving...' : 'Save Deadline'}
+                </Button>
+                {!hasDeadlineEditAccess ? (
+                  <p className="mt-3 text-[10px] font-bold text-muted-foreground text-center">
+                    Requires "Edit Request Deadline" permission.
+                  </p>
+                ) : null}
+                {deadlineForm.error ? (
+                  <p className="mt-3 text-[10px] font-bold text-destructive text-center uppercase">{deadlineForm.error}</p>
+                ) : null}
+              </article>
+            ) : null}
 
             {/* Routing */}
             <article className="surface-card p-5">
@@ -1321,17 +1477,6 @@ function RequestDetailsPage() {
                 </div>
               </div>
             </article>
-
-            {/* Quick AI Synopsis card if initialized */}
-            {aiSummary.data && (
-               <article className="surface-card p-5 shadow-sm">
-                 <div className="mb-3 flex items-center gap-2">
-                   <Bot className="h-4 w-4 text-primary" />
-                   <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-foreground">Active Step Info</h3>
-                 </div>
-                 <p className="text-xs font-bold leading-relaxed text-muted-foreground">{aiSummary.data.next_action}</p>
-               </article>
-            )}
 
           </div>
         </aside>
@@ -1368,6 +1513,60 @@ function RequestDetailsPage() {
         }
         onClose={() => setImageViewer({ open: false, imageUrl: '', fileName: '', zoom: 1 })}
       />
+      {assignTlDialogOpen ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4">
+          <section className="w-full max-w-md rounded-xl border border-ink/10 bg-card shadow-xl">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Team Leader Delegation</p>
+              <h3 className="mt-1 text-base font-extrabold text-foreground">Assign Request To Team Leader</h3>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Team Leader</label>
+                <Select
+                  value={assignmentForm.userId}
+                  onChange={(e) => setAssignmentForm((curr) => ({ ...curr, userId: e.target.value }))}
+                  className="w-full font-bold border border-ink/10 shadow-sm bg-card"
+                >
+                  <option value="">Select team leader...</option>
+                  {assignableUsers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.username}</option>
+                  ))}
+                </Select>
+                {assignableUsers.length === 0 ? (
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    No assignable team leaders available for this request.
+                  </p>
+                ) : null}
+              </div>
+              <textarea
+                placeholder="Assignment note..."
+                className="w-full h-20 rounded-md border border-ink/10 bg-card p-3 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
+                value={assignmentForm.note}
+                onChange={(e) => setAssignmentForm((curr) => ({ ...curr, note: e.target.value }))}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setAssignTlDialogOpen(false)}
+                disabled={actionState.busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleAssignToUser}
+                disabled={!assignmentForm.userId || actionState.busy}
+              >
+                Save
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }

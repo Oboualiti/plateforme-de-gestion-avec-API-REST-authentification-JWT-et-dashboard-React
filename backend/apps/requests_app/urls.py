@@ -5,6 +5,7 @@ from .views import (
     MainBranchViewSet,
     OperationalUnitViewSet,
     RequestCommentCreateView,
+    RequestCommentUpdateView,
     RequestDeadlineUpdateView,
     RequestDetailView,
     RequestAssignToMeView,
@@ -41,6 +42,11 @@ urlpatterns = [
         "requests/<int:request_id>/comments/",
         RequestCommentCreateView.as_view(),
         name="requests-comments",
+    ),
+    path(
+        "requests/<int:request_id>/comments/<int:comment_id>/",
+        RequestCommentUpdateView.as_view(),
+        name="requests-comments-update",
     ),
     path(
         "requests/<int:request_id>/status/",
