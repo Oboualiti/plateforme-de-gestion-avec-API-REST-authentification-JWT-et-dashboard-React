@@ -398,10 +398,29 @@ class CreditsSolvesListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        visible_qs = get_visible_requests_queryset(request.user, include_related=True)
-        solves_qs = visible_qs.filter(
-            status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
+        user_entity_type = (getattr(getattr(request.user, "entity", None), "entity_type", "") or "").upper()
+        is_prod_entity_user = user_entity_type == Entity.EntityType.PROD
+        role_key = get_primary_role_key(request.user)
+        is_prod_team_scope = is_prod_entity_user and role_key in {"manager", "team_leader"}
+        is_prod_reviewer = (
+            is_prod_entity_user
+            and role_key in {"manager", "team_leader"}
+            and has_permission(request.user, "approve_request")
         )
+
+        if is_prod_team_scope:
+            solves_qs = ServiceRequest.objects.filter(
+                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
+            )
+            if request.user.company_id:
+                solves_qs = solves_qs.filter(company_id=request.user.company_id)
+            if request.user.entity_id:
+                solves_qs = solves_qs.filter(source_entity_id=request.user.entity_id)
+        else:
+            visible_qs = get_visible_requests_queryset(request.user, include_related=True)
+            solves_qs = visible_qs.filter(
+                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
+            )
 
         completed_by_subquery = RequestStatusHistory.objects.filter(
             request_id=OuterRef("pk"),
@@ -442,13 +461,13 @@ class CreditsSolvesListView(APIView):
         }:
             solves_qs = solves_qs.filter(priority=priority)
 
-        role_key = get_primary_role_key(request.user)
-        if role_key in {"senior", "manager"} and request.user.company_id:
-            solves_qs = solves_qs.filter(company_id=request.user.company_id)
-        elif role_key == "team_leader" and request.user.entity_id:
-            solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
-        elif role_key == "user":
-            solves_qs = solves_qs.filter(current_assignee_id=request.user.id)
+        if not is_prod_entity_user and not is_prod_team_scope:
+            if role_key in {"senior", "manager" } and request.user.company_id:
+                solves_qs = solves_qs.filter(company_id=request.user.company_id)
+            elif role_key == "team_leader" and request.user.entity_id:
+                solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
+            elif role_key == "user":
+                solves_qs = solves_qs.filter(current_assignee_id=request.user.id)
 
         solves_qs = solves_qs.select_related(
             "company",
@@ -478,6 +497,9 @@ class CreditsSolvesListView(APIView):
         user_map = {}
         entity_map = {}
         for req in solves_qs:
+            allowed_for_actor = get_allowed_status_transitions(request.user, req)
+            can_result_approve = ServiceRequest.Status.CLOSED in allowed_for_actor and req.status == ServiceRequest.Status.COMPLETED
+            can_result_reject = ServiceRequest.Status.IN_PROGRESS in allowed_for_actor and req.status == ServiceRequest.Status.COMPLETED
             solver_id = req.completed_by_id or req.closed_by_id or req.current_assignee_id
             evidence_list = []
 
@@ -559,6 +581,7 @@ class CreditsSolvesListView(APIView):
                     "solverEntityName": req.target_entity.name if req.target_entity_id else "",
                     "solverCompanyName": req.company.name if req.company_id else "",
                     "sourceCompanyName": req.company.name if req.company_id else "",
+                    "sourceEntityId": req.source_entity_id,
                     "sourceEntityName": req.source_entity.name if req.source_entity_id else "",
                     "requesterName": (
                         req.requester_user.get_full_name() or req.requester_user.username
@@ -596,6 +619,9 @@ class CreditsSolvesListView(APIView):
                     "completionNote": req.resolution_note or "",
                     "statusHistory": [],
                     "status": "solved",
+                    "requestStatus": req.status,
+                    "canResultApprove": can_result_approve,
+                    "canResultReject": can_result_reject,
                     "completedAt": (
                         req.completed_at.isoformat()
                         if req.completed_at
@@ -656,9 +682,27 @@ class CreditsEvidenceCreateView(APIView):
             .first()
         )
         solver_id = completed_by_id or closed_by_id or service_request.current_assignee_id
-        if request.user.id != solver_id:
+        actor_role = get_primary_role_key(request.user)
+        target_entity_id = get_request_target_entity_id(service_request)
+        if actor_role not in {"user", "team_leader", "manager"}:
             return Response(
-                {"detail": "Only the support/dev user who solved this request can add credits evidence."},
+                {"detail": "Only target team members can add credits evidence."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not request.user.entity_id or not target_entity_id or request.user.entity_id != target_entity_id:
+            return Response(
+                {"detail": "Evidence can only be added by users from the request target team."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        is_target_team_manager = (
+            actor_role == "manager"
+            and request.user.entity_id
+            and target_entity_id
+            and request.user.entity_id == target_entity_id
+        )
+        if request.user.id != solver_id and not is_target_team_manager:
+            return Response(
+                {"detail": "Only the solver or target team manager can add credits evidence."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -1184,6 +1228,21 @@ class RequestStatusUpdateView(APIView):
         requested_status = serializer.validated_data["status"]
         note = serializer.validated_data.get("note", "")
         deadline_date = serializer.validated_data.get("deadline_date")
+        evidence_link = (serializer.validated_data.get("evidence_link") or "").strip()
+        evidence_attachment = serializer.validated_data.get("evidence_attachment")
+        if evidence_link or evidence_attachment:
+            actor_role = get_primary_role_key(request.user)
+            target_entity_id = get_request_target_entity_id(service_request)
+            if actor_role not in {"user", "team_leader", "manager"}:
+                return Response(
+                    {"detail": "Only target team members can add credits evidence."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if not request.user.entity_id or not target_entity_id or request.user.entity_id != target_entity_id:
+                return Response(
+                    {"detail": "Evidence can only be added by users from the request target team."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         allowed_transitions = get_allowed_status_transitions(request.user, service_request)
         if requested_status not in allowed_transitions:
             return Response(
@@ -1255,6 +1314,12 @@ class RequestStatusUpdateView(APIView):
             service_request.completed_at = timezone.now()
             service_request.resolution_note = note
             update_fields.extend(["completed_at", "resolution_note"])
+        if (
+            effective_new_status == ServiceRequest.Status.IN_PROGRESS
+            and old_status == ServiceRequest.Status.COMPLETED
+        ):
+            service_request.completed_at = None
+            update_fields.append("completed_at")
         if effective_new_status == ServiceRequest.Status.CLOSED:
             service_request.closed_at = timezone.now()
             service_request.resolution_note = note
@@ -1292,6 +1357,18 @@ class RequestStatusUpdateView(APIView):
             sender=request.user,
             message=progress_message,
         )
+        if effective_new_status == ServiceRequest.Status.COMPLETED and (
+            evidence_link or evidence_attachment
+        ):
+            evidence_message = "Credits evidence"
+            if evidence_link:
+                evidence_message = f"{evidence_message}\n{evidence_link}"
+            RequestMessage.objects.create(
+                request=service_request,
+                sender=request.user,
+                message=evidence_message,
+                attachment=evidence_attachment if evidence_attachment else None,
+            )
         decision_recipient_exclude = None
         if was_pending_request and requested_status in {
             ServiceRequest.Status.ACCEPTED,
@@ -1923,6 +2000,10 @@ def can_operate_submitted_request(user, service_request):
 
 
 def get_allowed_status_transitions(user, service_request):
+    # CLOSED is terminal: no further status transitions are allowed.
+    if service_request.status == ServiceRequest.Status.CLOSED:
+        return set()
+
     # Super admin should always be able to move request status in both
     # approval and submitted workflows, regardless of scoped permission drift.
     if get_primary_role_key(user) == "super_admin":
@@ -1950,6 +2031,15 @@ def get_allowed_status_transitions(user, service_request):
             return {ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.REJECTED}
         return set()
 
+    # Result validation by requester-side PROD approvers:
+    # once target team marks COMPLETED, requester hierarchy can either
+    # approve result (CLOSED) or reject result (back to IN_PROGRESS).
+    if (
+        service_request.status == ServiceRequest.Status.COMPLETED
+        and can_validate_completed_result(user, service_request)
+    ):
+        return {ServiceRequest.Status.CLOSED, ServiceRequest.Status.IN_PROGRESS}
+
     if not can_operate_submitted_request(user, service_request):
         return set()
 
@@ -1964,8 +2054,8 @@ def get_allowed_status_transitions(user, service_request):
             ServiceRequest.Status.COMPLETED,
         }
     )
-    if has_permission(user, "close_request"):
-        allowed.add(ServiceRequest.Status.CLOSED)
+    # Target team cannot close requests directly.
+    allowed.discard(ServiceRequest.Status.CLOSED)
     return allowed
 
 
@@ -1985,6 +2075,26 @@ def can_approve_request_from_requester_hierarchy(actor, service_request):
         )
     if actor_role == "team_leader":
         return requester.team_leader_id == actor.id
+    return False
+
+
+def can_validate_completed_result(actor, service_request):
+    if not has_permission(actor, "approve_request"):
+        return False
+    actor_role = get_primary_role_key(actor)
+    if actor_role == "super_admin":
+        return True
+    if actor_role == "senior":
+        return bool(actor.company_id) and actor.company_id == service_request.company_id
+    if actor_role in {"manager", "team_leader"}:
+        if not actor.entity_id or not actor.entity:
+            return False
+        if actor.entity.entity_type != Entity.EntityType.PROD:
+            return False
+        return (
+            actor.company_id == service_request.company_id
+            and actor.entity_id == service_request.source_entity_id
+        )
     return False
 
 

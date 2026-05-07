@@ -599,7 +599,7 @@ function RequestsPage({ forcedScope = '' }) {
   if (shouldRedirectBasicApproverFromPending) return null
 
   return (
-    <main className="space-y-6">
+    <main className="space-y-6 px-1 sm:px-2 lg:px-3">
       <PageHeader
         eyebrow="Operations"
         title={scopeTitle[resolvedScope] || 'Requests'}
@@ -617,7 +617,7 @@ function RequestsPage({ forcedScope = '' }) {
 
       {isIncomingQueueTeamLeader ? <div className="h-0.5 w-full bg-border" /> : null}
 
-      <div className="surface-card p-4 shadow-sm border-border/50">
+      <div className="surface-card p-5 lg:p-6 shadow-sm border-border/50">
         <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">
           <div className="relative min-w-[260px] flex-1 xl:flex-[2_1_0%]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -760,7 +760,7 @@ function RequestsPage({ forcedScope = '' }) {
         )}
 
         {state.loading && state.requests.length === 0 ? (
-          <div className="overflow-x-auto p-4">
+          <div className="overflow-x-auto p-5 lg:p-6">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-ink/10 bg-muted/10 text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">

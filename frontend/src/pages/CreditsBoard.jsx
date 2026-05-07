@@ -77,20 +77,11 @@ function evidenceLabel(solve) {
 
 function canEditEvidence(solve, currentUser, userRole, userEntityId, userCompanyId) {
   if (!currentUser || !solve) return false;
-  
-  if (String(currentUser.id) === String(solve.solverId)) return true;
-  
-  if (userRole === "super_admin") return true;
-  
-  if (userRole === "manager" || userRole === "senior") {
-    if (String(userCompanyId) === String(solve.companyId)) return true;
-  }
-  
-  if (userRole === "team_leader") {
-    if (String(userEntityId) === String(solve.entityId)) return true;
-  }
-  
-  return false;
+  if (!["user", "team_leader", "manager"].includes(userRole)) return false;
+  if (String(userEntityId) !== String(solve.entityId)) return false;
+  if (userRole === "manager") return true;
+  if (String(currentUser.id) !== String(solve.solverId)) return false;
+  return true;
 }
 
 function rankTone(idx) {
@@ -675,7 +666,20 @@ function PeopleTable({ solves, users, entities, onViewDetails, currentUser, user
   );
 }
 
-function SolvedRequestsTable({ solves, users, entities, onViewDetails, currentUser, userRole, userEntityId, userCompanyId }) {
+function SolvedRequestsTable({
+  solves,
+  users,
+  entities,
+  onViewDetails,
+  currentUser,
+  userRole,
+  userEntityId,
+  userCompanyId,
+  isProdEntityUser = false,
+  onApproveResult,
+  onRejectResult,
+  statusActionBusyId = null,
+}) {
   const [sortBy, setSortBy] = useState("date");
   const [sortOrder, setSortOrder] = useState("desc");
   const isBasicUser = userRole === "user";
@@ -738,8 +742,27 @@ function SolvedRequestsTable({ solves, users, entities, onViewDetails, currentUs
 return (
                 <tr key={solve.id} className="border-b border-ink/10">
                   <td className="px-3 py-4 align-middle">
-                    <div className="font-bold leading-tight">{solve.requestTitle}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{solve.requestReference}</div>
+                    {solve.requestUrl ? (
+                      <>
+                        <a
+                          href={solve.requestUrl}
+                          className="font-bold leading-tight text-foreground hover:text-primary"
+                        >
+                          {solve.requestTitle}
+                        </a>
+                        <a
+                          href={solve.requestUrl}
+                          className="mt-0.5 block text-xs text-muted-foreground hover:text-primary"
+                        >
+                          {solve.requestReference}
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-bold leading-tight">{solve.requestTitle}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{solve.requestReference}</div>
+                      </>
+                    )}
                   </td>
                   {!isBasicUser && (
                     <>
@@ -789,12 +812,33 @@ return (
                   <td className="px-3 py-4 align-middle text-muted-foreground">{formatDate(solve.completedAt)}</td>
                   <td className="px-3 py-4 text-right align-middle">
                     <div className="flex justify-end gap-2">
+                      {isProdEntityUser && solve.canResultApprove ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 rounded-md border border-primary/40 bg-card px-3 text-xs font-bold uppercase tracking-wide text-primary shadow-none hover:border-primary hover:bg-primary/10 hover:text-primary"
+                          disabled={statusActionBusyId === solve.requestId}
+                          onClick={() => onApproveResult?.(solve)}
+                        >
+                          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                          Accept
+                        </Button>
+                      ) : null}
+                      {isProdEntityUser && solve.canResultReject ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 rounded-md border border-destructive/40 bg-card px-3 text-xs font-bold uppercase tracking-wide text-destructive shadow-none hover:border-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={statusActionBusyId === solve.requestId}
+                          onClick={() => onRejectResult?.(solve)}
+                        >
+                          <X className="mr-1.5 h-3.5 w-3.5" />
+                          Reject
+                        </Button>
+                      ) : null}
                       <Button size="sm" variant="ghost" className="h-9 px-3 text-sm font-semibold shadow-none" onClick={() => onViewDetails(solve)}>
                         Details
                       </Button>
-                      {solve.requestUrl ? (
-                        <a href={solve.requestUrl}><Button size="sm" variant="outline" className="h-10 rounded-md border-ink bg-card px-4 shadow-none">Open Request</Button></a>
-                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -817,9 +861,43 @@ return (
   );
 }
 
-function SolvedWorkCard({ activeTab, setActiveTab, solves, users, entities, onViewDetails, currentUser, userRole, userEntityId, userCompanyId }) {
+function SolvedWorkCard({
+  activeTab,
+  setActiveTab,
+  solves,
+  users,
+  entities,
+  onViewDetails,
+  currentUser,
+  userRole,
+  userEntityId,
+  userCompanyId,
+  isProdEntityUser = false,
+  onApproveResult,
+  onRejectResult,
+  statusActionBusyId = null,
+}) {
   const isBasicUser = userRole === "user";
-  const tabs = isBasicUser
+  const isProdReviewer = isProdEntityUser && (userRole === "manager" || userRole === "team_leader");
+  const completedRows = isProdEntityUser
+    ? solves.filter((row) => String(row.requestStatus || "").toUpperCase() === "COMPLETED")
+    : solves;
+  const closedRows = isProdEntityUser
+    ? solves.filter((row) => String(row.requestStatus || "").toUpperCase() === "CLOSED")
+    : [];
+  const tabs = isProdReviewer
+    ? [
+        { key: "teams", label: "Teams" },
+        { key: "people", label: "People" },
+        { key: "requests", label: "Solved Requests" },
+        { key: "closed_requests", label: "Closed Requests" },
+      ]
+    : isProdEntityUser
+    ? [
+        { key: "requests", label: "Solved Requests" },
+        { key: "closed_requests", label: "Closed Requests" },
+      ]
+    : isBasicUser
     ? [
         { key: "my_solves", label: "My Solves" },
         { key: "recognition", label: "Recognition" },
@@ -851,8 +929,54 @@ function SolvedWorkCard({ activeTab, setActiveTab, solves, users, entities, onVi
 
 {activeTab === "teams" ? <TeamsTable solves={solves} entities={entities} users={users} onViewDetails={onViewDetails} currentUser={currentUser} userRole={userRole} userEntityId={userEntityId} userCompanyId={userCompanyId} /> : null}
         {activeTab === "people" ? <PeopleTable solves={solves} users={users} entities={entities} onViewDetails={onViewDetails} currentUser={currentUser} userRole={userRole} userEntityId={userEntityId} userCompanyId={userCompanyId} /> : null}
-        {activeTab === "requests" ? <SolvedRequestsTable solves={solves} users={users} entities={entities} onViewDetails={onViewDetails} currentUser={currentUser} userRole={userRole} userEntityId={userEntityId} userCompanyId={userCompanyId} /> : null}
-        {activeTab === "my_solves" ? <SolvedRequestsTable solves={solves} users={users} entities={entities} onViewDetails={onViewDetails} currentUser={currentUser} userRole={userRole} userEntityId={userEntityId} userCompanyId={userCompanyId} /> : null}
+        {activeTab === "requests" ? (
+          <SolvedRequestsTable
+            solves={completedRows}
+            users={users}
+            entities={entities}
+            onViewDetails={onViewDetails}
+            currentUser={currentUser}
+            userRole={userRole}
+            userEntityId={userEntityId}
+            userCompanyId={userCompanyId}
+            isProdEntityUser={isProdEntityUser}
+            onApproveResult={onApproveResult}
+            onRejectResult={onRejectResult}
+            statusActionBusyId={statusActionBusyId}
+          />
+        ) : null}
+        {activeTab === "closed_requests" ? (
+          <SolvedRequestsTable
+            solves={closedRows}
+            users={users}
+            entities={entities}
+            onViewDetails={onViewDetails}
+            currentUser={currentUser}
+            userRole={userRole}
+            userEntityId={userEntityId}
+            userCompanyId={userCompanyId}
+            isProdEntityUser={false}
+            onApproveResult={onApproveResult}
+            onRejectResult={onRejectResult}
+            statusActionBusyId={statusActionBusyId}
+          />
+        ) : null}
+        {activeTab === "my_solves" ? (
+          <SolvedRequestsTable
+            solves={solves}
+            users={users}
+            entities={entities}
+            onViewDetails={onViewDetails}
+            currentUser={currentUser}
+            userRole={userRole}
+            userEntityId={userEntityId}
+            userCompanyId={userCompanyId}
+            isProdEntityUser={isProdEntityUser}
+            onApproveResult={onApproveResult}
+            onRejectResult={onRejectResult}
+            statusActionBusyId={statusActionBusyId}
+          />
+        ) : null}
         {activeTab === "recognition" ? (
           <div className="p-6">
             <div className="grid grid-cols-3 gap-4">
@@ -897,8 +1021,10 @@ function SolvedWorkCard({ activeTab, setActiveTab, solves, users, entities, onVi
   );
 }
 
-function EmptyStateMessage({ role }) {
-  const text = role === "manager" || role === "senior"
+function EmptyStateMessage({ role, isProdEntityUser = false }) {
+  const text = isProdEntityUser
+    ? "No completed requests are waiting for your validation in this period."
+    : role === "manager" || role === "senior"
     ? "No solved requests found in your current scope and filters."
     : role === "team_leader"
       ? "No solved requests found for your team in this period."
@@ -922,23 +1048,51 @@ const [selectedSolve, setSelectedSolve] = useState(null);
   const [reloadTick, setReloadTick] = useState(0);
 
 const role = getPrimaryRole(user);
+  const entityType = String(user?.entity_type || user?.entity?.entity_type || "").toUpperCase();
+  const isProdEntityUser = entityType === "PROD";
   const isBasicUser = role === "user";
   const canExport = !isBasicUser && ["super_admin", "senior", "manager"].includes(role);
   const canFilterEntity = !isBasicUser && ["super_admin", "senior", "manager", "team_leader"].includes(role);
   const canFilterUser = !isBasicUser && ["super_admin", "senior", "manager", "team_leader"].includes(role);
 
-  const defaultEntityId = role === "team_leader" ? String(user?.entity ?? user?.entity_id ?? "all") : "all";
+  const defaultEntityId = role === "team_leader" && !isProdEntityUser
+    ? String(user?.entity ?? user?.entity_id ?? "all")
+    : "all";
 
   const [draftFilters, setDraftFilters] = useState({ date: "30d", entityId: defaultEntityId, userId: "all" });
   const [appliedFilters, setAppliedFilters] = useState({ date: "30d", entityId: defaultEntityId, userId: "all" });
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState(isBasicUser ? "my_solves" : "people");
+  const [activeTab, setActiveTab] = useState(isProdEntityUser ? "requests" : (isBasicUser ? "my_solves" : "people"));
+  const [statusActionBusyId, setStatusActionBusyId] = useState(null);
 
   useEffect(() => {
     const nextEntity = role === "team_leader" ? defaultEntityId : "all";
     setDraftFilters((prev) => ({ ...prev, entityId: nextEntity }));
     setAppliedFilters((prev) => ({ ...prev, entityId: nextEntity }));
   }, [role, defaultEntityId]);
+
+  useEffect(() => {
+    if (isProdEntityUser) setActiveTab("requests");
+  }, [isProdEntityUser]);
+
+  async function changeSolvedResultStatus(solve, nextStatus) {
+    if (!solve?.requestId) return;
+    setStatusActionBusyId(solve.requestId);
+    try {
+      await api.post(`/requests/${solve.requestId}/status/`, {
+        status: nextStatus,
+        note:
+          nextStatus === "CLOSED"
+            ? "Result approved by requester-side PROD team."
+            : "Result rejected by requester-side PROD team. Returned to in progress.",
+      });
+      setReloadTick((x) => x + 1);
+    } catch (error) {
+      window.alert(error?.response?.data?.detail || "Could not update request result status.");
+    } finally {
+      setStatusActionBusyId(null);
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -1085,9 +1239,13 @@ const role = getPrimaryRole(user);
             userRole={role}
             userEntityId={user?.entity}
             userCompanyId={user?.company}
+            isProdEntityUser={isProdEntityUser}
+            onApproveResult={(solve) => changeSolvedResultStatus(solve, "CLOSED")}
+            onRejectResult={(solve) => changeSolvedResultStatus(solve, "IN_PROGRESS")}
+            statusActionBusyId={statusActionBusyId}
           />
         ) : (
-          <EmptyStateMessage role={role} />
+          <EmptyStateMessage role={role} isProdEntityUser={isProdEntityUser} />
         )}
       </div>
 
@@ -1127,4 +1285,3 @@ const role = getPrimaryRole(user);
     </div>
   );
 }
-

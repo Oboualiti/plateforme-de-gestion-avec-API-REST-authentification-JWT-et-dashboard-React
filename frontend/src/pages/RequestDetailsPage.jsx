@@ -27,6 +27,7 @@ import {
 
 import { Avatar } from '../components/Avatar'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
 import { DeadlinePlanner } from '../components/ui/deadline-planner'
@@ -169,12 +170,16 @@ function StatusNoteModal({
   open,
   targetStatus,
   note,
+  evidenceLink,
+  evidenceAttachment,
   deadlineDate,
   requireDeadline,
   required,
   error,
   loading,
   onChangeNote,
+  onChangeEvidenceLink,
+  onChangeEvidenceAttachment,
   onChangeDeadlineDate,
   onCancel,
   onConfirm,
@@ -201,6 +206,29 @@ function StatusNoteModal({
             className="w-full min-h-[110px] rounded-lg border border-input bg-card p-3 text-sm font-medium focus:ring-1 focus:ring-ring focus:outline-none placeholder:text-muted-foreground"
             placeholder={required ? 'Write the resolution note...' : 'Optional note...'}
           />
+          {targetStatus === 'COMPLETED' ? (
+            <>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Evidence link (optional)
+              </label>
+              <Input
+                type="url"
+                value={evidenceLink}
+                onChange={(event) => onChangeEvidenceLink(event.target.value)}
+                placeholder="https://..."
+              />
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Evidence file (optional)
+              </label>
+              <Input
+                type="file"
+                onChange={(event) => onChangeEvidenceAttachment(event.target.files?.[0] || null)}
+              />
+              {evidenceAttachment ? (
+                <p className="text-xs text-muted-foreground">Selected: {evidenceAttachment.name}</p>
+              ) : null}
+            </>
+          ) : null}
           {requireDeadline ? (
             <>
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -386,6 +414,8 @@ function RequestDetailsPage() {
     open: false,
     targetStatus: '',
     note: '',
+    evidenceLink: '',
+    evidenceAttachment: null,
     deadlineDate: '',
     requireDeadline: false,
     required: false,
@@ -479,12 +509,13 @@ function RequestDetailsPage() {
     })
   }, [potentialAssignees])
   const isKnownSuperAdminUser = String(user?.username || '').toLowerCase() === 'superadmin'
-  const canManagerAssignTl = !request?.current_assignee && (
-    isKnownSuperAdminUser
-    || isSuperAdmin
-    || isManager
-    || isSenior
-  )
+  const canManagerAssignTl = !request?.current_assignee
+    && assignableUsers.length > 0
+    && (
+      isKnownSuperAdminUser
+      || isSuperAdmin
+      || ((isManager || isSenior) && isSupportOrDevEntity)
+    )
   const assignmentActions = (canAssignToMe || canManagerAssignTl) ? (
     <div className="flex items-center gap-2">
       {canAssignToMe ? (
@@ -609,11 +640,17 @@ function RequestDetailsPage() {
       setComment('')
       setCommentAttachment(null)
       setActionState({ busy: false, error: '' })
+      return { ok: true, data: response.data }
     } catch (error) {
+      const detail = error.response?.data?.detail
+      const noteError = error.response?.data?.note?.[0]
+      const evidenceLinkError = error.response?.data?.evidence_link?.[0]
+      const evidenceAttachmentError = error.response?.data?.evidence_attachment?.[0]
       setActionState({ 
         busy: false, 
-        error: error.response?.data?.detail || error.response?.data?.note?.[0] || 'Action failed.' 
+        error: detail || noteError || evidenceLinkError || evidenceAttachmentError || 'Action failed.' 
       })
+      return { ok: false, error }
     }
   }
 
@@ -767,6 +804,8 @@ function RequestDetailsPage() {
       open: true,
       targetStatus: status,
       note: '',
+      evidenceLink: '',
+      evidenceAttachment: null,
       deadlineDate: request?.deadline_date || '',
       requireDeadline,
       required,
@@ -780,6 +819,8 @@ function RequestDetailsPage() {
       open: false,
       targetStatus: '',
       note: '',
+      evidenceLink: '',
+      evidenceAttachment: null,
       deadlineDate: '',
       requireDeadline: false,
       required: false,
@@ -803,17 +844,45 @@ function RequestDetailsPage() {
       }))
       return
     }
-    const payload = { status: statusDialog.targetStatus, note }
-    if (statusDialog.deadlineDate) {
-      payload.deadline_date = statusDialog.deadlineDate
+    const hasEvidence = Boolean(statusDialog.evidenceAttachment) || Boolean(statusDialog.evidenceLink.trim())
+    const useFormData = statusDialog.targetStatus === 'COMPLETED' && hasEvidence
+    if (useFormData) {
+      const payload = new FormData()
+      payload.append('status', statusDialog.targetStatus)
+      payload.append('note', note)
+      if (statusDialog.deadlineDate) payload.append('deadline_date', statusDialog.deadlineDate)
+      if (statusDialog.evidenceLink.trim()) payload.append('evidence_link', statusDialog.evidenceLink.trim())
+      if (statusDialog.evidenceAttachment) payload.append('evidence_attachment', statusDialog.evidenceAttachment)
+      const result = await handleAction(api.post(`/requests/${requestId}/status/`, payload))
+      if (!result?.ok) {
+        const apiError =
+          result?.error?.response?.data?.detail
+          || result?.error?.response?.data?.note?.[0]
+          || result?.error?.response?.data?.evidence_link?.[0]
+          || result?.error?.response?.data?.evidence_attachment?.[0]
+          || 'Could not update status.'
+        setStatusDialog((current) => ({ ...current, error: apiError }))
+        return
+      }
+    } else {
+      const payload = { status: statusDialog.targetStatus, note }
+      if (statusDialog.deadlineDate) payload.deadline_date = statusDialog.deadlineDate
+      const result = await handleAction(api.post(`/requests/${requestId}/status/`, payload))
+      if (!result?.ok) {
+        const apiError =
+          result?.error?.response?.data?.detail
+          || result?.error?.response?.data?.note?.[0]
+          || 'Could not update status.'
+        setStatusDialog((current) => ({ ...current, error: apiError }))
+        return
+      }
     }
-    await handleAction(
-      api.post(`/requests/${requestId}/status/`, payload),
-    )
     setStatusDialog({
       open: false,
       targetStatus: '',
       note: '',
+      evidenceLink: '',
+      evidenceAttachment: null,
       deadlineDate: '',
       requireDeadline: false,
       required: false,
@@ -1486,6 +1555,8 @@ function RequestDetailsPage() {
         open={statusDialog.open}
         targetStatus={statusDialog.targetStatus}
         note={statusDialog.note}
+        evidenceLink={statusDialog.evidenceLink}
+        evidenceAttachment={statusDialog.evidenceAttachment}
         deadlineDate={statusDialog.deadlineDate}
         requireDeadline={statusDialog.requireDeadline}
         required={statusDialog.required}
@@ -1493,6 +1564,12 @@ function RequestDetailsPage() {
         loading={actionState.busy}
         onChangeNote={(value) =>
           setStatusDialog((current) => ({ ...current, note: value, error: '' }))
+        }
+        onChangeEvidenceLink={(value) =>
+          setStatusDialog((current) => ({ ...current, evidenceLink: value, error: '' }))
+        }
+        onChangeEvidenceAttachment={(value) =>
+          setStatusDialog((current) => ({ ...current, evidenceAttachment: value, error: '' }))
         }
         onChangeDeadlineDate={(value) =>
           setStatusDialog((current) => ({ ...current, deadlineDate: value, error: '' }))

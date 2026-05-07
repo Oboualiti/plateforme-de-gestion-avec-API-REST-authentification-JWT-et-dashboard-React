@@ -39,15 +39,11 @@ export default function SolveDetailsModal({
 
   const canEdit = (() => {
     if (!currentUser) return false;
-    if (String(currentUser.id) === String(solve.solverId)) return true;
-    if (currentRole === "super_admin") return true;
-    if (currentRole === "manager" || currentRole === "senior") {
-      if (String(currentUser.company) === String(solve.companyId)) return true;
-    }
-    if (currentRole === "team_leader") {
-      if (String(currentUser.entity) === String(solve.entityId)) return true;
-    }
-    return false;
+    if (!["user", "team_leader", "manager"].includes(currentRole)) return false;
+    if (String(currentUser.entity) !== String(solve.entityId)) return false;
+    if (currentRole === "manager") return true;
+    if (String(currentUser.id) !== String(solve.solverId)) return false;
+    return true;
   })();
   const openUrl = solve.requestUrl || (solve.requestId ? `/requests/${solve.requestId}` : null);
   

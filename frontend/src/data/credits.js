@@ -127,8 +127,13 @@ export function filterSolvesByUserRole(solves, user) {
   const userCompanyId = user?.company_id ?? user?.company ?? null;
   const userEntityId = user?.entity_id ?? user?.entity ?? null;
   const primaryRole = getPrimaryRole(user);
+  const entityType = String(user?.entity_type || user?.entity?.entity_type || "").toUpperCase();
+  const isProdEntityUser = entityType === "PROD";
 
   if (primaryRole === "super_admin") return solves;
+  if (isProdEntityUser) {
+    return solves;
+  }
   if (primaryRole === "senior" || primaryRole === "manager") {
     return solves.filter((solve) => solve.companyId === userCompanyId);
   }

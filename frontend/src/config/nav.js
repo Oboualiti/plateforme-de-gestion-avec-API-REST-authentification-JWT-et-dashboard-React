@@ -79,6 +79,8 @@ export function getNavForRole(role, user = null) {
 
   const isSupportDevUser =
     role === "user" && (canSolveRequests || isSupportDevEntity);
+  const isProdResultApproverUser =
+    role === "user" && String(user?.entity_type || "").toUpperCase() === "PROD" && has("approve_request");
 
   const auditLogItems = [
     ...(has("view_user_audit_logs") ? [{ label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText }] : []),
@@ -101,7 +103,7 @@ export function getNavForRole(role, user = null) {
             ...(has("view_own_requests")
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
-            ...(isSupportDevUser ? [{ label: "Credits Board", to: "/credits-board", icon: Trophy }] : []),
+            ...((isSupportDevUser || isProdResultApproverUser) ? [{ label: "Credits Board", to: "/credits-board", icon: Trophy }] : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
         },

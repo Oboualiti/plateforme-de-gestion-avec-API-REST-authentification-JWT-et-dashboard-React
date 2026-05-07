@@ -598,6 +598,8 @@ class RequestStatusUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=ServiceRequest.Status.choices)
     note = serializers.CharField(required=False, allow_blank=True)
     deadline_date = serializers.DateField(required=False)
+    evidence_link = serializers.URLField(required=False, allow_blank=True)
+    evidence_attachment = serializers.FileField(required=False, allow_null=True)
 
     def validate(self, attrs):
         if attrs["status"] in {
