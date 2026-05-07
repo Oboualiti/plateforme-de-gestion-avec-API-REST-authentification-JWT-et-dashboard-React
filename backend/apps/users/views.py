@@ -35,3 +35,8 @@ class ChangePasswordView(APIView):
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password"])
         return Response({"detail": "Password updated successfully."})
+
+
+
+
+
