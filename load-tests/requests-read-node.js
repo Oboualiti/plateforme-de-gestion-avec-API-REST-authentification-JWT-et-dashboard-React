@@ -1,66 +1,93 @@
-const BASE_URL = process.env.BASE_URL || "http://localhost:8002/api";
-const TOKEN = process.env.TOKEN;
-const TOTAL_REQUESTS = Number(process.env.TOTAL_REQUESTS || 1000);
-const CONCURRENCY = Number(process.env.CONCURRENCY || 50);
-
-if (!TOKEN) {
-  console.error("Missing TOKEN env variable");
-  process.exit(1);
-}
-
-async function worker(workerId, count) {
-  let success = 0;
-  let failed = 0;
-
-  for (let i = 0; i < count; i++) {
-    const started = Date.now();
-
-    try {
-      const res = await fetch(`${BASE_URL}/requests/`, {
-        headers: {
-          Authorization: `Bearer ${TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      const ms = Date.now() - started;
-
-      if (res.ok) {
-        success++;
-      } else {
-        failed++;
-        console.log(`Worker ${workerId}: status ${res.status} in ${ms}ms`);
-      }
-    } catch (error) {
-      failed++;
-      console.log(`Worker ${workerId}: ${error.message}`);
-    }
-  }
-
-  return { success, failed };
-}
+const {
+  getBaseUrl,
+  getTokens,
+  getTotalRequests,
+  getConcurrency,
+  getDelayMs,
+  randomChoice,
+  sleep,
+  getAuthHeaders,
+} = require("./config");
+const { createMetrics, recordMetric, finalizeReport } = require("./reporting");
 
 async function main() {
-  const perWorker = Math.ceil(TOTAL_REQUESTS / CONCURRENCY);
-  const started = Date.now();
+  try {
+    const baseUrl = getBaseUrl();
+    const tokens = getTokens();
+    const totalRequests = getTotalRequests();
+    const concurrency = getConcurrency();
+    const delayMs = getDelayMs();
+    const metrics = createMetrics();
 
-  console.log(`Running ${TOTAL_REQUESTS} requests with concurrency ${CONCURRENCY}`);
-  console.log(`Target: ${BASE_URL}/requests/`);
+    let nextIndex = 0;
 
-  const results = await Promise.all(
-    Array.from({ length: CONCURRENCY }, (_, index) => worker(index + 1, perWorker))
-  );
+    async function worker(workerId) {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= totalRequests) break;
 
-  const totalSuccess = results.reduce((sum, r) => sum + r.success, 0);
-  const totalFailed = results.reduce((sum, r) => sum + r.failed, 0);
-  const seconds = (Date.now() - started) / 1000;
+        const token = randomChoice(tokens);
+        const started = Date.now();
 
-  console.log("");
-  console.log("Done");
-  console.log(`Success: ${totalSuccess}`);
-  console.log(`Failed: ${totalFailed}`);
-  console.log(`Duration: ${seconds.toFixed(2)}s`);
-  console.log(`Approx RPS: ${(TOTAL_REQUESTS / seconds).toFixed(2)}`);
+        try {
+          const res = await fetch(`${baseUrl}/requests/`, {
+            method: "GET",
+            headers: getAuthHeaders(token),
+          });
+          const duration = Date.now() - started;
+          const ok = res.status >= 200 && res.status < 300;
+          let responseSnippet = "";
+          if (!ok) {
+            const body = await res.text();
+            responseSnippet = body.slice(0, 1000);
+            console.log(`Worker ${workerId}: status ${res.status} in ${duration}ms | ${body.slice(0, 500)}`);
+          }
+          recordMetric(metrics, {
+            method: "GET",
+            endpoint: "/requests/",
+            statusCode: res.status,
+            durationMs: duration,
+            success: ok,
+            responseSnippet,
+          });
+
+        } catch (error) {
+          const duration = Date.now() - started;
+          recordMetric(metrics, {
+            method: "GET",
+            endpoint: "/requests/",
+            statusCode: "FETCH_ERR",
+            durationMs: duration,
+            success: false,
+            error: error.message,
+          });
+          console.log(`Worker ${workerId}: fetch failed - ${error.message}`);
+        }
+
+        if (delayMs > 0) {
+          await sleep(delayMs);
+        }
+      }
+    }
+
+    console.log(`Running read load test: total=${totalRequests}, concurrency=${concurrency}`);
+    await Promise.all(Array.from({ length: concurrency }, (_, i) => worker(i + 1)));
+    const reports = finalizeReport(metrics, "requests-read");
+    const s = metrics.summary;
+    console.log("");
+    console.log("Done");
+    console.log(`Success: ${s.successCount}`);
+    console.log(`Failed: ${s.failedCount}`);
+    console.log(`Duration: ${s.durationSeconds.toFixed(2)}s`);
+    console.log(`Approx RPS: ${s.approximateRps.toFixed(2)}`);
+    console.log("");
+    console.log("Reports:");
+    console.log(`HTML: ${reports.htmlPath}`);
+    console.log(`JSON: ${reports.jsonPath}`);
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 main();

@@ -1923,6 +1923,22 @@ def can_operate_submitted_request(user, service_request):
 
 
 def get_allowed_status_transitions(user, service_request):
+    # Super admin should always be able to move request status in both
+    # approval and submitted workflows, regardless of scoped permission drift.
+    if get_primary_role_key(user) == "super_admin":
+        if (
+            service_request.status == ServiceRequest.Status.NEW
+            and not service_request.is_submitted_to_target
+        ):
+            return {ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.REJECTED}
+        return {
+            ServiceRequest.Status.ACCEPTED,
+            ServiceRequest.Status.IN_PROGRESS,
+            ServiceRequest.Status.REJECTED,
+            ServiceRequest.Status.COMPLETED,
+            ServiceRequest.Status.CLOSED,
+        }
+
     allowed = set()
     if (
         service_request.status == ServiceRequest.Status.NEW
