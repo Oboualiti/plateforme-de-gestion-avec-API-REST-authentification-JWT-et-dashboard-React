@@ -2,6 +2,9 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    CreditsEvidenceCreateView,
+    CreditsEvidenceDeleteView,
+    CreditsSolvesListView,
     MainBranchViewSet,
     OperationalUnitViewSet,
     RequestCommentCreateView,
@@ -34,6 +37,9 @@ router.register(
 router.register(r"request-messages", RequestMessageViewSet, basename="request-message")
 
 urlpatterns = [
+    path("credits/solves/", CreditsSolvesListView.as_view(), name="credits-solves-list"),
+    path("credits/solves/<int:request_id>/evidence/", CreditsEvidenceCreateView.as_view(), name="credits-solves-evidence"),
+    path("credits/solves/<int:request_id>/evidence/<int:message_id>/", CreditsEvidenceDeleteView.as_view(), name="credits-solves-evidence-delete"),
     path("requests/ai/improve/", RequestAiImproveView.as_view(), name="requests-ai-improve"),
     path("requests/<int:request_id>/ai-summary/", RequestAiSummaryView.as_view(), name="requests-ai-summary"),
     path("requests/", RequestListCreateView.as_view(), name="requests-list-create"),

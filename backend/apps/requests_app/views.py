@@ -9,7 +9,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.pagination import PageNumberPagination
@@ -392,6 +392,377 @@ class RequestStatusHistoryViewSet(viewsets.ModelViewSet):
 class RequestMessageViewSet(viewsets.ModelViewSet):
     queryset = RequestMessage.objects.all().order_by("-id")
     serializer_class = RequestMessageSerializer
+
+
+class CreditsSolvesListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        visible_qs = get_visible_requests_queryset(request.user, include_related=True)
+        solves_qs = visible_qs.filter(
+            status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
+        )
+
+        completed_by_subquery = RequestStatusHistory.objects.filter(
+            request_id=OuterRef("pk"),
+            new_status=ServiceRequest.Status.COMPLETED,
+        ).order_by("-changed_at")
+        closed_by_subquery = RequestStatusHistory.objects.filter(
+            request_id=OuterRef("pk"),
+            new_status=ServiceRequest.Status.CLOSED,
+        ).order_by("-changed_at")
+
+        solves_qs = solves_qs.annotate(
+            completed_by_id=Subquery(completed_by_subquery.values("changed_by_id")[:1]),
+            closed_by_id=Subquery(closed_by_subquery.values("changed_by_id")[:1]),
+        )
+
+        company_id = request.query_params.get("company_id")
+        entity_id = request.query_params.get("entity_id")
+        user_id = request.query_params.get("user_id")
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        priority = (request.query_params.get("priority") or "").strip().upper()
+
+        if company_id:
+            solves_qs = solves_qs.filter(company_id=company_id)
+        if entity_id:
+            solves_qs = solves_qs.filter(target_entity_id=entity_id)
+        if user_id:
+            solves_qs = solves_qs.filter(current_assignee_id=user_id)
+        if date_from:
+            solves_qs = solves_qs.filter(completed_at__date__gte=date_from)
+        if date_to:
+            solves_qs = solves_qs.filter(completed_at__date__lte=date_to)
+        if priority in {
+            ServiceRequest.Priority.LOW,
+            ServiceRequest.Priority.MEDIUM,
+            ServiceRequest.Priority.HIGH,
+            ServiceRequest.Priority.CRITICAL,
+        }:
+            solves_qs = solves_qs.filter(priority=priority)
+
+        role_key = get_primary_role_key(request.user)
+        if role_key in {"senior", "manager"} and request.user.company_id:
+            solves_qs = solves_qs.filter(company_id=request.user.company_id)
+        elif role_key == "team_leader" and request.user.entity_id:
+            solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
+        elif role_key == "user":
+            solves_qs = solves_qs.filter(current_assignee_id=request.user.id)
+
+        solves_qs = solves_qs.select_related(
+            "company",
+            "source_entity",
+            "target_entity",
+            "requester_user",
+            "current_assignee",
+        ).order_by("-completed_at", "-closed_at", "-id")
+
+        base_credits_by_type = {
+            "INFO": 10,
+            "SCRIPT": 25,
+            "TOOL": 40,
+            "APP_PROJECT": 60,
+            "OTHER": 15,
+        }
+
+        sla_hours_by_type = {
+            "INFO": 24,
+            "SCRIPT": 72,
+            "TOOL": 120,
+            "APP_PROJECT": 168,
+            "OTHER": 48,
+        }
+
+        solves = []
+        user_map = {}
+        entity_map = {}
+        for req in solves_qs:
+            solver_id = req.completed_by_id or req.closed_by_id or req.current_assignee_id
+            evidence_list = []
+
+            for message in req.messages.all():
+                message_text = message.message or ""
+                is_credit_evidence = (
+                    message_text.strip().lower().startswith("credits evidence") or
+                    message_text.strip().lower().startswith("credits proof")
+                )
+                if not is_credit_evidence:
+                    continue
+                if message.sender_id != solver_id:
+                    continue
+
+                evidence_item = {
+                    "id": message.id,
+                    "senderId": message.sender_id,
+                    "createdAt": message.created_at.isoformat() if message.created_at else None,
+                    "type": None,
+                    "name": None,
+                    "url": None,
+                }
+
+                if message.attachment:
+                    try:
+                        msg_attachment_url = request.build_absolute_uri(message.attachment.url)
+                    except Exception:
+                        msg_attachment_url = message.attachment.url
+                    if msg_attachment_url:
+                        evidence_item["type"] = "file"
+                        evidence_item["name"] = message.attachment.name if hasattr(message.attachment, 'name') else "attachment"
+                        evidence_item["url"] = msg_attachment_url
+                else:
+                    found_links = re.findall(r"https?://[^\s)]+", message_text)
+                    if found_links:
+                        evidence_item["type"] = "link"
+                        evidence_item["name"] = found_links[0]
+                        evidence_item["url"] = found_links[0]
+
+                if evidence_item["type"]:
+                    evidence_list.append(evidence_item)
+
+            has_evidence = len(evidence_list) > 0
+
+            req_type = req.category or "OTHER"
+            base_credits = base_credits_by_type.get(req_type, 15)
+            sla_hours = sla_hours_by_type.get(req_type, 48)
+
+            completed_at = req.completed_at or req.closed_at
+            time_to_resolve_hours = None
+            within_sla = False
+            sla_bonus = 0
+
+            if completed_at and req.created_at:
+                time_to_resolve_hours = (completed_at - req.created_at).total_seconds() / 3600
+                within_sla = time_to_resolve_hours <= sla_hours
+                sla_bonus = 5 if within_sla else 0
+
+            evidence_bonus = 5 if has_evidence else 0
+            credits = base_credits + sla_bonus + evidence_bonus
+
+            if req.target_entity_id and req.target_entity_id not in entity_map:
+                entity_map[req.target_entity_id] = {
+                    "id": req.target_entity.id,
+                    "name": req.target_entity.name,
+                }
+
+            solves.append(
+                {
+                    "id": f"req-{req.id}",
+                    "requestId": req.id,
+                    "requestUrl": f"/requests/{req.id}",
+                    "requestTitle": req.title,
+                    "requestReference": req.request_number,
+                    "solverId": solver_id,
+                    "solverRole": "",
+                    "entityId": req.target_entity_id,
+                    "companyId": req.company_id,
+                    "solverEntityName": req.target_entity.name if req.target_entity_id else "",
+                    "solverCompanyName": req.company.name if req.company_id else "",
+                    "sourceCompanyName": req.company.name if req.company_id else "",
+                    "sourceEntityName": req.source_entity.name if req.source_entity_id else "",
+                    "requesterName": (
+                        req.requester_user.get_full_name() or req.requester_user.username
+                    ) if req.requester_user_id else "",
+                    "targetEntityName": req.target_entity.name if req.target_entity_id else "",
+                    "priority": req.priority,
+                    "requestType": req_type,
+                    "credits": credits,
+                    "baseCredits": base_credits,
+                    "slaBonus": sla_bonus,
+                    "evidenceBonus": evidence_bonus,
+                    "withinSla": within_sla,
+                    "timeToResolveHours": round(time_to_resolve_hours, 1) if time_to_resolve_hours else None,
+                    "slaHours": sla_hours,
+                    "creditBreakdown": {
+                        "base": base_credits,
+                        "sla": sla_bonus,
+                        "evidence": evidence_bonus,
+                        "total": credits,
+                        "requestType": req_type,
+                        "withinSla": within_sla,
+                    },
+                    "evidenceList": evidence_list,
+                    "evidenceSummary": (
+                        f"{len([e for e in evidence_list if e['type'] == 'file'])} file{'' if len([e for e in evidence_list if e['type'] == 'file']) == 1 else 's'}, "
+                        f"{len([e for e in evidence_list if e['type'] == 'link'])} link{'' if len([e for e in evidence_list if e['type'] == 'link']) == 1 else 's'}"
+                        if evidence_list
+                        else "-"
+                    ),
+                    "hasEvidence": has_evidence,
+                    "evidenceType": evidence_list[0]["type"] if evidence_list else None,
+                    "evidenceName": evidence_list[0]["name"] if evidence_list else "",
+                    "evidenceUrl": evidence_list[0]["url"] if evidence_list else "",
+                    "note": req.resolution_note or "",
+                    "completionNote": req.resolution_note or "",
+                    "statusHistory": [],
+                    "status": "solved",
+                    "completedAt": (
+                        req.completed_at.isoformat()
+                        if req.completed_at
+                        else (req.closed_at.isoformat() if req.closed_at else req.created_at.isoformat())
+                    ),
+                }
+            )
+
+        solver_ids = {item["solverId"] for item in solves if item.get("solverId")}
+        if solver_ids:
+            for solver in User.objects.filter(id__in=solver_ids).only(
+                "id", "first_name", "last_name", "username"
+            ):
+                user_map[solver.id] = {
+                    "id": solver.id,
+                    "full_name": solver.get_full_name() or solver.username,
+                }
+
+        return Response(
+            {
+                "solves": solves,
+                "users": list(user_map.values()),
+                "entities": list(entity_map.values()),
+            }
+        )
+
+
+class CreditsEvidenceCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        service_request = get_visible_requests_queryset(request.user).filter(id=request_id).first()
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if service_request.status not in {ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED}:
+            return Response(
+                {"detail": "Credits proof can only be added after the request is solved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        completed_by_id = (
+            RequestStatusHistory.objects.filter(
+                request_id=service_request.id,
+                new_status=ServiceRequest.Status.COMPLETED,
+            )
+            .order_by("-changed_at")
+            .values_list("changed_by_id", flat=True)
+            .first()
+        )
+        closed_by_id = (
+            RequestStatusHistory.objects.filter(
+                request_id=service_request.id,
+                new_status=ServiceRequest.Status.CLOSED,
+            )
+            .order_by("-changed_at")
+            .values_list("changed_by_id", flat=True)
+            .first()
+        )
+        solver_id = completed_by_id or closed_by_id or service_request.current_assignee_id
+        if request.user.id != solver_id:
+            return Response(
+                {"detail": "Only the support/dev user who solved this request can add credits evidence."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = RequestCommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        note = serializer.validated_data.get("message", "").strip()
+        attachment = serializer.validated_data.get("attachment")
+
+        has_attachment = bool(attachment)
+        message_lines = ["Credits evidence"]
+        
+        if attachment:
+            message_lines.append("type: file")
+        else:
+            message_lines.append("type: link")
+        
+        if note:
+            message_lines.append(f"note: {note}")
+
+        RequestMessage.objects.create(
+            request=service_request,
+            sender=request.user,
+            message="\n".join(message_lines),
+            attachment=attachment,
+        )
+        return Response({"detail": "Evidence saved."}, status=status.HTTP_201_CREATED)
+
+
+class CreditsEvidenceDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get_user_scope_role(self, user):
+        from apps.permissions_app.models import UserRole
+        
+        user_roles = UserRole.objects.filter(user=user).values_list('role', flat=True)
+        
+        if 'super_admin' in user_roles:
+            return 'super_admin'
+        if 'senior' in user_roles:
+            return 'senior'
+        if 'manager' in user_roles:
+            return 'manager'
+        if 'team_leader' in user_roles:
+            return 'team_leader'
+        return 'user'
+
+    def _can_delete_evidence(self, user, request_obj, evidence_message):
+        user_role = self._get_user_scope_role(user)
+        
+        solver_id = request_obj.completed_by_id or request_obj.closed_by_id or request_obj.current_assignee_id
+        
+        if evidence_message.sender_id == user.id:
+            return True
+        
+        if user_role == 'super_admin':
+            return True
+        
+        if user_role in ['senior', 'manager'] and user.company_id == request_obj.company_id:
+            return True
+        
+        if user_role == 'team_leader':
+            if user.entity_id == request_obj.target_entity_id:
+                return True
+            if user.entity_id == request_obj.source_entity_id:
+                return True
+        
+        return False
+
+    def delete(self, request, request_id, message_id):
+        service_request = get_visible_requests_queryset(request.user).filter(id=request_id).first()
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if service_request.status not in {ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED}:
+            return Response(
+                {"detail": "Evidence can only be removed from solved requests."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        evidence_message = RequestMessage.objects.filter(
+            id=message_id,
+            request_id=request_id
+        ).first()
+        
+        if evidence_message is None:
+            return Response({"detail": "Evidence not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        message_text = evidence_message.message or ""
+        is_credit_evidence = (
+            message_text.strip().lower().startswith("credits evidence") or
+            message_text.strip().lower().startswith("credits proof")
+        )
+        
+        if not is_credit_evidence:
+            return Response({"detail": "Evidence not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not self._can_delete_evidence(request.user, service_request, evidence_message):
+            return Response(
+                {"detail": "You do not have permission to remove this evidence."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        evidence_message.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class RequestListCreateView(APIView):

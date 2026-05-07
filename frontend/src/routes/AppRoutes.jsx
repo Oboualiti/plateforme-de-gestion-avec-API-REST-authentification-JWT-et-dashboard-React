@@ -19,6 +19,7 @@ import NotificationsPage from '../pages/NotificationsPage'
 import ProfilePage from '../pages/ProfilePage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
+import CreditsBoard from '../pages/CreditsBoard'
 import ProtectedRoute from './ProtectedRoute'
 
 import wServiceLogo from '../assets/logo.png'
@@ -138,6 +139,7 @@ function AppRoutes() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/credits-board" element={<CreditsBoard />} />
           <Route path="/team" element={<PermissionManagementPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/pending-requests" element={<RequestsPage forcedScope="pending" />} />

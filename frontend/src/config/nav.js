@@ -14,6 +14,7 @@ import {
   UserCircle,
   Briefcase,
   UsersRound,
+  Trophy,
 } from "lucide-react";
 
 const dashboard = { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard };
@@ -42,7 +43,7 @@ export function getNavForRole(role, user = null) {
     "view_entity_requests",
     "view_team_requests",
     "view_own_requests",
-    
+
   ]);
   const canAccessReports = Boolean(user?.reports_page_access_allowed);
   const canExportReports = has("export_data");
@@ -59,6 +60,26 @@ export function getNavForRole(role, user = null) {
   const canAccessHierarchy = has("view_company_entities");
   const canAccessRoles = has("permission_management");
   const canAccessAuditLogs = hasAny(["view_user_audit_logs", "view_access_audit_logs", "view_org_audit_logs"]);
+
+  const canSolveRequests =
+    permissionKeys.has("complete_request") ||
+    permissionKeys.has("complete_requests") ||
+    permissionKeys.has("solve_request") ||
+    permissionKeys.has("solve_requests") ||
+    permissionKeys.has("view_assigned_requests");
+
+  const entityType =
+    user?.entity_type ||
+    user?.entity?.entity_type ||
+    user?.entity?.type ||
+    user?.entityType;
+
+  const isSupportDevEntity =
+    entityType && entityType !== "PROD" && entityType !== "production";
+
+  const isSupportDevUser =
+    role === "user" && (canSolveRequests || isSupportDevEntity);
+
   const auditLogItems = [
     ...(has("view_user_audit_logs") ? [{ label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText }] : []),
     ...(has("view_access_audit_logs") ? [{ label: "Access / role logs", to: "/admin/audit-logs/access", icon: ScrollText }] : []),
@@ -80,6 +101,7 @@ export function getNavForRole(role, user = null) {
             ...(has("view_own_requests")
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
+            ...(isSupportDevUser ? [{ label: "Credits Board", to: "/credits-board", icon: Trophy }] : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
         },
@@ -121,6 +143,7 @@ export function getNavForRole(role, user = null) {
             ...(canManageUsers
               ? [{ label: "Team Members", to: "/team", icon: UsersRound }]
               : []),
+            { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -153,6 +176,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessPending
               ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
+            { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -185,6 +209,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessPending
               ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
+            { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -233,6 +258,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Requests", to: "/requests", icon: Briefcase }]
               : []),
             ...(canAccessPending ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }] : []),
+            { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
