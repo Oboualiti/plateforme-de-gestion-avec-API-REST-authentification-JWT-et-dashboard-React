@@ -8,7 +8,12 @@ from apps.companies.models import Company
 from apps.audit_logs.models import AdminAuditLog
 from apps.entities.models import Entity
 from apps.permissions_app.constants import PERMISSION_DEFINITIONS
-from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
+from apps.permissions_app.models import (
+    AppPermission,
+    UserPermissionOverride,
+    UserRequestPermissionOverride,
+    UserRole,
+)
 from apps.permissions_app.services import can_manage_any_users, get_effective_permission_keys
 from apps.requests_app.models import MainBranch, OperationalUnit, ServiceRequest
 from apps.roles.models import Role
@@ -573,3 +578,241 @@ class RolePagePermissionTests(APITestCase):
 
         self.user.refresh_from_db()
         self.assertIn("manage_companies", set(get_effective_permission_keys(self.user)))
+
+
+class RequestPermissionControlTests(APITestCase):
+    def setUp(self):
+        call_command("seed_roles_permissions")
+        self.company = Company.objects.create(name="CMH", code="CMH")
+        self.prod_entity = Entity.objects.create(
+            company=self.company,
+            name="CMH-PROD",
+            code="CMHP",
+            entity_type=Entity.EntityType.PROD,
+        )
+        self.support_entity = Entity.objects.create(
+            company=self.company,
+            name="CMH-SUP",
+            code="CMHS",
+            entity_type=Entity.EntityType.SUPPORT,
+        )
+        self.other_prod_entity = Entity.objects.create(
+            company=self.company,
+            name="CMH-PROD-2",
+            code="CMHP2",
+            entity_type=Entity.EntityType.PROD,
+        )
+        branch = MainBranch.objects.create(name="CMH")
+        self.prod_unit = OperationalUnit.objects.create(
+            main_branch=branch,
+            code=self.prod_entity.code,
+            name=self.prod_entity.name,
+            team_type=OperationalUnit.TeamType.PROD,
+        )
+        self.support_unit = OperationalUnit.objects.create(
+            main_branch=branch,
+            code=self.support_entity.code,
+            name=self.support_entity.name,
+            team_type=OperationalUnit.TeamType.SUPPORT,
+        )
+
+        self.super_admin = self._create_user("superadmin_perm", "super_admin", self.prod_entity)
+        self.manager_prod = self._create_user("manager_prod", "manager", self.prod_entity)
+        self.manager_support = self._create_user("manager_support", "manager", self.support_entity)
+        self.manager_other_prod = self._create_user("manager_other", "manager", self.other_prod_entity)
+        self.normal_user = self._create_user("user_perm", "user", self.prod_entity)
+        self.requester = self._create_user("requester_perm", "user", self.prod_entity)
+
+        self.request_pending = ServiceRequest.objects.create(
+            request_number="REQ-PERM-0001",
+            title="Pending for approval",
+            description="pending",
+            category="INFO",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.NEW,
+            is_submitted_to_target=False,
+        )
+        self.request_submitted = ServiceRequest.objects.create(
+            request_number="REQ-PERM-0002",
+            title="Submitted ticket",
+            description="submitted",
+            category="INFO",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.NEW,
+            is_submitted_to_target=True,
+        )
+        self.request_hidden_by_default = ServiceRequest.objects.create(
+            request_number="REQ-PERM-0003",
+            title="Manager-only ticket",
+            description="manager ticket",
+            category="INFO",
+            requester_user=self.manager_prod,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.NEW,
+            is_submitted_to_target=True,
+        )
+        self.base_control_url = reverse(
+            "admin-request-permission-control",
+            kwargs={"user_id": self.manager_prod.id},
+        )
+
+    def _create_user(self, username, role_key, entity):
+        user = User.objects.create_user(
+            username=username,
+            password="test12345",
+            company=self.company,
+            entity=entity,
+        )
+        role = Role.objects.get(key=role_key)
+        UserRole.objects.create(user=user, role=role)
+        return user
+
+    def _set_override(self, user, request_obj, permission_key, allowed):
+        UserRequestPermissionOverride.objects.update_or_create(
+            user=user,
+            request=request_obj,
+            permission_key=permission_key,
+            defaults={"allowed": allowed, "created_by": self.super_admin},
+        )
+
+    def test_super_admin_can_access_endpoint(self):
+        self.client.force_authenticate(user=self.super_admin)
+        response = self.client.get(
+            self.base_control_url,
+            {"permission_key": "request.view"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_non_super_admin_gets_403(self):
+        self.client.force_authenticate(user=self.manager_prod)
+        response = self.client.get(
+            self.base_control_url,
+            {"permission_key": "request.view"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_invalid_permission_key_returns_400(self):
+        self.client.force_authenticate(user=self.super_admin)
+        response = self.client.get(
+            self.base_control_url,
+            {"permission_key": "request.invalid"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_adding_request_view_allows_specific_request_visibility(self):
+        self.client.force_authenticate(user=self.super_admin)
+        save_response = self.client.post(
+            reverse("admin-request-permission-control", kwargs={"user_id": self.normal_user.id}),
+            {
+                "permission_key": "request.view",
+                "allowed_request_ids": [self.request_hidden_by_default.id],
+                "denied_request_ids": [],
+            },
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, status.HTTP_200_OK)
+
+        self.client.force_authenticate(user=self.normal_user)
+        list_response = self.client.get(reverse("requests-list-create"), format="json")
+        ids = {item["id"] for item in list_response.data.get("results", [])}
+        self.assertIn(self.request_hidden_by_default.id, ids)
+
+    def test_denying_request_view_blocks_list_and_detail_access(self):
+        self._set_override(self.manager_prod, self.request_submitted, "request.view", False)
+        self.client.force_authenticate(user=self.manager_prod)
+
+        list_response = self.client.get(reverse("requests-list-create"), format="json")
+        ids = {item["id"] for item in list_response.data.get("results", [])}
+        self.assertNotIn(self.request_submitted.id, ids)
+
+        detail_response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.request_submitted.id}),
+            format="json",
+        )
+        self.assertEqual(detail_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_request_assign_allow_and_deny_are_request_scoped(self):
+        self._set_override(self.manager_support, self.request_submitted, "request.assign", True)
+        self._set_override(self.manager_support, self.request_pending, "request.assign", False)
+        self.client.force_authenticate(user=self.manager_support)
+
+        allowed_response = self.client.post(
+            reverse("requests-assign", kwargs={"request_id": self.request_submitted.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(allowed_response.status_code, status.HTTP_200_OK)
+
+        denied_response = self.client.post(
+            reverse("requests-assign", kwargs={"request_id": self.request_pending.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(denied_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_request_approve_can_be_granted_for_specific_request(self):
+        self._set_override(self.manager_other_prod, self.request_pending, "request.approve", True)
+        self._set_override(self.manager_other_prod, self.request_pending, "request.view", True)
+        self.client.force_authenticate(user=self.manager_other_prod)
+        response = self.client.post(
+            reverse("requests-status", kwargs={"request_id": self.request_pending.id}),
+            {"status": ServiceRequest.Status.ACCEPTED, "note": "override approve"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_deny_request_update_status_blocks_status_change(self):
+        self._set_override(self.manager_support, self.request_submitted, "request.update_status", False)
+        self.client.force_authenticate(user=self.manager_support)
+        response = self.client.post(
+            reverse("requests-status", kwargs={"request_id": self.request_submitted.id}),
+            {"status": ServiceRequest.Status.ACCEPTED, "note": "deny"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_post_save_does_not_create_duplicate_overrides(self):
+        self.client.force_authenticate(user=self.super_admin)
+        save_url = reverse("admin-request-permission-control", kwargs={"user_id": self.manager_prod.id})
+        payload = {
+            "permission_key": "request.assign",
+            "allowed_request_ids": [self.request_submitted.id],
+            "denied_request_ids": [self.request_pending.id],
+        }
+        first_response = self.client.post(save_url, payload, format="json")
+        second_response = self.client.post(save_url, payload, format="json")
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            UserRequestPermissionOverride.objects.filter(
+                user=self.manager_prod,
+                permission_key="request.assign",
+            ).count(),
+            2,
+        )
+
+    def test_normal_role_permission_still_works_when_no_override_exists(self):
+        self.client.force_authenticate(user=self.manager_support)
+        response = self.client.post(
+            reverse("requests-assign", kwargs={"request_id": self.request_submitted.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)

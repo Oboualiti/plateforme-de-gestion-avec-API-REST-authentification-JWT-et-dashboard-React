@@ -338,6 +338,7 @@ class UserPermissionOverrideSerializer(serializers.Serializer):
             permission=permission,
             defaults={
                 "is_allowed": is_allowed,
+                "scope_type": UserPermissionOverride.ScopeType.GLOBAL,
                 "reason": self.validated_data.get("reason", ""),
             },
         )

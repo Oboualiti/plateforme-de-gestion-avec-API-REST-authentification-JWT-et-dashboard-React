@@ -15,6 +15,7 @@ import CustomizeRoleDefaultsPage from '../pages/CustomizeRoleDefaultsPage'
 import CustomizeRolePermissionEditorPage from '../pages/CustomizeRolePermissionEditorPage'
 import PermissionDetailPage from '../pages/PermissionDetailPage'
 import PermissionManagementPage from '../pages/PermissionManagementPage'
+import PermissionControlRequestPermissionsPage from '../pages/PermissionControlRequestPermissionsPage'
 import NotificationsPage from '../pages/NotificationsPage'
 import ProfilePage from '../pages/ProfilePage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
@@ -198,6 +199,12 @@ function AppRoutes() {
           <Route path="/admin/users/:userId" element={<PermissionDetailPage />} />
           <Route path="/admin/dashboard" element={<Navigate to="/admin/reports" replace />} />
           <Route path="/admin/monitoring" element={<Navigate to="/admin/reports" replace />} />
+          <Route element={<ProtectedRoute allowedRoles={['super_admin', 'senior', 'manager', 'team_leader']} redirectTo="/dashboard" />}>
+            <Route
+              path="/admin/permission-control/request-permissions"
+              element={<PermissionControlRequestPermissionsPage />}
+            />
+          </Route>
           <Route element={<ProtectedRoute requireReportsPageAccess redirectTo="/dashboard" />}>
             <Route path="/admin/reports" element={<ReportsPage />} />
           </Route>

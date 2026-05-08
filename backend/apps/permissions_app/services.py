@@ -7,8 +7,10 @@ from apps.permissions_app.models import (
     AppPermission,
     PermissionDelegation,
     RolePermission,
+    UserRequestPermissionOverride,
     UserAccessDelegation,
     UserPermissionOverride,
+    UserScopedAccessOverride,
 )
 from .constants import (
     DEFAULT_ROLE_PERMISSION_MATRIX,
@@ -33,6 +35,19 @@ ROLE_LOCKED_PERMISSION_KEYS = {
 
 ROLE_PERMISSION_HIERARCHY_ERROR = "You can only manage users below your role."
 ROLE_PERMISSION_OWNERSHIP_ERROR = "You can only assign permissions you already have."
+REQUEST_PERMISSION_OVERRIDE_KEYS = [
+    "request.view",
+    "request.assign",
+    "request.update_status",
+    "request.comment",
+    "request.view_discussion",
+    "request.edit_deadline",
+]
+PROD_REQUEST_PERMISSION_OVERRIDE_KEYS = [
+    "request.view",
+    "request.comment",
+    "request.view_discussion",
+]
 
 
 def get_user_role_keys(user):
@@ -258,6 +273,10 @@ def get_analytics_request_scope_filter(user):
 
 
 def get_delegatable_permission_keys(editor_user):
+    if get_primary_role_key(editor_user) == "super_admin":
+        return sorted(
+            AppPermission.objects.values_list("key", flat=True).distinct()
+        )
     role_keys = get_user_role_keys(editor_user)
     if not role_keys:
         return []
@@ -363,25 +382,42 @@ def can_view_any_users(user):
 
 def get_visible_users_queryset(user):
     scope_filter = get_view_scope_filter(user)
-    if scope_filter is None:
-        return user.__class__.objects.none()
+    base_queryset = user.__class__.objects.none()
+    if scope_filter is not None:
+        actor_level = get_role_visibility_floor(user)
+        role_level_case = Case(
+            *[
+                When(assigned_roles__role__key=role_key, then=Value(level))
+                for role_key, level in ROLE_HIERARCHY.items()
+            ],
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        base_queryset = (
+            user.__class__.objects.exclude(id=user.id)
+            .filter(scope_filter)
+            .annotate(max_role_level=Max(role_level_case))
+            .filter(max_role_level__lte=actor_level)
+        )
 
-    actor_level = get_role_visibility_floor(user)
-    role_level_case = Case(
-        *[
-            When(assigned_roles__role__key=role_key, then=Value(level))
-            for role_key, level in ROLE_HIERARCHY.items()
-        ],
-        default=Value(0),
-        output_field=IntegerField(),
+    allow_ids = set(
+        UserScopedAccessOverride.objects.filter(
+            user=user,
+            control_key=UserScopedAccessOverride.ControlKey.VIEW_USERS,
+            allowed=True,
+        ).values_list("subject_user_id", flat=True)
     )
-    return (
-        user.__class__.objects.exclude(id=user.id)
-        .filter(scope_filter)
-        .annotate(max_role_level=Max(role_level_case))
-        .filter(max_role_level__lte=actor_level)
-        .order_by("username")
+    deny_ids = set(
+        UserScopedAccessOverride.objects.filter(
+            user=user,
+            control_key=UserScopedAccessOverride.ControlKey.VIEW_USERS,
+            allowed=False,
+        ).values_list("subject_user_id", flat=True)
     )
+
+    extra_queryset = user.__class__.objects.filter(id__in=allow_ids)
+    queryset = (base_queryset | extra_queryset).exclude(id=user.id).exclude(id__in=deny_ids)
+    return queryset.distinct().order_by("username")
 
 
 def get_manageable_users_queryset(user):
@@ -396,10 +432,34 @@ def get_manageable_users_queryset(user):
 def can_view_target_user(actor, target):
     if actor.id == target.id:
         return True
+    override_value = (
+        UserScopedAccessOverride.objects.filter(
+            user=actor,
+            subject_user=target,
+            control_key=UserScopedAccessOverride.ControlKey.VIEW_USERS,
+        )
+        .values_list("allowed", flat=True)
+        .first()
+    )
+    if override_value is not None:
+        return bool(override_value)
     return get_visible_users_queryset(actor).filter(id=target.id).exists()
 
 
 def can_manage_target_user(actor, target):
+    if actor.id == target.id:
+        return False
+    override_value = (
+        UserScopedAccessOverride.objects.filter(
+            user=actor,
+            subject_user=target,
+            control_key=UserScopedAccessOverride.ControlKey.MANAGE_USERS,
+        )
+        .values_list("allowed", flat=True)
+        .first()
+    )
+    if override_value is not None:
+        return bool(override_value)
     if not can_manage_any_users(actor):
         return False
     if not can_view_target_user(actor, target):
@@ -419,6 +479,17 @@ def can_manage_target_user(actor, target):
 def can_manage_target_user_permissions(actor, target):
     if actor.id == target.id:
         return False
+    override_value = (
+        UserScopedAccessOverride.objects.filter(
+            user=actor,
+            subject_user=target,
+            control_key=UserScopedAccessOverride.ControlKey.PERMISSION_MANAGEMENT,
+        )
+        .values_list("allowed", flat=True)
+        .first()
+    )
+    if override_value is not None:
+        return bool(override_value)
     if not has_permission(actor, "permission_management"):
         return False
     if not can_view_target_user(actor, target):
@@ -513,3 +584,40 @@ def can_create_requests(user):
 
 def get_default_permissions_for_role(role_key):
     return sorted(DEFAULT_ROLE_PERMISSION_MATRIX.get(role_key, set()))
+
+
+def is_super_admin_user(user):
+    return get_primary_role_key(user) == "super_admin"
+
+
+def is_valid_request_permission_key(permission_key):
+    return permission_key in set(REQUEST_PERMISSION_OVERRIDE_KEYS)
+
+
+def get_allowed_request_override_keys_for_user(user):
+    entity = getattr(user, "entity", None)
+    entity_type = getattr(entity, "entity_type", "")
+    if entity_type == Entity.EntityType.PROD:
+        return list(PROD_REQUEST_PERMISSION_OVERRIDE_KEYS)
+    return list(REQUEST_PERMISSION_OVERRIDE_KEYS)
+
+
+def get_request_permission_override_value(user, service_request, permission_key):
+    if not is_valid_request_permission_key(permission_key):
+        return None
+    return (
+        UserRequestPermissionOverride.objects.filter(
+            user=user,
+            request_id=service_request.id,
+            permission_key=permission_key,
+        )
+        .values_list("allowed", flat=True)
+        .first()
+    )
+
+
+def apply_request_permission_override(user, service_request, permission_key, fallback_allowed):
+    override_value = get_request_permission_override_value(user, service_request, permission_key)
+    if override_value is None:
+        return bool(fallback_allowed)
+    return bool(override_value)

@@ -301,6 +301,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     allowed_status_transitions = serializers.SerializerMethodField()
     can_reassign_target_team = serializers.SerializerMethodField()
     can_view_request_discussion = serializers.SerializerMethodField()
+    can_comment_request = serializers.SerializerMethodField()
     available_reassignment_targets = serializers.SerializerMethodField()
     potential_assignees = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
@@ -354,6 +355,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "allowed_status_transitions",
             "can_reassign_target_team",
             "can_view_request_discussion",
+            "can_comment_request",
             "available_reassignment_targets",
             "potential_assignees",
             "is_stuck",
@@ -401,6 +403,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_view_request_discussion(self, obj):
         return bool(self.context.get("can_view_request_discussion"))
+
+    def get_can_comment_request(self, obj):
+        return bool(self.context.get("can_comment_request"))
 
     def get_comments(self, obj):
         if not self.context.get("can_view_request_discussion"):

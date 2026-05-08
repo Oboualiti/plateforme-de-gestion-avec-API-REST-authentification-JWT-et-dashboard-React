@@ -15,6 +15,7 @@ import {
   Briefcase,
   UsersRound,
   Trophy,
+  KeyRound,
 } from "lucide-react";
 
 const dashboard = { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard };
@@ -158,6 +159,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
             ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
+            ...(canManageUsers ? [{ label: "Permission Control", to: "/admin/permission-control/request-permissions", icon: KeyRound }] : []),
           ],
         },
         ...(canAccessAuditLogs ? [{
@@ -190,6 +192,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessEntities ? [{ label: "Entities", to: "/admin/entities", icon: Boxes }] : []),
             ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
+            ...(canManageUsers ? [{ label: "Permission Control", to: "/admin/permission-control/request-permissions", icon: KeyRound }] : []),
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
           ],
         },
@@ -226,6 +229,7 @@ export function getNavForRole(role, user = null) {
             ...(canAccessHierarchy ? [{ label: "Hierarchy", to: "/admin/hierarchy", icon: Network }] : []),
             ...(canAccessUsers ? [{ label: "Users", to: "/admin/users", icon: Users }] : []),
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
+            ...(canManageUsers ? [{ label: "Permission Control", to: "/admin/permission-control/request-permissions", icon: KeyRound }] : []),
           ],
         },
         ...(canAccessAuditLogs ? [{
@@ -251,6 +255,7 @@ export function getNavForRole(role, user = null) {
           items: [
             { label: "Users", to: "/admin/users", icon: Users },
             ...(canAccessRoles ? [{ label: "Roles", to: "/admin/roles", icon: ShieldCheck }] : []),
+            { label: "Permission Control", to: "/admin/permission-control/request-permissions", icon: KeyRound },
           ],
         },
         {

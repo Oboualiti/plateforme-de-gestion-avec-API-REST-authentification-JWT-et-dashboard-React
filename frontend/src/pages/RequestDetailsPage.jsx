@@ -462,7 +462,11 @@ function RequestDetailsPage() {
     request?.can_view_request_discussion ?? effectivePermissionKeys.has('view_request_discussion'),
   )
   const isDiscussionClosed = request?.status === 'REJECTED' || request?.status === 'CLOSED'
-  const canCommentRequest = canViewRequestDiscussion && effectivePermissionKeys.has('comment_request') && !isDiscussionClosed
+  const canCommentRequest = Boolean(
+    canViewRequestDiscussion
+    && (request?.can_comment_request ?? effectivePermissionKeys.has('comment_request'))
+    && !isDiscussionClosed
+  )
   const canChangeStatus = Boolean(request?.can_update_status)
   const allowedStatusTransitions = request?.allowed_status_transitions || []
   const lifecycleSelectableStatuses = useMemo(

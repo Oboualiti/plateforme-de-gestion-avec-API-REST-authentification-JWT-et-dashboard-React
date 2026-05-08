@@ -324,8 +324,9 @@ function RequestsPage({ forcedScope = '' }) {
         page_size: isTeamScope ? 200 : pagination.pageSize,
         scope: resolvedScope !== 'all' ? resolvedScope : undefined,
         search: filters.search || undefined,
-        // Only pass company_id if not viewing all requests globally
-        company_id: (isGlobalAdmin && !canViewAllRequests) ? filters.company_id || undefined : (!isGlobalAdmin && !canViewAllRequests ? actorCompanyId || undefined : undefined),
+        // Keep company filtering explicit from UI only.
+        // Backend visibility + per-request overrides already enforce scope/security.
+        company_id: (isGlobalAdmin && !canViewAllRequests) ? filters.company_id || undefined : undefined,
         source_entity_id: filters.source_entity_id || undefined,
         target_entity_id: filters.target_entity_id || undefined,
         status: filters.status || undefined,

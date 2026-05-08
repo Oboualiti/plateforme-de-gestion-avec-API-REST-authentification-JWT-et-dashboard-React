@@ -25,8 +25,9 @@ from apps.notifications.services import (
     create_notification,
     resolve_request_notification_recipients,
 )
-from apps.permissions_app.models import UserRole
+from apps.permissions_app.models import UserRequestPermissionOverride, UserRole
 from apps.permissions_app.services import (
+    apply_request_permission_override,
     can_create_requests,
     get_effective_permission_keys,
     get_primary_role_key,
@@ -108,6 +109,17 @@ class OpenRouterMixin:
             )
         return api_key
 
+    def _get_openrouter_fallback_models(self):
+        raw = self._read_env_value("OPENROUTER_FALLBACK_MODELS")
+        if not raw:
+            return []
+        models = []
+        for item in raw.split(","):
+            model = (item or "").strip()
+            if model:
+                models.append(model)
+        return models
+
     def _extract_json_object(self, raw_text):
         stripped = (raw_text or "").strip()
         if not stripped:
@@ -126,52 +138,70 @@ class OpenRouterMixin:
 
     def _openrouter_chat(self, messages, model_name=None, max_tokens=700):
         api_key = self._get_openrouter_api_key()
-        model = model_name or self._read_env_value("OPENROUTER_MODEL") or "nvidia/nemotron-3-super-120b-a12b:free"
-        endpoint = "https://openrouter.ai/api/v1/chat/completions"
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.2,
-        }
-        request_payload = json.dumps(payload).encode("utf-8")
-        http_request = urllib_request.Request(
-            endpoint,
-            data=request_payload,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
+        configured_model = (
+            model_name
+            or self._read_env_value("OPENROUTER_MODEL")
+            or "nvidia/nemotron-3-super-120b-a12b:free"
         )
+        candidate_models = [
+            configured_model,
+            *self._get_openrouter_fallback_models(),
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "poolside/laguna-xs.2:free",
+            
+        ]
+        # Keep model order, remove duplicates.
+        candidate_models = list(dict.fromkeys(candidate_models))
+        endpoint = "https://openrouter.ai/api/v1/chat/completions"
+        last_error = "OpenRouter request failed."
 
-        try:
-            with urllib_request.urlopen(http_request, timeout=20) as response:
-                raw_body = response.read().decode("utf-8")
-            data = json.loads(raw_body)
-            choices = data.get("choices") or []
-            text = ""
-            if choices:
-                text = ((choices[0].get("message") or {}).get("content") or "").strip()
-            if not text:
-                text = "No response text returned from OpenRouter."
-            return text
-        except urllib_error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="ignore")
-            detail = "OpenRouter request failed."
-            try:
-                parsed = json.loads(body)
-                detail = (
-                    parsed.get("error", {}).get("message")
-                    or parsed.get("detail")
-                    or detail
+        for model in candidate_models:
+            for _attempt in range(2):
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": 0.2,
+                }
+                request_payload = json.dumps(payload).encode("utf-8")
+                http_request = urllib_request.Request(
+                    endpoint,
+                    data=request_payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                    method="POST",
                 )
-            except (TypeError, ValueError):
-                pass
-            raise RuntimeError(detail) from exc
-        except (urllib_error.URLError, TimeoutError):
-            raise RuntimeError("OpenRouter service is unreachable right now.")
+                try:
+                    with urllib_request.urlopen(http_request, timeout=20) as response:
+                        raw_body = response.read().decode("utf-8")
+                    data = json.loads(raw_body)
+                    choices = data.get("choices") or []
+                    text = ""
+                    if choices:
+                        text = ((choices[0].get("message") or {}).get("content") or "").strip()
+                    if text:
+                        return text
+                    last_error = f"No response text returned from model '{model}'."
+                except urllib_error.HTTPError as exc:
+                    body = exc.read().decode("utf-8", errors="ignore")
+                    detail = "OpenRouter request failed."
+                    try:
+                        parsed = json.loads(body)
+                        detail = (
+                            parsed.get("error", {}).get("message")
+                            or parsed.get("detail")
+                            or detail
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                    last_error = detail
+                    continue
+                except (urllib_error.URLError, TimeoutError):
+                    last_error = "OpenRouter service is unreachable right now."
+                    continue
+        raise RuntimeError(last_error)
 
 
 class RequestAiImproveView(OpenRouterMixin, APIView):
@@ -279,7 +309,13 @@ class RequestAiSummaryView(OpenRouterMixin, APIView):
         service_request = load_request(request_id)
         if service_request is None or not get_visible_requests_queryset(request.user).filter(id=request_id).exists():
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
-        if not has_permission(request.user, "view_request_discussion"):
+        can_view_discussion = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.view_discussion",
+            has_permission(request.user, "view_request_discussion"),
+        )
+        if not can_view_discussion:
             return Response(
                 {"detail": "You do not have permission to view request discussion."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -1104,12 +1140,24 @@ class RequestCommentCreateView(APIView):
         service_request = ServiceRequest.objects.filter(id=request_id).first()
         if service_request is None or not self.has_access(request.user, service_request):
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
-        if not has_permission(request.user, "view_request_discussion"):
+        can_view_discussion = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.view_discussion",
+            has_permission(request.user, "view_request_discussion"),
+        )
+        if not can_view_discussion:
             return Response(
                 {"detail": "You do not have permission to view request discussion."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if not has_permission(request.user, "comment_request"):
+        can_comment = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.comment",
+            has_permission(request.user, "comment_request"),
+        )
+        if not can_comment:
             return Response(
                 {"detail": "You do not have permission to comment on requests."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -1162,12 +1210,24 @@ class RequestCommentUpdateView(APIView):
         service_request = ServiceRequest.objects.filter(id=request_id).first()
         if service_request is None or not self.has_access(request.user, service_request):
             return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
-        if not has_permission(request.user, "view_request_discussion"):
+        can_view_discussion = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.view_discussion",
+            has_permission(request.user, "view_request_discussion"),
+        )
+        if not can_view_discussion:
             return Response(
                 {"detail": "You do not have permission to view request discussion."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if not has_permission(request.user, "comment_request"):
+        can_comment = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.comment",
+            has_permission(request.user, "comment_request"),
+        )
+        if not can_comment:
             return Response(
                 {"detail": "You do not have permission to edit request comments."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -1872,6 +1932,15 @@ def load_request(request_id):
     )
 
 
+def can_use_request_permission(user, service_request, permission_key, fallback_allowed):
+    return apply_request_permission_override(
+        user=user,
+        service_request=service_request,
+        permission_key=permission_key,
+        fallback_allowed=fallback_allowed,
+    )
+
+
 def get_visible_requests_queryset(user, include_related=False, include_ordering=True):
     base_queryset = ServiceRequest.objects.all()
     if include_related:
@@ -1887,11 +1956,6 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
         )
     if include_ordering:
         base_queryset = base_queryset.order_by("-created_at")
-
-    # Super Admin always has global visibility over requests, regardless of
-    # customized permission matrix toggles.
-    if get_primary_role_key(user) == "super_admin":
-        return base_queryset
 
     effective_permissions = set(get_effective_permission_keys(user))
     visibility_filter = Q(pk__in=[])
@@ -1934,13 +1998,36 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
         visibility_filter |= Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
 
     pending_visibility = get_pending_approval_visibility_filter(user)
-    if "view_all_requests" in effective_permissions:
-        return base_queryset.filter(
+    if "view_all_requests" in effective_permissions or get_primary_role_key(user) == "super_admin":
+        role_scoped_queryset = base_queryset.filter(
             Q(is_submitted_to_target=True) | pending_visibility,
         )
-    return base_queryset.filter(
-        visibility_filter,
-        Q(is_submitted_to_target=True) | pending_visibility,
+    else:
+        role_scoped_queryset = base_queryset.filter(
+            visibility_filter,
+            Q(is_submitted_to_target=True) | pending_visibility,
+        )
+
+    view_overrides = UserRequestPermissionOverride.objects.filter(
+        user=user,
+        permission_key="request.view",
+    )
+    denied_request_ids = list(
+        view_overrides.filter(allowed=False).values_list("request_id", flat=True)
+    )
+    allowed_request_ids = list(
+        view_overrides.filter(allowed=True).values_list("request_id", flat=True)
+    )
+
+    if not denied_request_ids and not allowed_request_ids:
+        return role_scoped_queryset
+
+    return (
+        base_queryset.filter(
+            Q(id__in=role_scoped_queryset.values("id")) | Q(id__in=allowed_request_ids)
+        )
+        .exclude(id__in=denied_request_ids)
+        .distinct()
     )
 
 
@@ -1956,12 +2043,22 @@ def can_manage_incoming_request(user, service_request):
 
 
 def can_edit_request_deadline(user, service_request):
-    if not has_permission(user, "edit_request_deadline"):
-        return False
+    has_base_permission = has_permission(user, "edit_request_deadline")
     actor_role = get_primary_role_key(user)
     if actor_role in {"super_admin", "senior"}:
-        return can_operate_submitted_request(user, service_request)
-    return can_manage_incoming_request(user, service_request)
+        fallback_allowed = has_base_permission and can_operate_submitted_request(
+            user, service_request
+        )
+    else:
+        fallback_allowed = has_base_permission and can_manage_incoming_request(
+            user, service_request
+        )
+    return can_use_request_permission(
+        user,
+        service_request,
+        "request.edit_deadline",
+        fallback_allowed,
+    )
 
 
 def get_request_company_id(service_request):
@@ -1986,7 +2083,13 @@ def is_company_scoped_manager(user):
 
 
 def can_update_request_status(user, service_request):
-    return bool(get_allowed_status_transitions(user, service_request))
+    fallback_allowed = bool(get_allowed_status_transitions(user, service_request))
+    return can_use_request_permission(
+        user,
+        service_request,
+        "request.update_status",
+        fallback_allowed,
+    )
 
 
 def can_operate_submitted_request(user, service_request):
@@ -2025,9 +2128,14 @@ def get_allowed_status_transitions(user, service_request):
         service_request.status == ServiceRequest.Status.NEW
         and not service_request.is_submitted_to_target
     ):
-        if has_permission(user, "resolve_request") and can_approve_request_from_requester_hierarchy(
-            user, service_request
-        ):
+        can_approve = can_use_request_permission(
+            user,
+            service_request,
+            "request.approve",
+            has_permission(user, "approve_request")
+            and can_approve_request_from_requester_hierarchy(user, service_request),
+        )
+        if can_approve:
             return {ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.REJECTED}
         return set()
 
@@ -2043,7 +2151,13 @@ def get_allowed_status_transitions(user, service_request):
     if not can_operate_submitted_request(user, service_request):
         return set()
 
-    if not has_permission(user, "resolve_request"):
+    can_update_status = can_use_request_permission(
+        user,
+        service_request,
+        "request.update_status",
+        has_permission(user, "resolve_request"),
+    )
+    if not can_update_status:
         return set()
 
     allowed.update(
@@ -2079,23 +2193,35 @@ def can_approve_request_from_requester_hierarchy(actor, service_request):
 
 
 def can_validate_completed_result(actor, service_request):
-    if not has_permission(actor, "approve_request"):
-        return False
-    actor_role = get_primary_role_key(actor)
-    if actor_role == "super_admin":
-        return True
-    if actor_role == "senior":
-        return bool(actor.company_id) and actor.company_id == service_request.company_id
-    if actor_role in {"manager", "team_leader"}:
-        if not actor.entity_id or not actor.entity:
-            return False
-        if actor.entity.entity_type != Entity.EntityType.PROD:
-            return False
-        return (
-            actor.company_id == service_request.company_id
-            and actor.entity_id == service_request.source_entity_id
+    has_base_approve = has_permission(actor, "approve_request")
+    if not has_base_approve:
+        return can_use_request_permission(
+            actor, service_request, "request.approve", False
         )
-    return False
+    actor_role = get_primary_role_key(actor)
+    fallback_allowed = False
+    if actor_role == "super_admin":
+        fallback_allowed = True
+    elif actor_role == "senior":
+        fallback_allowed = (
+            bool(actor.company_id) and actor.company_id == service_request.company_id
+        )
+    elif actor_role in {"manager", "team_leader"}:
+        if not actor.entity_id or not actor.entity:
+            fallback_allowed = False
+        elif actor.entity.entity_type != Entity.EntityType.PROD:
+            fallback_allowed = False
+        else:
+            fallback_allowed = (
+                actor.company_id == service_request.company_id
+                and actor.entity_id == service_request.source_entity_id
+            )
+    return can_use_request_permission(
+        actor,
+        service_request,
+        "request.approve",
+        fallback_allowed,
+    )
 
 
 def get_pending_approval_visibility_filter(user):
@@ -2134,6 +2260,18 @@ def can_reassign_target_team(user, service_request):
 
 def build_request_detail_context(request, service_request):
     allowed_status_transitions = sorted(get_allowed_status_transitions(request.user, service_request))
+    can_view_discussion = can_use_request_permission(
+        request.user,
+        service_request,
+        "request.view_discussion",
+        has_permission(request.user, "view_request_discussion"),
+    )
+    can_comment_request = can_use_request_permission(
+        request.user,
+        service_request,
+        "request.comment",
+        has_permission(request.user, "comment_request"),
+    )
     return {
         "request": request,
         "can_manage_incoming_request": bool(allowed_status_transitions),
@@ -2141,7 +2279,8 @@ def build_request_detail_context(request, service_request):
         "allowed_status_transitions": allowed_status_transitions,
         "can_assign_request": can_assign_request(request.user, service_request),
         "can_reassign_target_team": can_reassign_target_team(request.user, service_request),
-        "can_view_request_discussion": has_permission(request.user, "view_request_discussion"),
+        "can_view_request_discussion": can_view_discussion,
+        "can_comment_request": can_comment_request,
         "available_reassignment_targets": get_available_reassignment_targets(
             request.user, service_request
         ),
@@ -2306,7 +2445,16 @@ def apply_scope_filters(queryset, user, scope):
     # submitted to target teams. This also covers the default "/requests"
     # case where scope is empty.
     if normalized_scope in {"", "team", "entity", "company", "team-all", "all"}:
-        return queryset.filter(is_submitted_to_target=True)
+        explicitly_allowed_ids = list(
+            UserRequestPermissionOverride.objects.filter(
+                user=user,
+                permission_key="request.view",
+                allowed=True,
+            ).values_list("request_id", flat=True)
+        )
+        return queryset.filter(
+            Q(is_submitted_to_target=True) | Q(id__in=explicitly_allowed_ids)
+        )
     return queryset
 
 
@@ -2326,17 +2474,18 @@ def can_access_pending_scope(user):
 
 
 def can_assign_request(user, service_request):
-    if not has_permission(user, "assign_request"):
-        return False
-    if not service_request.is_submitted_to_target:
-        return False
-    if not can_operate_submitted_request(user, service_request):
-        return False
+    fallback_allowed = has_permission(user, "assign_request")
+    fallback_allowed = fallback_allowed and service_request.is_submitted_to_target
+    fallback_allowed = fallback_allowed and can_operate_submitted_request(
+        user, service_request
+    )
     actor_role = get_primary_role_key(user)
     if actor_role in {"manager", "team_leader"}:
         if not user.entity_id or user.entity.entity_type == Entity.EntityType.PROD:
-            return False
-    return True
+            fallback_allowed = False
+    return can_use_request_permission(
+        user, service_request, "request.assign", fallback_allowed
+    )
 
 
 def filter_recipients_by_request_visibility(service_request, recipients_queryset):

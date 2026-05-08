@@ -22,6 +22,9 @@ from .admin_views import (
     AdminStatusTrackingView,
 )
 from .views import (
+    AdminUserAccessPermissionControlView,
+    AdminRequestPermissionControlView,
+    RequestPermissionAiAssistantView,
     GlobalSearchView,
     ManageableUserCrudView,
     ManageableUserExportView,
@@ -80,5 +83,20 @@ urlpatterns = [
         "users/<int:user_id>/permissions/",
         ManageUserPermissionOverrideView.as_view(),
         name="manage-user-permissions",
+    ),
+    path(
+        "permission-control/user-access/<int:user_id>/",
+        AdminUserAccessPermissionControlView.as_view(),
+        name="admin-user-access-permission-control",
+    ),
+    path(
+        "permission-control/request-permissions/<int:user_id>/",
+        AdminRequestPermissionControlView.as_view(),
+        name="admin-request-permission-control",
+    ),
+    path(
+        "permission-control/request-permissions/ai-assistant/",
+        RequestPermissionAiAssistantView.as_view(),
+        name="admin-request-permission-ai-assistant",
     ),
 ]
