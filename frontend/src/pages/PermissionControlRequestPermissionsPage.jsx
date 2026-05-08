@@ -249,7 +249,8 @@ function UserListCard({
       const matchesSearch = !searchValue
         || String(item.username || '').toLowerCase().includes(searchValue)
         || String(item.email || '').toLowerCase().includes(searchValue)
-      const matchesRole = !role || String(item.role_key || '').toLowerCase() === role.toLowerCase()
+      const itemRole = String(item.role || item.role_key || '').toLowerCase()
+      const matchesRole = !role || itemRole === role.toLowerCase()
       return matchesSearch && matchesRole
     })
   }, [users, search, role])
@@ -259,7 +260,7 @@ function UserListCard({
   const paged = filtered.slice((safePage - 1) * USERS_PER_PAGE, safePage * USERS_PER_PAGE)
 
   const roleOptions = useMemo(
-    () => Array.from(new Set(users.map((item) => String(item.role_key || '').toLowerCase()).filter(Boolean))).sort(),
+    () => Array.from(new Set(users.map((item) => String(item.role || item.role_key || '').toLowerCase()).filter(Boolean))).sort(),
     [users],
   )
 
@@ -324,7 +325,7 @@ function UserListCard({
                   <div className="truncate text-sm font-medium text-foreground">{item.username}</div>
                   <div className="truncate text-xs text-muted-foreground">{item.email || '-'}</div>
                   <div className="mt-1 inline-flex items-center rounded-md border border-border bg-muted/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    {item.role_key || 'user'}
+                    {item.role || item.role_key || 'user'}
                   </div>
                 </div>
               </div>
@@ -859,7 +860,7 @@ function PermissionControlRequestPermissionsPage() {
                 >
                   <span className="truncate text-left">
                     {selectedUser
-                      ? `${selectedUser.username} (${selectedUser.role_key || 'user'})`
+                      ? `${selectedUser.username} (${selectedUser.role || selectedUser.role_key || 'user'})`
                       : 'Select User'}
                   </span>
                   <span className="text-muted-foreground">▾</span>
