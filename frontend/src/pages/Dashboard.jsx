@@ -392,15 +392,26 @@ function Dashboard() {
         { ...row, label: formatShortDate(new Date(row.key)) || row.label },
       ]),
     )
-    requestState.items.forEach((item) => {
-      const updated = toDate(item.updated_at || item.updatedAt || item.created_at || item.createdAt)
-      if (!updated) return
-      const key = updated.toISOString().slice(0, 10)
-      if (!map.has(key)) return
-      map.get(key).count += 1
-    })
+    const queueActivity = Array.isArray(dashboardState.data?.queue_activity)
+      ? dashboardState.data.queue_activity
+      : []
+    if (queueActivity.length) {
+      queueActivity.forEach((item) => {
+        const key = String(item.day || '').slice(0, 10)
+        if (!map.has(key)) return
+        map.get(key).count += Number(item.created || 0)
+      })
+    } else {
+      requestState.items.forEach((item) => {
+        const created = toDate(item.created_at || item.createdAt)
+        if (!created) return
+        const key = created.toISOString().slice(0, 10)
+        if (!map.has(key)) return
+        map.get(key).count += 1
+      })
+    }
     return [...map.values()]
-  }, [isExecutiveUnifiedRole, requestState.items, trendRange])
+  }, [dashboardState.data?.queue_activity, isExecutiveUnifiedRole, requestState.items, trendRange])
   const superAdminLifecycleRows = useMemo(() => {
     if (!isExecutiveUnifiedRole) return []
     return STATUS_ORDER.map((status) => {

@@ -169,6 +169,8 @@ function StatusStepper({ currentStatus, onSelectStatus, enabledStatuses = new Se
 function StatusNoteModal({
   open,
   targetStatus,
+  rejectMode,
+  rejectionReason,
   note,
   evidenceLink,
   evidenceAttachment,
@@ -178,6 +180,7 @@ function StatusNoteModal({
   error,
   loading,
   onChangeNote,
+  onChangeRejectionReason,
   onChangeEvidenceLink,
   onChangeEvidenceAttachment,
   onChangeDeadlineDate,
@@ -193,18 +196,36 @@ function StatusNoteModal({
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status update</p>
           <h3 className="mt-1 text-lg font-extrabold text-foreground">Move request to {statusLabelMap[targetStatus]}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {required ? 'Resolution note is required for this terminal status.' : 'Add an optional note for this transition.'}
+            {rejectMode ? 'Why are you sending this back?' : (required ? 'Resolution note is required for this terminal status.' : 'Add an optional note for this transition.')}
           </p>
         </div>
         <div className="space-y-3 px-6 py-5">
+          {rejectMode ? (
+            <>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Reason *
+              </label>
+              <Select
+                value={rejectionReason}
+                onChange={(event) => onChangeRejectionReason(event.target.value)}
+              >
+                <option value="">Select reason...</option>
+                <option value="Missing evidence">Missing evidence</option>
+                <option value="Not resolved">Not resolved</option>
+                <option value="Wrong target">Wrong target</option>
+                <option value="Incomplete work">Incomplete work</option>
+                <option value="Other">Other</option>
+              </Select>
+            </>
+          ) : null}
           <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {required ? 'Resolution note *' : 'Note'}
+            {rejectMode ? 'Note' : (required ? 'Resolution note *' : 'Note')}
           </label>
           <textarea
             value={note}
             onChange={(event) => onChangeNote(event.target.value)}
             className="w-full min-h-[110px] rounded-lg border border-input bg-card p-3 text-sm font-medium focus:ring-1 focus:ring-ring focus:outline-none placeholder:text-muted-foreground"
-            placeholder={required ? 'Write the resolution note...' : 'Optional note...'}
+            placeholder={rejectMode ? 'Add a short note for the support/dev team...' : (required ? 'Write the resolution note...' : 'Optional note...')}
           />
           {targetStatus === 'COMPLETED' ? (
             <>
@@ -404,6 +425,8 @@ function RequestDetailsPage() {
   const [assignmentForm, setAssignmentForm] = useState({ userId: '', note: '' })
   const [actionState, setActionState] = useState({ busy: false, error: '' })
   const [assignTlDialogOpen, setAssignTlDialogOpen] = useState(false)
+  const [reassignTeamDialogOpen, setReassignTeamDialogOpen] = useState(false)
+  const [reassignTeamForm, setReassignTeamForm] = useState({ targetTeamId: '', note: '' })
   const [lifecycleMenuOpen, setLifecycleMenuOpen] = useState(false)
   const [editCommentId, setEditCommentId] = useState(null)
   const [editCommentText, setEditCommentText] = useState('')
@@ -413,12 +436,14 @@ function RequestDetailsPage() {
   const [statusDialog, setStatusDialog] = useState({
     open: false,
     targetStatus: '',
+    rejectionReason: '',
     note: '',
     evidenceLink: '',
     evidenceAttachment: null,
     deadlineDate: '',
     requireDeadline: false,
     required: false,
+    rejectMode: false,
     error: '',
   })
   const [deadlineForm, setDeadlineForm] = useState({ value: '', saving: false, error: '' })
@@ -496,31 +521,14 @@ function RequestDetailsPage() {
   const canEditDeadline = Boolean(request?.can_edit_deadline)
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader && isSupportOrDevEntity
+  const canAssignToMember = isTeamLeader && isSupportOrDevEntity && !request?.current_assignee && request?.can_assign_to_me
+  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team) && 
+    (isSuperAdmin || ((isManager || isSenior) && isSupportOrDevEntity))
+  const currentTargetTeamLeaderId = Number(
+    request?.target_team_leader?.id || request?.target_team_leader || 0
+  )
   const potentialAssignees = request?.potential_assignees || []
-  const assignableUsers = useMemo(() => {
-    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-    return potentialAssignees.filter((candidate) => {
-      const keys = new Set()
-      ;(candidate?.role_keys || []).forEach((key) => keys.add(normalize(key)))
-      ;(candidate?.roles || []).forEach((role) => {
-        keys.add(normalize(role?.key))
-        keys.add(normalize(role?.name))
-      })
-      keys.add(normalize(candidate?.role))
-      keys.add(normalize(candidate?.role_key))
-      keys.add(normalize(candidate?.role_name))
-      return keys.has('team_leader') || keys.has('teamleader')
-    })
-  }, [potentialAssignees])
-  const isKnownSuperAdminUser = String(user?.username || '').toLowerCase() === 'superadmin'
-  const canManagerAssignTl = !request?.current_assignee
-    && assignableUsers.length > 0
-    && (
-      isKnownSuperAdminUser
-      || isSuperAdmin
-      || ((isManager || isSenior) && isSupportOrDevEntity)
-    )
-  const assignmentActions = (canAssignToMe || canManagerAssignTl) ? (
+  const assignmentActions = (canAssignToMe || canAssignToMember || canReassignTargetTeam) ? (
     <div className="flex items-center gap-2">
       {canAssignToMe ? (
         <Button
@@ -531,10 +539,10 @@ function RequestDetailsPage() {
           disabled={actionState.busy}
         >
           <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-          Assign To Me
+          Take
         </Button>
       ) : null}
-      {canManagerAssignTl ? (
+      {canAssignToMember ? (
         <Button
           variant="outline"
           size="sm"
@@ -543,7 +551,19 @@ function RequestDetailsPage() {
           disabled={actionState.busy}
         >
           <Users className="h-3.5 w-3.5 mr-1.5" />
-          Assign TL
+          Assign
+        </Button>
+      ) : null}
+      {canReassignTargetTeam ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 px-3 text-[10px] uppercase tracking-wider font-extrabold border border-ink/10"
+          onClick={() => setReassignTeamDialogOpen(true)}
+          disabled={actionState.busy}
+        >
+          <Building2 className="h-3.5 w-3.5 mr-1.5" />
+          Assign to Team
         </Button>
       ) : null}
     </div>
@@ -803,16 +823,19 @@ function RequestDetailsPage() {
     if (!status || status === request?.status) return
     setLifecycleMenuOpen(false)
     const required = terminalStatuses.has(status)
+    const rejectMode = request?.status === 'COMPLETED' && status === 'IN_PROGRESS'
     const requireDeadline = status === 'ACCEPTED' && hasDeadlineEditAccess
     setStatusDialog({
       open: true,
       targetStatus: status,
+      rejectionReason: '',
       note: '',
       evidenceLink: '',
       evidenceAttachment: null,
       deadlineDate: request?.deadline_date || '',
       requireDeadline,
-      required,
+      required: rejectMode ? false : required,
+      rejectMode,
       error: '',
     })
   }
@@ -822,18 +845,34 @@ function RequestDetailsPage() {
     setStatusDialog({
       open: false,
       targetStatus: '',
+      rejectionReason: '',
       note: '',
       evidenceLink: '',
       evidenceAttachment: null,
       deadlineDate: '',
       requireDeadline: false,
       required: false,
+      rejectMode: false,
       error: '',
     })
   }
 
   async function confirmStatusChange() {
     const note = statusDialog.note.trim()
+    if (statusDialog.rejectMode && !statusDialog.rejectionReason) {
+      setStatusDialog((current) => ({
+        ...current,
+        error: 'Reason is required.',
+      }))
+      return
+    }
+    if (statusDialog.rejectMode && statusDialog.rejectionReason === 'Other' && !note) {
+      setStatusDialog((current) => ({
+        ...current,
+        error: 'Add a short note when using Other.',
+      }))
+      return
+    }
     if (statusDialog.required && !note) {
       setStatusDialog((current) => ({
         ...current,
@@ -870,6 +909,10 @@ function RequestDetailsPage() {
       }
     } else {
       const payload = { status: statusDialog.targetStatus, note }
+      if (statusDialog.rejectMode) {
+        payload.rejection_reason = statusDialog.rejectionReason
+        payload.rejection_note = note
+      }
       if (statusDialog.deadlineDate) payload.deadline_date = statusDialog.deadlineDate
       const result = await handleAction(api.post(`/requests/${requestId}/status/`, payload))
       if (!result?.ok) {
@@ -884,12 +927,14 @@ function RequestDetailsPage() {
     setStatusDialog({
       open: false,
       targetStatus: '',
+      rejectionReason: '',
       note: '',
       evidenceLink: '',
       evidenceAttachment: null,
       deadlineDate: '',
       requireDeadline: false,
       required: false,
+      rejectMode: false,
       error: '',
     })
   }
@@ -908,13 +953,24 @@ function RequestDetailsPage() {
     setAssignTlDialogOpen(false)
   }
 
+  async function handleReassignTargetTeam() {
+    if (!reassignTeamForm.targetTeamId) return
+    await handleAction(api.post(`/requests/${requestId}/reassign/`, {
+      target_team: reassignTeamForm.targetTeamId,
+      note: reassignTeamForm.note || 'Assigned to team'
+    }))
+    setReassignTeamDialogOpen(false)
+    setReassignTeamForm({ targetTeamId: '', note: '' })
+  }
+
   async function loadAiSummary() {
     setAiSummary({ loading: true, error: '', data: null })
     try {
       const response = await api.post(`/requests/${requestId}/ai-summary/`)
       setAiSummary({ loading: false, error: '', data: response.data })
     } catch (err) {
-      setAiSummary({ loading: false, error: 'AI summarization failed.', data: null })
+      const errorMsg = err.response?.data?.detail || 'AI summarization failed. Please try again.'
+      setAiSummary({ loading: false, error: errorMsg, data: null })
     }
   }
 
@@ -991,8 +1047,8 @@ function RequestDetailsPage() {
       </button>
 
       {/* Header row */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-2">
+      <header className="flex items-start justify-between gap-6">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <span>Request</span>
             <span className="text-muted-foreground/60">•</span>
@@ -1021,7 +1077,7 @@ function RequestDetailsPage() {
             </span>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-3">
+        <div className="flex flex-col items-end gap-3 shrink-0 w-56">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-primary border border-ink/10 shadow-none px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-primary-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground/80" />
             {statusLabelMap[request.status]}
@@ -1042,6 +1098,15 @@ function RequestDetailsPage() {
           </dl>
         </div>
       </header>
+
+      {request.was_rejected ? (
+        <section className="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+          <div className="text-sm font-extrabold text-foreground">Sent back by {request.rejected_by_name || 'Requester reviewer'}</div>
+          <div className="mt-1 text-sm text-muted-foreground">Reason: {request.rejection_reason || 'No reason provided'}</div>
+          {request.rejection_note ? <div className="mt-1 text-sm text-muted-foreground">Note: {request.rejection_note}</div> : null}
+          {request.rejected_at ? <div className="mt-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Date: {formatDateTime(request.rejected_at)}</div> : null}
+        </section>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-12">
         {/* Left column */}
@@ -1544,7 +1609,10 @@ function RequestDetailsPage() {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Target</p>
                     <p className="truncate text-xs font-extrabold text-foreground">{request.target_entity_name || 'N/A'}</p>
                     <p className="truncate text-[10px] font-bold text-muted-foreground mt-1 uppercase tracking-wide">
-                      {request.assignee_name || 'Not assigned'} • Owner
+                      {request.target_team_leader_name || 'Unassigned'} • Team Owner
+                    </p>
+                    <p className="truncate text-[10px] font-bold text-muted-foreground mt-1 uppercase tracking-wide">
+                      {request.assignee_name || 'Not assigned'} • Assignee
                     </p>
                   </div>
                 </div>
@@ -1558,6 +1626,8 @@ function RequestDetailsPage() {
       <StatusNoteModal
         open={statusDialog.open}
         targetStatus={statusDialog.targetStatus}
+        rejectMode={statusDialog.rejectMode}
+        rejectionReason={statusDialog.rejectionReason}
         note={statusDialog.note}
         evidenceLink={statusDialog.evidenceLink}
         evidenceAttachment={statusDialog.evidenceAttachment}
@@ -1566,6 +1636,9 @@ function RequestDetailsPage() {
         required={statusDialog.required}
         error={statusDialog.error}
         loading={actionState.busy}
+        onChangeRejectionReason={(value) =>
+          setStatusDialog((current) => ({ ...current, rejectionReason: value, error: '' }))
+        }
         onChangeNote={(value) =>
           setStatusDialog((current) => ({ ...current, note: value, error: '' }))
         }
@@ -1598,25 +1671,31 @@ function RequestDetailsPage() {
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4">
           <section className="w-full max-w-md rounded-xl border border-ink/10 bg-card shadow-xl">
             <div className="border-b border-border px-5 py-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Team Leader Delegation</p>
-              <h3 className="mt-1 text-base font-extrabold text-foreground">Assign Request To Team Leader</h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Team Assignment
+              </p>
+              <h3 className="mt-1 text-base font-extrabold text-foreground">
+                Assign Request To Team Member
+              </h3>
             </div>
             <div className="space-y-3 px-5 py-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Team Leader</label>
+                <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                  Team Member
+                </label>
                 <Select
                   value={assignmentForm.userId}
                   onChange={(e) => setAssignmentForm((curr) => ({ ...curr, userId: e.target.value }))}
                   className="w-full font-bold border border-ink/10 shadow-sm bg-card"
                 >
-                  <option value="">Select team leader...</option>
-                  {assignableUsers.map((u) => (
+                  <option value="">Select team member...</option>
+                  {potentialAssignees.map((u) => (
                     <option key={u.id} value={u.id}>{u.username}</option>
                   ))}
                 </Select>
-                {assignableUsers.length === 0 ? (
+                {potentialAssignees.length === 0 ? (
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                    No assignable team leaders available for this request.
+                    No team members available for this request.
                   </p>
                 ) : null}
               </div>
@@ -1631,7 +1710,7 @@ function RequestDetailsPage() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setAssignTlDialogOpen(false)}
+                onClick={() => { setAssignTlDialogOpen(false); setAssignmentForm({ userId: '', note: '' }); }}
                 disabled={actionState.busy}
               >
                 Cancel
@@ -1641,6 +1720,63 @@ function RequestDetailsPage() {
                 size="sm"
                 onClick={handleAssignToUser}
                 disabled={!assignmentForm.userId || actionState.busy}
+              >
+                Save
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {reassignTeamDialogOpen ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4">
+          <section className="w-full max-w-md rounded-xl border border-ink/10 bg-card shadow-xl">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Team Reassignment
+              </p>
+              <h3 className="mt-1 text-base font-extrabold text-foreground">
+                Assign Request To Team
+              </h3>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                  Target Team
+                </label>
+                <Select
+                  value={reassignTeamForm.targetTeamId}
+                  onChange={(e) => setReassignTeamForm((curr) => ({ ...curr, targetTeamId: e.target.value }))}
+                  className="w-full font-bold border border-ink/10 shadow-sm bg-card"
+                >
+                  <option value="">Select team...</option>
+                  {(request?.available_reassignment_targets || []).map((team) => (
+                    <option key={team.id} value={team.id} disabled={Number(team.id) === currentTargetTeamLeaderId}>
+                      {team.label || `${team.team_leader_name}'s Team - ${team.entity_name || 'Unknown Entity'}`}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <textarea
+                placeholder="Assignment note..."
+                className="w-full h-20 rounded-md border border-ink/10 bg-card p-3 text-xs font-medium focus:ring-2 focus:ring-primary focus:outline-none"
+                value={reassignTeamForm.note}
+                onChange={(e) => setReassignTeamForm((curr) => ({ ...curr, note: e.target.value }))}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => { setReassignTeamDialogOpen(false); setReassignTeamForm({ targetTeamId: '', note: '' }); }}
+                disabled={actionState.busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleReassignTargetTeam}
+                disabled={!reassignTeamForm.targetTeamId || actionState.busy}
               >
                 Save
               </Button>

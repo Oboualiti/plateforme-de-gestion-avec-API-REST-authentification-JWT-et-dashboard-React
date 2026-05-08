@@ -136,6 +136,13 @@ class ServiceRequest(models.Model):
         blank=True,
         related_name="service_requests_assigned",
     )
+    target_team_leader = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_requests_target_team_owned",
+    )
     rejection_reason = models.TextField(blank=True)
     resolution_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -148,16 +155,23 @@ class ServiceRequest(models.Model):
         indexes = [
             models.Index(fields=["status"], name="req_status_idx"),
             models.Index(fields=["created_at"], name="req_created_at_idx"),
+            models.Index(fields=["completed_at"], name="req_completed_at_idx"),
+            models.Index(fields=["closed_at"], name="req_closed_at_idx"),
             models.Index(fields=["deadline_date"], name="req_deadline_idx"),
             models.Index(fields=["priority"], name="req_priority_idx"),
             models.Index(fields=["status", "created_at"], name="req_status_created_idx"),
+            models.Index(fields=["status", "completed_at"], name="req_status_completed_idx"),
+            models.Index(fields=["status", "closed_at"], name="req_status_closed_idx"),
             models.Index(fields=["company", "status"], name="req_company_status_idx"),
             models.Index(fields=["source_entity", "status"], name="req_source_status_idx"),
             models.Index(fields=["target_entity", "status"], name="req_target_status_idx"),
             models.Index(fields=["current_assignee", "status"], name="req_assignee_status_idx"),
+            models.Index(fields=["current_assignee", "completed_at"], name="req_assignee_completed_idx"),
             models.Index(fields=["requester_user", "status"], name="req_requester_status_idx"),
             models.Index(fields=["company", "created_at"], name="req_company_created_idx"),
+            models.Index(fields=["target_entity", "completed_at"], name="req_target_completed_idx"),
             models.Index(fields=["target_entity", "created_at"], name="req_target_created_idx"),
+            models.Index(fields=["target_team_leader"], name="req_target_tl_idx"),
             models.Index(
                 fields=["requester_user", "created_at"],
                 name="req_requester_created_idx",

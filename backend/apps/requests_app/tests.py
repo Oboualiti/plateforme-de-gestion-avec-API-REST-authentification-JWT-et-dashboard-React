@@ -1,5 +1,6 @@
 from django.test import TestCase
 from datetime import date
+from django.utils import timezone
 
 # Create your tests here.
 from django.core.management import call_command
@@ -10,7 +11,14 @@ from rest_framework.test import APITestCase
 from apps.companies.models import Company
 from apps.entities.models import Entity
 from apps.permissions_app.models import AppPermission, UserPermissionOverride, UserRole
-from apps.requests_app.models import MainBranch, OperationalUnit, ServiceRequest
+from apps.requests_app.models import (
+    MainBranch,
+    OperationalUnit,
+    RequestAssignmentHistory,
+    RequestStatusHistory,
+    RequestTeamReassignmentHistory,
+    ServiceRequest,
+)
 from apps.roles.models import Role
 from apps.users.models import User
 
@@ -65,6 +73,11 @@ class RequestPermissionWorkflowTests(APITestCase):
             "manager",
             entity=self.other_prod_entity,
         )
+        self.requester_manager = self._create_user_with_role(
+            "manager1",
+            "manager",
+            entity=self.prod_entity,
+        )
         self.super_admin = self._create_user_with_role(
             "super_admin1",
             "super_admin",
@@ -77,6 +90,11 @@ class RequestPermissionWorkflowTests(APITestCase):
         )
         self.support_team_leader = self._create_user_with_role(
             "tl_support",
+            "team_leader",
+            entity=self.support_entity,
+        )
+        self.support_team_leader_peer = self._create_user_with_role(
+            "tl_support_peer",
             "team_leader",
             entity=self.support_entity,
         )
@@ -95,6 +113,13 @@ class RequestPermissionWorkflowTests(APITestCase):
             "manager",
             entity=self.support_entity,
         )
+        self.support_resolver = self._create_user_with_role(
+            "support_user",
+            "user",
+            entity=self.support_entity,
+        )
+        self.support_resolver.team_leader = self.support_team_leader
+        self.support_resolver.save(update_fields=["team_leader"])
 
         self.pending_request = ServiceRequest.objects.create(
             request_number="REQ-UNIT-0001",
@@ -124,6 +149,42 @@ class RequestPermissionWorkflowTests(APITestCase):
             status=ServiceRequest.Status.NEW,
             is_submitted_to_target=True,
         )
+
+    def _completed_request(self, request_number="REQ-UNIT-COMPLETE"):
+        req = ServiceRequest.objects.create(
+            request_number=request_number,
+            title="Completed request",
+            description="Waiting for requester approval",
+            category="SCRIPT",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.COMPLETED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            accepted_at=timezone.now(),
+        )
+        RequestStatusHistory.objects.create(
+            request=req,
+            old_status=ServiceRequest.Status.IN_PROGRESS,
+            new_status=ServiceRequest.Status.COMPLETED,
+            changed_by=self.support_resolver,
+            note="Done",
+        )
+        return req
+
+    def _credits_row_for(self, actor, req):
+        self.client.force_authenticate(user=actor)
+        response = self.client.get(reverse("credits-solves-list"), format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data.get("solves", [])
+        row = next((item for item in rows if item.get("requestId") == req.id), None)
+        self.assertIsNotNone(row)
+        return row
 
     def _create_user_with_role(self, username, role_key, entity):
         user = User.objects.create_user(
@@ -275,6 +336,100 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertEqual(self.submitted_request.status, ServiceRequest.Status.ACCEPTED)
         self.assertEqual(self.submitted_request.deadline_date.isoformat(), "2026-05-01")
 
+    def test_completed_request_returns_zero_earned_and_preview_credits(self):
+        req = self._completed_request()
+        row = self._credits_row_for(self.requester, req)
+        self.assertEqual(row.get("requestStatus"), ServiceRequest.Status.COMPLETED)
+        self.assertEqual(row.get("credits"), 0)
+        self.assertFalse(row.get("isEarned"))
+        self.assertGreater(row.get("previewCredits"), 0)
+
+    def test_closed_request_returns_earned_credits(self):
+        req = self._completed_request()
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["status", "closed_at"])
+
+        row = self._credits_row_for(self.requester, req)
+        self.assertEqual(row.get("requestStatus"), ServiceRequest.Status.CLOSED)
+        self.assertTrue(row.get("isEarned"))
+        self.assertEqual(row.get("credits"), row.get("previewCredits"))
+        self.assertGreater(row.get("credits"), 0)
+
+    def test_requester_chain_can_accept_completed_result(self):
+        approvers = [self.requester, self.team_leader, self.requester_manager, self.senior_user, self.super_admin]
+        for index, approver in enumerate(approvers):
+            req = self._completed_request(f"REQ-UNIT-APPROVE-{index}")
+            self.client.force_authenticate(user=approver)
+            response = self.client.post(
+                reverse("requests-status", kwargs={"request_id": req.id}),
+                {"status": ServiceRequest.Status.CLOSED, "note": "Approved"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            req.refresh_from_db()
+            self.assertEqual(req.status, ServiceRequest.Status.CLOSED)
+            self.assertIsNotNone(req.closed_at)
+
+    def test_support_side_cannot_accept_completed_result(self):
+        req = self._completed_request()
+        for actor in [self.support_resolver, self.support_team_leader, self.support_manager]:
+            self.client.force_authenticate(user=actor)
+            response = self.client.post(
+                reverse("requests-status", kwargs={"request_id": req.id}),
+                {"status": ServiceRequest.Status.CLOSED, "note": "Try close"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            req.refresh_from_db()
+            self.assertEqual(req.status, ServiceRequest.Status.COMPLETED)
+
+    def test_requester_chain_can_reject_completed_result(self):
+        req = self._completed_request()
+        self.client.force_authenticate(user=self.team_leader)
+        response = self.client.post(
+            reverse("requests-status", kwargs={"request_id": req.id}),
+            {
+                "status": ServiceRequest.Status.IN_PROGRESS,
+                "rejection_reason": "Missing evidence",
+                "rejection_note": "Please attach screenshot or logs.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        req.refresh_from_db()
+        self.assertEqual(req.status, ServiceRequest.Status.IN_PROGRESS)
+        self.assertIsNone(req.completed_at)
+        self.assertIsNone(req.closed_at)
+        self.assertEqual(req.rejection_reason, "Missing evidence")
+        self.assertEqual(req.resolution_note, "Please attach screenshot or logs.")
+
+    def test_support_side_credits_flags_are_false_for_completed_result(self):
+        req = self._completed_request()
+        row = self._credits_row_for(self.support_manager, req)
+        self.assertFalse(row.get("canResultApprove"))
+        self.assertFalse(row.get("canResultReject"))
+
+    def test_rejected_request_is_visible_in_credits_rows_with_reason(self):
+        req = self._completed_request("REQ-UNIT-REJECT-VISIBLE")
+        self.client.force_authenticate(user=self.team_leader)
+        response = self.client.post(
+            reverse("requests-status", kwargs={"request_id": req.id}),
+            {
+                "status": ServiceRequest.Status.IN_PROGRESS,
+                "rejection_reason": "Incomplete work",
+                "rejection_note": "Please verify the final behavior.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        support_row = self._credits_row_for(self.support_manager, req)
+        self.assertTrue(support_row.get("wasRejected"))
+        self.assertEqual(support_row.get("rejectionReason"), "Incomplete work")
+        self.assertEqual(support_row.get("rejectionNote"), "Please verify the final behavior.")
+        self.assertEqual(support_row.get("requestStatus"), ServiceRequest.Status.IN_PROGRESS)
+
     def test_only_target_entity_users_can_update_deadline(self):
         url = reverse("requests-deadline", kwargs={"request_id": self.submitted_request.id})
 
@@ -314,3 +469,78 @@ class RequestPermissionWorkflowTests(APITestCase):
             format="json",
         )
         self.assertEqual(super_admin_response.status_code, status.HTTP_200_OK)
+
+    def test_manager_reassign_to_tl_owned_team_sets_team_owner_and_clears_assignee(self):
+        self.submitted_request.current_assignee = self.support_resolver
+        self.submitted_request.save(update_fields=["current_assignee"])
+        assignment_count_before = RequestAssignmentHistory.objects.filter(
+            request=self.submitted_request
+        ).count()
+
+        self.client.force_authenticate(user=self.support_manager)
+        response = self.client.post(
+            reverse("requests-reassign", kwargs={"request_id": self.submitted_request.id}),
+            {"target_team": self.support_team_leader.id, "note": "Assigned to TL team"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.submitted_request.refresh_from_db()
+        self.assertEqual(self.submitted_request.target_team_leader_id, self.support_team_leader.id)
+        self.assertEqual(self.submitted_request.target_entity_id, self.support_entity.id)
+        self.assertIsNone(self.submitted_request.current_assignee_id)
+        self.assertEqual(
+            RequestAssignmentHistory.objects.filter(request=self.submitted_request).count(),
+            assignment_count_before,
+        )
+        self.assertTrue(
+            RequestTeamReassignmentHistory.objects.filter(
+                request=self.submitted_request,
+                new_target_entity_id=self.support_entity.id,
+            ).exists()
+        )
+
+    def test_tl_visibility_prefers_target_team_owner_with_legacy_entity_fallback(self):
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader)
+        own_team_response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(own_team_response.status_code, status.HTTP_200_OK)
+
+        self.client.force_authenticate(user=self.support_team_leader_peer)
+        peer_response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(peer_response.status_code, status.HTTP_404_NOT_FOUND)
+
+        self.submitted_request.target_team_leader = None
+        self.submitted_request.save(update_fields=["target_team_leader"])
+        legacy_response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(legacy_response.status_code, status.HTTP_200_OK)
+
+    def test_tl_potential_assignees_only_include_team_members(self):
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader)
+        response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        assignees = response.data.get("potential_assignees", [])
+        assignee_ids = {item.get("id") for item in assignees}
+        self.assertIn(self.support_resolver.id, assignee_ids)
+        self.assertNotIn(self.support_team_leader.id, assignee_ids)
+        self.assertNotIn(self.support_team_leader_peer.id, assignee_ids)

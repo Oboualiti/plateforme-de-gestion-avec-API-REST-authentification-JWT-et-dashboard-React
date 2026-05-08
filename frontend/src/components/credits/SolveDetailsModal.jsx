@@ -1,4 +1,4 @@
-import { X, Download, ExternalLink, FileText, FolderOpen, File, Link2, Trash2 } from "lucide-react";
+import { X, Download, ExternalLink, FileText, FolderOpen, File, Link2, Trash2, CheckCircle2 } from "lucide-react";
 import { Avatar } from "../Avatar";
 import { Button } from "../ui/button";
 import { useState, useEffect, useRef } from "react";
@@ -32,6 +32,9 @@ export default function SolveDetailsModal({
   onUpdateNote,
   onAddEvidence,
   onRemoveEvidence,
+  onApproveResult,
+  onRejectResult,
+  statusActionBusyId = null,
   onEvidenceUpdated,
   initialFocus,
 }) {
@@ -46,6 +49,19 @@ export default function SolveDetailsModal({
     return true;
   })();
   const openUrl = solve.requestUrl || (solve.requestId ? `/requests/${solve.requestId}` : null);
+  const status = String(solve.requestStatus || solve.status || "").toUpperCase();
+  const isClosed = status === "CLOSED" || solve.isEarned === true;
+  const isCompleted = status === "COMPLETED";
+  const earnedCredits = isClosed ? Number(solve.credits || 0) : 0;
+  const previewCredits = Number(solve.previewCredits ?? solve.creditBreakdown?.total ?? solve.credits ?? 0);
+  const canApproveResult = Boolean(solve?.canResultApprove);
+  const canRejectResult = Boolean(solve?.canResultReject);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [rejectError, setRejectError] = useState("");
+  const [statusError, setStatusError] = useState("");
+  const [statusSubmitting, setStatusSubmitting] = useState(null);
   
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteValue, setNoteValue] = useState(solve.completionNote || solve.note || "");
@@ -148,6 +164,47 @@ export default function SolveDetailsModal({
     }
   }
 
+  async function submitReject() {
+    if (!rejectReason) {
+      setRejectError("Reason is required.");
+      return;
+    }
+    if (rejectReason === "Other" && !rejectNote.trim()) {
+      setRejectError("Add a short note when using Other.");
+      return;
+    }
+    setRejectError("");
+    setStatusSubmitting("reject");
+    try {
+      await onRejectResult?.(solve, {
+        rejectionReason: rejectReason,
+        rejectionNote: rejectNote.trim(),
+      });
+      setShowRejectDialog(false);
+      setRejectReason("");
+      setRejectNote("");
+      setStatusError("");
+      onClose?.();
+    } catch (error) {
+      setRejectError(`Could not send request back: ${error?.message || "Please try again."}`);
+    } finally {
+      setStatusSubmitting(null);
+    }
+  }
+
+  async function handleApprove() {
+    setStatusError("");
+    setStatusSubmitting("approve");
+    try {
+      await onApproveResult?.(solve);
+      onClose?.();
+    } catch (error) {
+      setStatusError(error?.message || "Could not approve request result. Please try again.");
+    } finally {
+      setStatusSubmitting(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-2xl rounded-lg border border-ink bg-background shadow-lg max-h-[90vh] flex flex-col">
@@ -188,7 +245,7 @@ export default function SolveDetailsModal({
                 </div>
                 <div>
                   <span className="text-muted-foreground">Credits: </span>
-                  <span className="font-medium">{solve.credits || 0}</span>
+                  <span className="font-medium">{earnedCredits}</span>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Priority: </span>
@@ -235,6 +292,15 @@ export default function SolveDetailsModal({
               </div>
             )}
           </div>
+
+          {solve.wasRejected ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              <div className="font-semibold">Sent back by {solve.rejectedByName || "Requester reviewer"}</div>
+              <div className="mt-1 text-muted-foreground">Reason: {solve.rejectionReason || "No reason provided"}</div>
+              {solve.rejectionNote ? <div className="mt-1 text-muted-foreground">Note: {solve.rejectionNote}</div> : null}
+              {solve.rejectedAt ? <div className="mt-1 text-xs text-muted-foreground">Date: {formatDateTime(solve.rejectedAt)}</div> : null}
+            </div>
+          ) : null}
 
           <div ref={evidenceSectionRef} id="evidence-section" className="border-t border-ink/20 pt-4">
             <div className="flex items-center justify-between mb-3">
@@ -354,40 +420,126 @@ export default function SolveDetailsModal({
 
           <div className="border-t border-ink/20 pt-4">
             <div className="text-xs font-medium text-muted-foreground uppercase mb-2">Credits</div>
-            <div className="text-xl font-bold mb-3">{solve.credits || 0} total</div>
+            {isCompleted ? (
+              <div className="mb-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
+                Pending approval. Earned credits: <span className="font-bold">0</span>
+                {previewCredits ? <span className="ml-2 text-muted-foreground">Potential credits: {previewCredits}</span> : null}
+              </div>
+            ) : null}
+            <div className="text-xl font-bold mb-3">{earnedCredits} earned</div>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Base · {solve.requestType || "OTHER"}</span>
-                <span className="text-muted-foreground">+{solve.baseCredits || 0}</span>
+                <span className="text-muted-foreground">+{isClosed ? solve.baseCredits || 0 : solve.previewBaseCredits ?? solve.creditBreakdown?.base ?? 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Within SLA</span>
-                <span className="text-muted-foreground">+{solve.slaBonus || 0}</span>
+                <span className="text-muted-foreground">+{isClosed ? solve.slaBonus || 0 : solve.previewSlaBonus ?? solve.creditBreakdown?.sla ?? 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Evidence</span>
-                <span className="text-muted-foreground">+{solve.evidenceBonus || 0}</span>
+                <span className="text-muted-foreground">+{isClosed ? solve.evidenceBonus || 0 : solve.previewEvidenceBonus ?? solve.creditBreakdown?.evidence ?? 0}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-ink/20 p-4">
-          <div className="flex gap-2">
-            {openUrl && (
-              <a href={openUrl}>
-                <Button variant="outline">
-                  <FolderOpen className="h-4 w-4 mr-1" />
-                  Open Request
+        <div className="border-t border-ink/20 p-4">
+          {statusError ? <div className="mb-3 text-sm text-destructive">{statusError}</div> : null}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {openUrl ? (
+                <a href={openUrl}>
+                  <Button variant="outline" className="h-9 rounded-md border-ink/20 px-3 shadow-none">
+                    <FolderOpen className="mr-1.5 h-4 w-4" />
+                    Open Request
+                  </Button>
+                </a>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {canApproveResult && (
+                <Button
+                  className="h-9 rounded-md bg-success px-3 text-white shadow-none hover:bg-success/90"
+                  disabled={statusSubmitting === "approve" || statusSubmitting === "reject" || statusActionBusyId === solve.requestId}
+                  onClick={handleApprove}
+                >
+                  <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                  {statusSubmitting === "approve" ? "Accepting..." : "Accept"}
                 </Button>
-              </a>
-            )}
+              )}
+              {canRejectResult && (
+                <Button
+                  variant="outline"
+                  className="h-9 rounded-md border-destructive/40 px-3 text-destructive shadow-none hover:bg-destructive/10"
+                  disabled={statusSubmitting === "approve" || statusSubmitting === "reject" || statusActionBusyId === solve.requestId}
+                  onClick={() => {
+                    setStatusError("");
+                    setShowRejectDialog(true);
+                  }}
+                >
+                  <X className="mr-1.5 h-4 w-4" />
+                  Send Back
+                </Button>
+              )}
+              <Button variant="outline" className="h-9 rounded-md border-ink/20 px-3 shadow-none" onClick={onClose}>
+                Close
+              </Button>
+            </div>
           </div>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
         </div>
       </div>
+      {showRejectDialog ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-ink bg-background shadow-lg">
+            <div className="border-b border-ink/20 p-4">
+              <h3 className="text-lg font-semibold">Send request back</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Why are you sending this back?</p>
+            </div>
+            <div className="space-y-3 p-4">
+              <label className="text-xs font-medium text-muted-foreground">Reason</label>
+              <select
+                value={rejectReason}
+                onChange={(event) => { setRejectReason(event.target.value); setRejectError(""); }}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Select reason...</option>
+                <option value="Missing evidence">Missing evidence</option>
+                <option value="Not resolved">Not resolved</option>
+                <option value="Wrong target">Wrong target</option>
+                <option value="Incomplete work">Incomplete work</option>
+                <option value="Other">Other</option>
+              </select>
+              <label className="text-xs font-medium text-muted-foreground">Note</label>
+              <textarea
+                value={rejectNote}
+                onChange={(event) => { setRejectNote(event.target.value); setRejectError(""); }}
+                placeholder="Add a short note for the support/dev team..."
+                className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              {rejectError ? <div className="text-xs text-destructive">{rejectError}</div> : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-ink/20 p-4">
+              <Button
+                variant="ghost"
+                className="h-9 px-3 shadow-none"
+                disabled={statusSubmitting === "reject"}
+                onClick={() => setShowRejectDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 border-destructive/40 px-3 text-destructive shadow-none"
+                disabled={statusSubmitting === "reject"}
+                onClick={submitReject}
+              >
+                {statusSubmitting === "reject" ? "Sending..." : "Send back"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

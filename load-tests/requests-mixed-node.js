@@ -17,7 +17,16 @@ const PRIORITIES = ["LOW", "MEDIUM", "HIGH"];
 async function main() {
   try {
     const baseUrl = getBaseUrl();
-    const tokens = getTokens();
+    const accessTokens = getTokens();
+    const refreshTokensRaw = (process.env.REFRESH_TOKENS || "")
+      .split(",")
+      .map((v) => v.trim().replace(/^["']|["']$/g, "").replace(/^Bearer\s+/i, ""))
+      .filter(Boolean);
+    const tokenStates = accessTokens.map((access, i) => ({
+      access,
+      refresh: refreshTokensRaw[i] || "",
+    }));
+    const refreshUrl = `${baseUrl}/auth/refresh/`;
     const targetTeamIds = getTargetTeamIds();
     const totalRequests = getTotalRequests();
     const concurrency = getConcurrency();
@@ -30,12 +39,50 @@ async function main() {
     let createFailed = 0;
     let nextIndex = 0;
 
-    async function runRead(workerId, token) {
+    async function refreshAccessToken(tokenState) {
+      if (!tokenState.refresh) return false;
+      try {
+        const res = await fetch(refreshUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh: tokenState.refresh }),
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data.access) return false;
+        tokenState.access = String(data.access).trim();
+        if (data.refresh) tokenState.refresh = String(data.refresh).trim();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function fetchWithAutoRefresh(tokenState, endpoint, options) {
+      let res = await fetch(`${baseUrl}${endpoint}`, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          ...getAuthHeaders(tokenState.access),
+        },
+      });
+      if (res.status !== 401) return res;
+      const refreshed = await refreshAccessToken(tokenState);
+      if (!refreshed) return res;
+      return fetch(`${baseUrl}${endpoint}`, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          ...getAuthHeaders(tokenState.access),
+        },
+      });
+    }
+
+    async function runRead(workerId, tokenState) {
       const started = Date.now();
       try {
-        const res = await fetch(`${baseUrl}/requests/`, {
+        const res = await fetchWithAutoRefresh(tokenState, "/requests/", {
           method: "GET",
-          headers: getAuthHeaders(token),
         });
         const duration = Date.now() - started;
         const ok = res.status >= 200 && res.status < 300;
@@ -73,7 +120,7 @@ async function main() {
       }
     }
 
-    async function runCreate(workerId, token, index) {
+    async function runCreate(workerId, tokenState, index) {
       const targetTeamId = randomChoice(targetTeamIds);
       const payload = {
         title: `[LOAD_TEST] Request ${Date.now()}-${workerId}-${index}`,
@@ -93,9 +140,8 @@ async function main() {
         formData.append("target_team", payload.target_team);
         formData.append("target_unit", payload.target_unit);
 
-        const res = await fetch(`${baseUrl}/requests/`, {
+        const res = await fetchWithAutoRefresh(tokenState, "/requests/", {
           method: "POST",
-          headers: getAuthHeaders(token),
           body: formData,
         });
         const duration = Date.now() - started;
@@ -148,12 +194,12 @@ async function main() {
         const index = nextIndex++;
         if (index >= totalRequests) break;
 
-        const token = randomChoice(tokens);
+        const tokenState = randomChoice(tokenStates);
         const op = Math.random() < 0.7 ? "read" : "create";
         if (op === "read") {
-          await runRead(workerId, token);
+          await runRead(workerId, tokenState);
         } else {
-          await runCreate(workerId, token, index);
+          await runCreate(workerId, tokenState, index);
         }
 
         if (delayMs > 0) {
@@ -163,6 +209,11 @@ async function main() {
     }
 
     console.log(`Running mixed load test: total=${totalRequests}, concurrency=${concurrency}`);
+    if (refreshTokensRaw.length > 0) {
+      console.log(`Auto-refresh enabled for ${refreshTokensRaw.length} token(s).`);
+    } else {
+      console.log("Auto-refresh disabled (set REFRESH_TOKENS to enable).");
+    }
     await Promise.all(Array.from({ length: concurrency }, (_, i) => worker(i + 1)));
 
     console.log("");

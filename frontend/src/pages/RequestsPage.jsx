@@ -891,11 +891,22 @@ function RequestsPage({ forcedScope = '' }) {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={statusPillClass(item.status)}>
-                        {isPendingScope && item.status === 'NEW'
-                          ? 'Pending'
-                          : (statusLabelMap[item.status] || item.status || '-')}
-                      </span>
+                      <div className="space-y-1">
+                        {item.was_rejected ? (
+                          <span className="inline-flex items-center rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                            SENT BACK
+                          </span>
+                        ) : (
+                          <span className={statusPillClass(item.status)}>
+                            {isPendingScope && item.status === 'NEW' ? 'Pending' : (statusLabelMap[item.status] || item.status || '-')}
+                          </span>
+                        )}
+                        {item.was_rejected && item.rejected_by_name ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            by {item.rejected_by_name}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                     {(!isPendingScope || !canDecidePending) && (
                       <td className="px-4 py-3">

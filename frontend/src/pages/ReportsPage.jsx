@@ -235,26 +235,10 @@ function ReportsPage() {
     const reportResolved = Number(reports.open_vs_resolved?.resolved || 0)
     const hasReportTotals = reportTotal > 0 || (reportOpen + reportResolved > 0)
 
-    const totalRequests = Number(
-      isSuperAdmin
-        ? (dashboard.totals?.requests ?? (hasReportTotals ? reportTotal : (summary.total_requests ?? items.length)))
-        : (hasReportTotals ? reportTotal : (summary.total_requests ?? items.length))
-    )
-    const openQueue = Number(
-      isSuperAdmin
-        ? (dashboard.queue?.open ?? (hasReportTotals ? reportOpen : (summary.open_requests ?? items.filter((item) => ACTIVE_SET.has(item.status)).length)))
-        : (hasReportTotals ? reportOpen : (summary.open_requests ?? items.filter((item) => ACTIVE_SET.has(item.status)).length))
-    )
-    const resolved = Number(
-      isSuperAdmin
-        ? (dashboard.open_vs_resolved?.resolved ?? (hasReportTotals ? reportResolved : (summary.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length)))
-        : (hasReportTotals ? reportResolved : (summary.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length))
-    )
-    const unassigned = Number(
-      isSuperAdmin
-        ? (dashboard.queue?.unassigned ?? reports.queue?.unassigned ?? (summary.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length))
-        : (reports.queue?.unassigned ?? (summary.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length))
-    )
+    const totalRequests = Number(hasReportTotals ? reportTotal : (summary.total_requests ?? items.length))
+    const openQueue = Number(hasReportTotals ? reportOpen : (summary.open_requests ?? items.filter((item) => ACTIVE_SET.has(item.status)).length))
+    const resolved = Number(hasReportTotals ? reportResolved : (summary.resolved ?? items.filter((item) => RESOLVED_SET.has(item.status)).length))
+    const unassigned = Number(reports.queue?.unassigned ?? (summary.unassigned ?? items.filter((item) => !item.assignee_name && !item.current_assignee__username).length))
 
     const avgDays = Number(reports.avg_resolution_days ?? summary.avg_resolution_days ?? avgResolutionDays(items))
     const avgTurnaround = avgDays ? `${avgDays.toFixed(1)}d` : '0.0d'
@@ -275,23 +259,34 @@ function ReportsPage() {
 
     const timelineMap = new Map(timelineBase.map((entry) => [entry.key, { ...entry }]))
 
-    items.forEach((item) => {
-      const createdAt = toDate(item.created_at || item.createdAt)
-      if (createdAt) {
-        const key = createdAt.toISOString().slice(0, 10)
-        const row = timelineMap.get(key)
-        if (row) row.created += 1
-      }
-
-      if (RESOLVED_SET.has(item.status)) {
-        const resolvedAt = toDate(item.completed_at || item.closed_at || item.updated_at || item.updatedAt || item.created_at || item.createdAt)
-        if (resolvedAt) {
-          const key = resolvedAt.toISOString().slice(0, 10)
+    const requestFlow = Array.isArray(reports.request_flow) ? reports.request_flow : []
+    if (requestFlow.length) {
+      requestFlow.forEach((item) => {
+        const day = String(item.day || '').slice(0, 10)
+        const row = timelineMap.get(day)
+        if (!row) return
+        row.created = Number(item.created || 0)
+        row.resolved = Number(item.resolved || 0)
+      })
+    } else {
+      items.forEach((item) => {
+        const createdAt = toDate(item.created_at || item.createdAt)
+        if (createdAt) {
+          const key = createdAt.toISOString().slice(0, 10)
           const row = timelineMap.get(key)
-          if (row) row.resolved += 1
+          if (row) row.created += 1
         }
-      }
-    })
+
+        if (RESOLVED_SET.has(item.status)) {
+          const resolvedAt = toDate(item.completed_at || item.closed_at || item.updated_at || item.updatedAt || item.created_at || item.createdAt)
+          if (resolvedAt) {
+            const key = resolvedAt.toISOString().slice(0, 10)
+            const row = timelineMap.get(key)
+            if (row) row.resolved += 1
+          }
+        }
+      })
+    }
 
     const trend = [...timelineMap.values()]
 

@@ -81,7 +81,7 @@ export function getNavForRole(role, user = null) {
   const isSupportDevUser =
     role === "user" && (canSolveRequests || isSupportDevEntity);
   const isProdResultApproverUser =
-    role === "user" && String(user?.entity_type || "").toUpperCase() === "PROD" && has("approve_request");
+    role === "user" && String(user?.entity_type || "").toUpperCase() === "PROD" && has("approve_completed_result");
 
   const auditLogItems = [
     ...(has("view_user_audit_logs") ? [{ label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText }] : []),

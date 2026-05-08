@@ -56,7 +56,7 @@ export function rankPeople(solves) {
   }
 
   const arr = Array.from(map.values()).sort(
-    (a, b) => b.solvedCount - a.solvedCount || b.totalCredits - a.totalCredits,
+    (a, b) => b.totalCredits - a.totalCredits || b.solvedCount - a.solvedCount,
   );
 
   if (arr[0]) arr[0].badges.push("top_solver");
@@ -99,7 +99,7 @@ export function rankTeams(solves) {
 
   return Array.from(map.values())
     .map((team) => ({ ...team, uniqueSolvers: team.uniqueSolvers.size }))
-    .sort((a, b) => b.solvedCount - a.solvedCount || b.totalCredits - a.totalCredits);
+    .sort((a, b) => b.totalCredits - a.totalCredits || b.solvedCount - a.solvedCount);
 }
 
 export const BADGE_LABELS = {

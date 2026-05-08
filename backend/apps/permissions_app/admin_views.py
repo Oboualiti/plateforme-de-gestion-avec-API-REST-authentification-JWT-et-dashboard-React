@@ -440,6 +440,12 @@ class AdminDashboardView(AdminBaseView):
                 .annotate(total=Count("id"))
                 .order_by("-total")[:20]
             ),
+            "queue_activity": list(
+                request_qs.annotate(day=TruncDate("created_at"))
+                .values("day")
+                .annotate(created=Count("id"))
+                .order_by("-day")[:62]
+            ),
             "recent_activity": AuditLogSerializer(recent_logs[:8], many=True).data,
         }
         profile_meta = self.maybe_profile_meta(request=request, started_at=started_at)
@@ -2004,7 +2010,32 @@ class AdminReportsView(AdminBaseView):
             "trend_summaries": list(
                 queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id")).order_by("-day")[:31]
             ),
+            "request_flow": [],
         }
+
+        created_by_day = {
+            item["day"]: int(item["total"] or 0)
+            for item in queryset.annotate(day=TruncDate("created_at")).values("day").annotate(total=Count("id"))
+        }
+        resolved_by_day = {
+            item["day"]: int(item["total"] or 0)
+            for item in queryset.filter(
+                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED]
+            )
+            .annotate(day=TruncDate(Coalesce("completed_at", "closed_at")))
+            .values("day")
+            .annotate(total=Count("id"))
+            if item["day"] is not None
+        }
+        days = sorted(set(created_by_day.keys()) | set(resolved_by_day.keys()))
+        payload["request_flow"] = [
+            {
+                "day": day,
+                "created": created_by_day.get(day, 0),
+                "resolved": resolved_by_day.get(day, 0),
+            }
+            for day in days
+        ][-31:]
         profile_meta = self.maybe_profile_meta(request=request, started_at=started_at)
         if profile_meta:
             payload["_profile"] = profile_meta

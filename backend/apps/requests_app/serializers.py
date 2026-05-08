@@ -84,6 +84,11 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     is_submitted_to_target = serializers.BooleanField(read_only=True)
     is_pending_approval = serializers.SerializerMethodField()
     priority_label = serializers.SerializerMethodField()
+    was_rejected = serializers.SerializerMethodField()
+    rejection_reason = serializers.SerializerMethodField()
+    rejection_note = serializers.SerializerMethodField()
+    rejected_at = serializers.SerializerMethodField()
+    rejected_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -110,6 +115,11 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "is_stuck",
             "is_submitted_to_target",
             "is_pending_approval",
+            "was_rejected",
+            "rejection_reason",
+            "rejection_note",
+            "rejected_at",
+            "rejected_by_name",
         ]
 
     def get_source_entity_name(self, obj):
@@ -138,6 +148,52 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
     def get_priority_label(self, obj):
         return obj.get_priority_display()
+
+    def _get_latest_rejection_event(self, obj):
+        if hasattr(obj, "_prefetched_objects_cache") and "status_history" in obj._prefetched_objects_cache:
+            for item in obj.status_history.all():
+                if (
+                    item.old_status == ServiceRequest.Status.COMPLETED
+                    and item.new_status == ServiceRequest.Status.IN_PROGRESS
+                ):
+                    return item
+            return None
+        return (
+            obj.status_history.filter(
+                old_status=ServiceRequest.Status.COMPLETED,
+                new_status=ServiceRequest.Status.IN_PROGRESS,
+            )
+            .order_by("-changed_at")
+            .first()
+        )
+
+    def get_was_rejected(self, obj):
+        return self._get_latest_rejection_event(obj) is not None
+
+    def get_rejection_reason(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        if obj.status == ServiceRequest.Status.IN_PROGRESS and obj.rejection_reason:
+            return obj.rejection_reason
+        if latest and latest.note:
+            return latest.note.splitlines()[0].strip()
+        return ""
+
+    def get_rejection_note(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        if obj.status == ServiceRequest.Status.IN_PROGRESS and obj.resolution_note:
+            return obj.resolution_note
+        if latest and latest.note:
+            lines = [line.strip() for line in latest.note.splitlines() if line.strip()]
+            return "\n".join(lines[1:]) if len(lines) > 1 else ""
+        return ""
+
+    def get_rejected_at(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        return latest.changed_at if latest else None
+
+    def get_rejected_by_name(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        return latest.changed_by.username if latest and latest.changed_by_id else ""
 
 
 class RequestCommentSerializer(serializers.ModelSerializer):
@@ -282,6 +338,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     source_entity_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     requester_name = serializers.CharField(source="requester_user.username", read_only=True)
+    target_team_leader_name = serializers.CharField(
+        source="target_team_leader.username", read_only=True
+    )
     assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
     )
@@ -310,6 +369,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     can_edit_deadline = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
     priority_label = serializers.SerializerMethodField()
+    was_rejected = serializers.SerializerMethodField()
+    rejection_reason = serializers.SerializerMethodField()
+    rejection_note = serializers.SerializerMethodField()
+    rejected_at = serializers.SerializerMethodField()
+    rejected_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -331,6 +395,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "closed_at",
             "deadline_date",
             "resolution_note",
+            "rejection_reason",
+            "rejection_note",
+            "rejected_at",
+            "rejected_by_name",
+            "was_rejected",
             "company",
             "company_name",
             "source_entity",
@@ -341,6 +410,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "requester_user",
             "requester_name",
             "requester_avatar_url",
+            "target_team_leader",
+            "target_team_leader_name",
             "current_assignee",
             "assignee_name",
             "assignee_avatar_url",
@@ -406,6 +477,42 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_comment_request(self, obj):
         return bool(self.context.get("can_comment_request"))
+    def _get_latest_rejection_event(self, obj):
+        for item in obj.status_history.all():
+            if (
+                item.old_status == ServiceRequest.Status.COMPLETED
+                and item.new_status == ServiceRequest.Status.IN_PROGRESS
+            ):
+                return item
+        return None
+
+    def get_was_rejected(self, obj):
+        return self._get_latest_rejection_event(obj) is not None
+
+    def get_rejection_reason(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        if obj.status == ServiceRequest.Status.IN_PROGRESS and obj.rejection_reason:
+            return obj.rejection_reason
+        if latest and latest.note:
+            return latest.note.splitlines()[0].strip()
+        return ""
+
+    def get_rejection_note(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        if obj.status == ServiceRequest.Status.IN_PROGRESS and obj.resolution_note:
+            return obj.resolution_note
+        if latest and latest.note:
+            lines = [line.strip() for line in latest.note.splitlines() if line.strip()]
+            return "\n".join(lines[1:]) if len(lines) > 1 else ""
+        return ""
+
+    def get_rejected_at(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        return latest.changed_at if latest else None
+
+    def get_rejected_by_name(self, obj):
+        latest = self._get_latest_rejection_event(obj)
+        return latest.changed_by.username if latest and latest.changed_by_id else ""
 
     def get_comments(self, obj):
         if not self.context.get("can_view_request_discussion"):
@@ -602,6 +709,8 @@ class RequestCommentUpdateSerializer(serializers.Serializer):
 class RequestStatusUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=ServiceRequest.Status.choices)
     note = serializers.CharField(required=False, allow_blank=True)
+    rejection_reason = serializers.CharField(required=False, allow_blank=True)
+    rejection_note = serializers.CharField(required=False, allow_blank=True)
     deadline_date = serializers.DateField(required=False)
     evidence_link = serializers.URLField(required=False, allow_blank=True)
     evidence_attachment = serializers.FileField(required=False, allow_null=True)
