@@ -922,7 +922,6 @@ function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves }) {
             <col style={{ width: "10%" }} />
             <col style={{ width: "12%" }} />
             <col style={{ width: "9%" }} />
-            <col style={{ width: "10%" }} />
           </colgroup>
           <thead className="bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <tr className="border-b border-ink/10">
@@ -1445,7 +1444,6 @@ function EntitiesTable({ solves, entities, users, onViewDetails, currentUser, us
             <col style={{ width: "10%" }} />
             <col style={{ width: "12%" }} />
             <col style={{ width: "9%" }} />
-            <col style={{ width: "10%" }} />
           </colgroup>
           <thead className="bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <tr className="border-b border-ink/10">
@@ -1713,8 +1711,9 @@ function PeopleTable({ solves, users, entities, onViewDetails, currentUser, user
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: "5%" }} />
-            <col style={{ width: "23%" }} />
+            <col style={{ width: "19%" }} />
             <col style={{ width: "18%" }} />
+            <col style={{ width: "14%" }} />
             <col style={{ width: "10%" }} />
             <col style={{ width: "8%" }} />
             <col style={{ width: "10%" }} />
@@ -1727,6 +1726,7 @@ function PeopleTable({ solves, users, entities, onViewDetails, currentUser, user
               <th className="px-3 py-3 text-center">Rank</th>
               <th className="px-3 py-3 text-left">Solver</th>
               <th className="px-3 py-3 text-left">Team</th>
+              <th className="px-3 py-3 text-left">Entity</th>
               <th className="px-3 py-3 text-center">Credits</th>
               <th className="px-3 py-3 text-center">Closed</th>
               <th className="px-3 py-3 text-center" title="Completed work waiting for requester approval">Pending</th>

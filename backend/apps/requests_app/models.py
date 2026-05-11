@@ -68,6 +68,50 @@ class UnitMembership(models.Model):
         return f"{self.user} in {self.unit} ({self.role})"
 
 
+class Team(models.Model):
+    name = models.CharField(max_length=255)
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="teams",
+    )
+    entity = models.ForeignKey(
+        Entity,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="teams",
+    )
+    leader = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="led_teams",
+    )
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="teams",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["leader"], name="team_leader_idx"),
+            models.Index(fields=["company", "is_active"], name="team_company_active_idx"),
+            models.Index(fields=["entity", "is_active"], name="team_entity_active_idx"),
+            models.Index(fields=["is_active"], name="team_active_idx"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class ServiceRequest(models.Model):
     class Priority(models.TextChoices):
         LOW = "LOW", "Low"
@@ -143,6 +187,13 @@ class ServiceRequest(models.Model):
         blank=True,
         related_name="service_requests_target_team_owned",
     )
+    target_team = models.ForeignKey(
+        Team,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="service_requests",
+    )
     rejection_reason = models.TextField(blank=True)
     resolution_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -172,6 +223,7 @@ class ServiceRequest(models.Model):
             models.Index(fields=["target_entity", "completed_at"], name="req_target_completed_idx"),
             models.Index(fields=["target_entity", "created_at"], name="req_target_created_idx"),
             models.Index(fields=["target_team_leader"], name="req_target_tl_idx"),
+            models.Index(fields=["target_team"], name="req_target_team_idx"),
             models.Index(
                 fields=["requester_user", "created_at"],
                 name="req_requester_created_idx",

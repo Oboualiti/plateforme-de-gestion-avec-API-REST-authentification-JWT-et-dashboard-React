@@ -1,5 +1,6 @@
 from django.test import TestCase
 from datetime import date
+from io import StringIO
 from django.utils import timezone
 
 # Create your tests here.
@@ -18,6 +19,7 @@ from apps.requests_app.models import (
     RequestStatusHistory,
     RequestTeamReassignmentHistory,
     ServiceRequest,
+    Team,
 )
 from apps.roles.models import Role
 from apps.users.models import User
@@ -37,6 +39,12 @@ class RequestPermissionWorkflowTests(APITestCase):
             company=self.company,
             name="WMN4",
             code="WMN4",
+            entity_type=Entity.EntityType.SUPPORT,
+        )
+        self.support_entity_alt = Entity.objects.create(
+            company=self.company,
+            name="WMN5",
+            code="WMN5",
             entity_type=Entity.EntityType.SUPPORT,
         )
         self.other_prod_entity = Entity.objects.create(
@@ -98,6 +106,11 @@ class RequestPermissionWorkflowTests(APITestCase):
             "team_leader",
             entity=self.support_entity,
         )
+        self.support_team_leader_alt = self._create_user_with_role(
+            "tl_support_alt",
+            "team_leader",
+            entity=self.support_entity_alt,
+        )
         self.support_senior = self._create_user_with_role(
             "senior_support",
             "senior",
@@ -120,6 +133,35 @@ class RequestPermissionWorkflowTests(APITestCase):
         )
         self.support_resolver.team_leader = self.support_team_leader
         self.support_resolver.save(update_fields=["team_leader"])
+        self.prod_team = Team.objects.create(
+            name=f"{self.team_leader.username}'s Team",
+            company=self.company,
+            entity=self.prod_entity,
+            leader=self.team_leader,
+            is_active=True,
+        )
+        self.support_team = Team.objects.create(
+            name=f"{self.support_team_leader.username}'s Team",
+            company=self.company,
+            entity=self.support_entity,
+            leader=self.support_team_leader,
+            is_active=True,
+        )
+        self.support_peer_team = Team.objects.create(
+            name=f"{self.support_team_leader_peer.username}'s Team",
+            company=self.company,
+            entity=self.support_entity,
+            leader=self.support_team_leader_peer,
+            is_active=True,
+        )
+        self.support_alt_team = Team.objects.create(
+            name=f"{self.support_team_leader_alt.username}'s Team",
+            company=self.company,
+            entity=self.support_entity_alt,
+            leader=self.support_team_leader_alt,
+            is_active=True,
+        )
+        self.support_team.members.add(self.support_resolver)
 
         self.pending_request = ServiceRequest.objects.create(
             request_number="REQ-UNIT-0001",
@@ -185,6 +227,17 @@ class RequestPermissionWorkflowTests(APITestCase):
         row = next((item for item in rows if item.get("requestId") == req.id), None)
         self.assertIsNotNone(row)
         return row
+
+    def _credits_payload_for(self, actor):
+        self.client.force_authenticate(user=actor)
+        response = self.client.get(reverse("credits-solves-list"), format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def _run_backfill_target_team(self):
+        out = StringIO()
+        call_command("backfill_request_target_team", stdout=out)
+        return out.getvalue()
 
     def _create_user_with_role(self, username, role_key, entity):
         user = User.objects.create_user(
@@ -356,6 +409,153 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertEqual(row.get("credits"), row.get("previewCredits"))
         self.assertGreater(row.get("credits"), 0)
 
+    def test_credits_row_returns_real_target_team_fields(self):
+        req = self._completed_request("REQ-UNIT-TEAM-FIELDS")
+        req.target_team = self.support_team
+        req.target_team_leader = self.support_team_leader
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        row = self._credits_row_for(self.requester, req)
+        self.assertEqual(row.get("target_team_id"), self.support_team.id)
+        self.assertEqual(row.get("target_team_name"), self.support_team.name)
+        self.assertEqual(row.get("target_team_leader_id"), self.support_team_leader.id)
+        self.assertEqual(row.get("target_entity_id"), self.support_entity.id)
+        self.assertEqual(row.get("team_key"), f"team-{self.support_team.id}")
+
+    def test_team_rankings_group_by_target_team_id(self):
+        req_a = self._completed_request("REQ-UNIT-TEAM-A")
+        req_a.target_team = self.support_team
+        req_a.target_team_leader = self.support_team_leader
+        req_a.status = ServiceRequest.Status.CLOSED
+        req_a.closed_at = timezone.now()
+        req_a.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        req_b = self._completed_request("REQ-UNIT-TEAM-B")
+        req_b.target_team = self.support_peer_team
+        req_b.target_team_leader = self.support_team_leader_peer
+        req_b.status = ServiceRequest.Status.CLOSED
+        req_b.closed_at = timezone.now()
+        req_b.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        payload = self._credits_payload_for(self.requester)
+        team_rows = payload.get("teamRankings", [])
+        support_row = next((r for r in team_rows if r.get("teamId") == self.support_team.id), None)
+        peer_row = next((r for r in team_rows if r.get("teamId") == self.support_peer_team.id), None)
+        self.assertIsNotNone(support_row)
+        self.assertIsNotNone(peer_row)
+        self.assertEqual(support_row.get("teamKey"), f"team-{self.support_team.id}")
+        self.assertEqual(peer_row.get("teamKey"), f"team-{self.support_peer_team.id}")
+
+    def test_people_rankings_include_team_context_from_request_target_team(self):
+        req = self._completed_request("REQ-UNIT-PEOPLE-TEAM")
+        req.target_team = self.support_team
+        req.target_team_leader = self.support_team_leader
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        payload = self._credits_payload_for(self.requester)
+        people_rows = payload.get("peopleRankings", [])
+        person_row = next((r for r in people_rows if r.get("userId") == self.support_resolver.id), None)
+        self.assertIsNotNone(person_row)
+        self.assertEqual(person_row.get("teamId"), self.support_team.id)
+        self.assertEqual(person_row.get("teamName"), self.support_team.name)
+
+    def test_legacy_team_fallback_uses_target_team_leader_then_legacy_queue(self):
+        req = self._completed_request("REQ-UNIT-LEGACY-FALLBACK")
+        req.target_team = None
+        req.target_team_leader = self.support_team_leader
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+        row_with_tl = self._credits_row_for(self.requester, req)
+        self.assertEqual(row_with_tl.get("team_key"), f"tl-{self.support_team_leader.id}")
+
+        req.target_team_leader = None
+        req.current_assignee = None
+        req.save(update_fields=["target_team_leader", "current_assignee"])
+        row_legacy = self._credits_row_for(self.requester, req)
+        self.assertEqual(row_legacy.get("team_key"), f"legacy-{self.support_entity.id}")
+
+    def test_backfill_target_team_from_target_team_leader(self):
+        req = self._completed_request("REQ-UNIT-BACKFILL-TL")
+        req.target_team = None
+        req.target_team_leader = self.support_team_leader
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        output = self._run_backfill_target_team()
+        req.refresh_from_db()
+
+        self.assertEqual(req.target_team_id, self.support_team.id)
+        self.assertIn("updated=1", output)
+
+    def test_backfill_target_team_from_member_solver(self):
+        req = self._completed_request("REQ-UNIT-BACKFILL-MEMBER")
+        req.target_team = None
+        req.target_team_leader = None
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        output = self._run_backfill_target_team()
+        req.refresh_from_db()
+
+        self.assertEqual(req.target_team_id, self.support_team.id)
+        self.assertIn("updated=1", output)
+
+    def test_backfill_target_team_skips_ambiguous_member_matches(self):
+        extra_team = Team.objects.create(
+            name="Second Support Team",
+            company=self.company,
+            entity=self.support_entity,
+            leader=self.support_team_leader_alt,
+            is_active=True,
+        )
+        extra_team.members.add(self.support_resolver)
+
+        req = self._completed_request("REQ-UNIT-BACKFILL-AMBIG")
+        req.target_team = None
+        req.target_team_leader = None
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        output = self._run_backfill_target_team()
+        req.refresh_from_db()
+
+        self.assertIsNone(req.target_team_id)
+        self.assertIn("skipped_multiple_matches=1", output)
+        self.assertIn(f"{req.id}", output)
+
+    def test_unrecoverable_legacy_row_still_shows_legacy_queue(self):
+        req = ServiceRequest.objects.create(
+            request_number="REQ-UNIT-UNRECOVERABLE-LEGACY",
+            title="Legacy unresolved queue row",
+            description="No team leader and no solver",
+            category="INFO",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            closed_at=timezone.now(),
+            target_team=None,
+            target_team_leader=None,
+            current_assignee=None,
+        )
+
+        self._run_backfill_target_team()
+        row = self._credits_row_for(self.requester, req)
+        self.assertEqual(row.get("team_key"), f"legacy-{self.support_entity.id}")
+        self.assertIn("Legacy Queue", row.get("target_team_label", ""))
+
     def test_requester_chain_can_accept_completed_result(self):
         approvers = [self.requester, self.team_leader, self.requester_manager, self.senior_user, self.super_admin]
         for index, approver in enumerate(approvers):
@@ -480,12 +680,13 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.client.force_authenticate(user=self.support_manager)
         response = self.client.post(
             reverse("requests-reassign", kwargs={"request_id": self.submitted_request.id}),
-            {"target_team": self.support_team_leader.id, "note": "Assigned to TL team"},
+            {"target_team": self.support_team.id, "note": "Assigned to TL team"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.submitted_request.refresh_from_db()
+        self.assertEqual(self.submitted_request.target_team_id, self.support_team.id)
         self.assertEqual(self.submitted_request.target_team_leader_id, self.support_team_leader.id)
         self.assertEqual(self.submitted_request.target_entity_id, self.support_entity.id)
         self.assertIsNone(self.submitted_request.current_assignee_id)
@@ -500,10 +701,74 @@ class RequestPermissionWorkflowTests(APITestCase):
             ).exists()
         )
 
+    def test_manager_detail_exposes_tl_owned_reassignment_targets(self):
+        self.client.force_authenticate(user=self.support_manager)
+        response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get("can_reassign_target_team"))
+        targets = response.data.get("available_reassignment_targets", [])
+        target_ids = {item.get("id") for item in targets}
+        self.assertIn(self.support_team.id, target_ids)
+        self.assertIn(self.support_peer_team.id, target_ids)
+        self.assertNotIn(self.prod_team.id, target_ids)
+        selected_target = next((item for item in targets if item.get("id") == self.support_team.id), None)
+        self.assertIsNotNone(selected_target)
+        self.assertEqual(selected_target.get("name"), self.support_team.name)
+        self.assertEqual(selected_target.get("leader_id"), self.support_team_leader.id)
+        self.assertEqual(selected_target.get("leader_name"), self.support_team_leader.username)
+
+    def test_manager_detail_keeps_reassign_flag_true_when_no_tl_targets(self):
+        self.support_team_leader.is_active = False
+        self.support_team_leader.save(update_fields=["is_active"])
+        self.support_team_leader_peer.is_active = False
+        self.support_team_leader_peer.save(update_fields=["is_active"])
+        self.support_team_leader_alt.is_active = False
+        self.support_team_leader_alt.save(update_fields=["is_active"])
+
+        self.client.force_authenticate(user=self.support_manager)
+        response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get("can_reassign_target_team"))
+        self.assertEqual(response.data.get("available_reassignment_targets"), [])
+
+    def test_manager_can_still_open_detail_after_reassign_to_other_team_entity_same_company(self):
+        self.client.force_authenticate(user=self.support_manager)
+        reassign_response = self.client.post(
+            reverse("requests-reassign", kwargs={"request_id": self.submitted_request.id}),
+            {"target_team": self.support_alt_team.id, "note": "Route to alternate support team"},
+            format="json",
+        )
+        self.assertEqual(reassign_response.status_code, status.HTTP_200_OK)
+
+        detail_response = self.client.get(
+            reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
+            format="json",
+        )
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+
+    def test_manager_reassign_legacy_tl_id_still_maps_to_team(self):
+        self.client.force_authenticate(user=self.support_manager)
+        response = self.client.post(
+            reverse("requests-reassign", kwargs={"request_id": self.submitted_request.id}),
+            {"target_team": self.support_team_leader.id, "note": "Legacy TL id compatibility"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.submitted_request.refresh_from_db()
+        self.assertEqual(self.submitted_request.target_team_id, self.support_team.id)
+        self.assertEqual(self.submitted_request.target_team_leader_id, self.support_team_leader.id)
+
     def test_tl_visibility_prefers_target_team_owner_with_legacy_entity_fallback(self):
-        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.target_team = self.support_team
+        self.submitted_request.target_team_leader = self.support_team_leader_peer
         self.submitted_request.current_assignee = None
-        self.submitted_request.save(update_fields=["target_team_leader", "current_assignee"])
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
 
         self.client.force_authenticate(user=self.support_team_leader)
         own_team_response = self.client.get(
@@ -519,8 +784,9 @@ class RequestPermissionWorkflowTests(APITestCase):
         )
         self.assertEqual(peer_response.status_code, status.HTTP_404_NOT_FOUND)
 
+        self.submitted_request.target_team = None
         self.submitted_request.target_team_leader = None
-        self.submitted_request.save(update_fields=["target_team_leader"])
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader"])
         legacy_response = self.client.get(
             reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
             format="json",
@@ -528,9 +794,13 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertEqual(legacy_response.status_code, status.HTTP_200_OK)
 
     def test_tl_potential_assignees_only_include_team_members(self):
+        self.submitted_request.target_team = self.support_team
         self.submitted_request.target_team_leader = self.support_team_leader
         self.submitted_request.current_assignee = None
-        self.submitted_request.save(update_fields=["target_team_leader", "current_assignee"])
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
+        # Team.members should be authoritative before legacy User.team_leader fallback.
+        self.support_resolver.team_leader = None
+        self.support_resolver.save(update_fields=["team_leader"])
 
         self.client.force_authenticate(user=self.support_team_leader)
         response = self.client.get(
@@ -544,3 +814,83 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIn(self.support_resolver.id, assignee_ids)
         self.assertNotIn(self.support_team_leader.id, assignee_ids)
         self.assertNotIn(self.support_team_leader_peer.id, assignee_ids)
+
+    def test_tl_assign_user_rejects_self_and_non_team_member(self):
+        self.submitted_request.target_team = self.support_team
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader)
+        assign_url = reverse("requests-assign-user", kwargs={"request_id": self.submitted_request.id})
+
+        self_response = self.client.post(
+            assign_url,
+            {"user_id": self.support_team_leader.id, "note": "self assign via assign_user"},
+            format="json",
+        )
+        self.assertEqual(self_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn(
+            "Team leaders can only assign requests to regular members of their own team.",
+            str(self_response.data.get("detail", "")),
+        )
+
+        legacy_linked_non_member = self._create_user_with_role(
+            "support_user_legacy_only",
+            "user",
+            entity=self.support_entity,
+        )
+        legacy_linked_non_member.team_leader = self.support_team_leader
+        legacy_linked_non_member.save(update_fields=["team_leader"])
+        non_member_response = self.client.post(
+            assign_url,
+            {"user_id": legacy_linked_non_member.id, "note": "assign legacy non-member"},
+            format="json",
+        )
+        self.assertEqual(non_member_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn(
+            "Team leaders can only assign requests to regular members of their own team.",
+            str(non_member_response.data.get("detail", "")),
+        )
+
+        peer_tl_response = self.client.post(
+            assign_url,
+            {"user_id": self.support_team_leader_peer.id, "note": "assign peer TL"},
+            format="json",
+        )
+        self.assertEqual(peer_tl_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn(
+            "Team leaders can only assign requests to regular members of their own team.",
+            str(peer_tl_response.data.get("detail", "")),
+        )
+
+    def test_tl_assign_to_me_allowed_for_owned_target_team(self):
+        self.submitted_request.target_team = self.support_team
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader)
+        response = self.client.post(
+            reverse("requests-assign", kwargs={"request_id": self.submitted_request.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.submitted_request.refresh_from_db()
+        self.assertEqual(self.submitted_request.current_assignee_id, self.support_team_leader.id)
+
+    def test_tl_assign_to_me_rejected_for_non_owned_target_team(self):
+        self.submitted_request.target_team = self.support_team
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader_peer)
+        response = self.client.post(
+            reverse("requests-assign", kwargs={"request_id": self.submitted_request.id}),
+            {},
+            format="json",
+        )
+        # Peer TL cannot access/take another TL-owned team request.
+        self.assertIn(response.status_code, {status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND})

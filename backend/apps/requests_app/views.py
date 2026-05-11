@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import re
 import hashlib
@@ -45,6 +45,7 @@ from .models import (
     RequestStatusHistory,
     RequestTeamReassignmentHistory,
     ServiceRequest,
+    Team,
     UnitMembership,
 )
 from .serializers import (
@@ -434,6 +435,14 @@ class CreditsSolvesListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        credits_status_filter = (
+            Q(status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED])
+            | Q(
+                status=ServiceRequest.Status.IN_PROGRESS,
+                status_history__old_status=ServiceRequest.Status.COMPLETED,
+                status_history__new_status=ServiceRequest.Status.IN_PROGRESS,
+            )
+        )
         user_entity_type = (getattr(getattr(request.user, "entity", None), "entity_type", "") or "").upper()
         is_prod_entity_user = user_entity_type == Entity.EntityType.PROD
         role_key = get_primary_role_key(request.user)
@@ -446,7 +455,7 @@ class CreditsSolvesListView(APIView):
 
         if is_prod_team_scope:
             solves_qs = ServiceRequest.objects.filter(
-                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
+                credits_status_filter,
             )
             if request.user.company_id:
                 solves_qs = solves_qs.filter(company_id=request.user.company_id)
@@ -454,9 +463,8 @@ class CreditsSolvesListView(APIView):
                 solves_qs = solves_qs.filter(source_entity_id=request.user.entity_id)
         else:
             visible_qs = get_visible_requests_queryset(request.user, include_related=True)
-            solves_qs = visible_qs.filter(
-                status__in=[ServiceRequest.Status.COMPLETED, ServiceRequest.Status.CLOSED],
-            )
+            solves_qs = visible_qs.filter(credits_status_filter)
+        solves_qs = solves_qs.distinct()
 
         completed_by_subquery = RequestStatusHistory.objects.filter(
             request_id=OuterRef("pk"),
@@ -509,6 +517,10 @@ class CreditsSolvesListView(APIView):
             "company",
             "source_entity",
             "target_entity",
+            "target_team_leader",
+            "target_team",
+            "target_team__leader",
+            "target_team__entity",
             "requester_user",
             "current_assignee",
         ).order_by("-completed_at", "-closed_at", "-id")
@@ -533,10 +545,26 @@ class CreditsSolvesListView(APIView):
         user_map = {}
         entity_map = {}
         for req in solves_qs:
-            allowed_for_actor = get_allowed_status_transitions(request.user, req)
-            can_result_approve = ServiceRequest.Status.CLOSED in allowed_for_actor and req.status == ServiceRequest.Status.COMPLETED
-            can_result_reject = ServiceRequest.Status.IN_PROGRESS in allowed_for_actor and req.status == ServiceRequest.Status.COMPLETED
+            can_validate_result = (
+                req.status == ServiceRequest.Status.COMPLETED
+                and can_validate_completed_result(request.user, req)
+            )
+            can_result_approve = can_validate_result
+            can_result_reject = can_validate_result
             solver_id = req.completed_by_id or req.closed_by_id or req.current_assignee_id
+            effective_team_id = req.target_team_id
+            effective_team_name = (req.target_team.name or "").strip() if req.target_team_id else None
+            effective_team_leader_id = (
+                req.target_team.leader_id
+                if req.target_team_id and req.target_team and req.target_team.leader_id
+                else req.target_team_leader_id
+            )
+            effective_team_leader_name = (
+                req.target_team.leader.username
+                if req.target_team_id and req.target_team and req.target_team.leader_id
+                else (req.target_team_leader.username if req.target_team_leader_id else None)
+            )
+
             evidence_list = []
 
             for message in req.messages.all():
@@ -595,13 +623,45 @@ class CreditsSolvesListView(APIView):
                 sla_bonus = 5 if within_sla else 0
 
             evidence_bonus = 5 if has_evidence else 0
-            credits = base_credits + sla_bonus + evidence_bonus
+            potential_credits = base_credits + sla_bonus + evidence_bonus
+            is_earned = req.status == ServiceRequest.Status.CLOSED
+            credits = potential_credits if is_earned else 0
 
             if req.target_entity_id and req.target_entity_id not in entity_map:
                 entity_map[req.target_entity_id] = {
                     "id": req.target_entity.id,
                     "name": req.target_entity.name,
                 }
+
+            target_entity_id = req.target_entity_id
+            target_entity_name = req.target_entity.name if req.target_entity_id else ""
+            is_generic_team_name = (
+                not effective_team_name
+                or effective_team_name.lower() in {"team", "default team", "legacy queue"}
+            )
+            display_team_name = (
+                f"{effective_team_leader_name}'s Team"
+                if is_generic_team_name and effective_team_leader_name
+                else effective_team_name
+            )
+            team_key = (
+                f"team-{effective_team_id}"
+                if effective_team_id
+                else (
+                    f"tl-{effective_team_leader_id}"
+                    if effective_team_leader_id
+                    else f"legacy-{target_entity_id or 'unknown'}"
+                )
+            )
+            target_team_label = (
+                f"{display_team_name} — {target_entity_name}"
+                if display_team_name
+                else (
+                    f"{effective_team_leader_name}'s Team — {target_entity_name}"
+                    if effective_team_leader_name
+                    else (f"{target_entity_name} Legacy Queue" if target_entity_name else "Legacy Queue")
+                )
+            )
 
             solves.append(
                 {
@@ -612,9 +672,9 @@ class CreditsSolvesListView(APIView):
                     "requestReference": req.request_number,
                     "solverId": solver_id,
                     "solverRole": "",
-                    "entityId": req.target_entity_id,
+                    "entityId": target_entity_id,
                     "companyId": req.company_id,
-                    "solverEntityName": req.target_entity.name if req.target_entity_id else "",
+                    "solverEntityName": target_entity_name,
                     "solverCompanyName": req.company.name if req.company_id else "",
                     "sourceCompanyName": req.company.name if req.company_id else "",
                     "sourceEntityId": req.source_entity_id,
@@ -622,10 +682,27 @@ class CreditsSolvesListView(APIView):
                     "requesterName": (
                         req.requester_user.get_full_name() or req.requester_user.username
                     ) if req.requester_user_id else "",
-                    "targetEntityName": req.target_entity.name if req.target_entity_id else "",
+                    "target_entity_id": target_entity_id,
+                    "target_entity_name": target_entity_name,
+                    "targetEntityId": target_entity_id,
+                    "targetEntityName": target_entity_name,
+                    "target_team_leader_id": effective_team_leader_id,
+                    "target_team_leader_name": effective_team_leader_name,
+                    "target_team_label": target_team_label,
+                    "target_team_id": effective_team_id,
+                    "target_team_name": effective_team_name,
+                    "team_key": team_key,
+                    "targetTeamLeaderId": effective_team_leader_id,
+                    "targetTeamLeaderName": effective_team_leader_name,
+                    "targetTeamLabel": target_team_label,
+                    "targetTeamId": effective_team_id,
+                    "targetTeamName": effective_team_name,
+                    "teamKey": team_key,
                     "priority": req.priority,
                     "requestType": req_type,
                     "credits": credits,
+                    "previewCredits": potential_credits,
+                    "isEarned": is_earned,
                     "baseCredits": base_credits,
                     "slaBonus": sla_bonus,
                     "evidenceBonus": evidence_bonus,
@@ -636,7 +713,7 @@ class CreditsSolvesListView(APIView):
                         "base": base_credits,
                         "sla": sla_bonus,
                         "evidence": evidence_bonus,
-                        "total": credits,
+                        "total": potential_credits,
                         "requestType": req_type,
                         "withinSla": within_sla,
                     },
@@ -656,6 +733,9 @@ class CreditsSolvesListView(APIView):
                     "statusHistory": [],
                     "status": "solved",
                     "requestStatus": req.status,
+                    "wasRejected": bool(req.rejection_reason),
+                    "rejectionReason": req.rejection_reason or "",
+                    "rejectionNote": req.resolution_note or "",
                     "canResultApprove": can_result_approve,
                     "canResultReject": can_result_reject,
                     "completedAt": (
@@ -663,6 +743,7 @@ class CreditsSolvesListView(APIView):
                         if req.completed_at
                         else (req.closed_at.isoformat() if req.closed_at else req.created_at.isoformat())
                     ),
+                    "closedAt": req.closed_at.isoformat() if req.closed_at else None,
                 }
             )
 
@@ -676,11 +757,235 @@ class CreditsSolvesListView(APIView):
                     "full_name": solver.get_full_name() or solver.username,
                 }
 
+        def _sort_rankings(items):
+            def _avg_key(row):
+                avg = row.get("avgHours")
+                return avg if isinstance(avg, (int, float)) and avg > 0 else float("inf")
+
+            return sorted(
+                items,
+                key=lambda row: (
+                    -int(row.get("totalCredits", 0) or 0),
+                    -int(row.get("closedCount", 0) or 0),
+                    _avg_key(row),
+                    str(
+                        row.get("name")
+                        or row.get("teamLabel")
+                        or row.get("entityName")
+                        or row.get("full_name")
+                        or ""
+                    ).lower(),
+                ),
+            )
+
+        entity_stats = {}
+        team_stats = {}
+        people_stats = {}
+
+        for row in solves:
+            row_status = str(row.get("requestStatus") or "").upper()
+            is_closed = row_status == ServiceRequest.Status.CLOSED
+            is_pending = row_status == ServiceRequest.Status.COMPLETED
+            row_credits = int(row.get("credits") or 0) if is_closed else 0
+            row_hours = row.get("timeToResolveHours")
+            has_evidence = bool(row.get("hasEvidence"))
+
+            entity_id = row.get("target_entity_id") or row.get("entityId") or "unknown"
+            entity_name = row.get("target_entity_name") or row.get("targetEntityName") or "Unknown"
+            solver_id = row.get("solverId")
+            team_id = row.get("target_team_id") or row.get("targetTeamId")
+            team_name = row.get("target_team_name") or row.get("targetTeamName")
+            team_leader_id = row.get("target_team_leader_id") or row.get("targetTeamLeaderId")
+            team_leader_name = row.get("target_team_leader_name") or row.get("targetTeamLeaderName")
+            team_label = row.get("target_team_label") or row.get("targetTeamLabel") or (
+                f"{team_leader_name}'s Team - {entity_name}"
+                if team_leader_name and entity_name
+                else (entity_name or "Unknown Team")
+            )
+            team_key = (
+                row.get("team_key")
+                or row.get("teamKey")
+                or (
+                    f"team-{team_id}"
+                    if team_id
+                    else (f"tl-{team_leader_id}" if team_leader_id else f"legacy-{entity_id}")
+                )
+            )
+
+            ent = entity_stats.setdefault(
+                str(entity_id),
+                {
+                    "entityId": entity_id,
+                    "name": entity_name,
+                    "totalCredits": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "withEvidenceCount": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                    "teamKeys": set(),
+                    "solverIds": set(),
+                },
+            )
+            ent["teamKeys"].add(team_key)
+            if solver_id:
+                ent["solverIds"].add(str(solver_id))
+            if is_closed:
+                ent["totalCredits"] += row_credits
+                ent["closedCount"] += 1
+                if has_evidence:
+                    ent["withEvidenceCount"] += 1
+                if isinstance(row_hours, (int, float)) and row_hours > 0:
+                    ent["hoursTotal"] += float(row_hours)
+                    ent["hoursCount"] += 1
+            elif is_pending:
+                ent["pendingCount"] += 1
+
+            team = team_stats.setdefault(
+                team_key,
+                {
+                    "teamKey": team_key,
+                    "teamId": team_id,
+                    "teamName": team_name,
+                    "teamLeaderId": team_leader_id,
+                    "teamLeaderName": team_leader_name,
+                    "teamLabel": team_label,
+                    "entityId": entity_id,
+                    "entityName": entity_name,
+                    "totalCredits": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "withEvidenceCount": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                    "solverIds": set(),
+                },
+            )
+            if solver_id:
+                team["solverIds"].add(str(solver_id))
+            if is_closed:
+                team["totalCredits"] += row_credits
+                team["closedCount"] += 1
+                if has_evidence:
+                    team["withEvidenceCount"] += 1
+                if isinstance(row_hours, (int, float)) and row_hours > 0:
+                    team["hoursTotal"] += float(row_hours)
+                    team["hoursCount"] += 1
+            elif is_pending:
+                team["pendingCount"] += 1
+
+            person_key = str(solver_id or "unknown")
+            person_name = user_map.get(solver_id, {}).get("full_name") or row.get("solverName") or "Unknown"
+            person = people_stats.setdefault(
+                person_key,
+                {
+                    "userId": solver_id,
+                    "name": person_name,
+                    "teamId": team_id,
+                    "teamName": team_name,
+                    "teamLabel": team_label,
+                    "entityId": entity_id,
+                    "entityName": entity_name,
+                    "totalCredits": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "evidenceAdded": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                    "latestTeamContextAt": None,
+                },
+            )
+            row_context_at = row.get("closedAt") or row.get("completedAt")
+            if row_context_at and (person["latestTeamContextAt"] is None or row_context_at >= person["latestTeamContextAt"]):
+                person["teamId"] = team_id
+                person["teamName"] = team_name
+                person["teamLabel"] = team_label
+                person["entityId"] = entity_id
+                person["entityName"] = entity_name
+                person["latestTeamContextAt"] = row_context_at
+            if is_closed:
+                person["totalCredits"] += row_credits
+                person["closedCount"] += 1
+                if has_evidence:
+                    person["evidenceAdded"] += 1
+                if isinstance(row_hours, (int, float)) and row_hours > 0:
+                    person["hoursTotal"] += float(row_hours)
+                    person["hoursCount"] += 1
+            elif is_pending:
+                person["pendingCount"] += 1
+
+        entity_rankings = []
+        for item in entity_stats.values():
+            avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+            closed_count = item["closedCount"]
+            entity_rankings.append(
+                {
+                    "entityId": item["entityId"],
+                    "name": item["name"],
+                    "totalCredits": item["totalCredits"],
+                    "closedCount": closed_count,
+                    "pendingCount": item["pendingCount"],
+                    "teamsCount": len(item["teamKeys"]),
+                    "activeSolvers": len(item["solverIds"]),
+                    "coverage": int(round((item["withEvidenceCount"] / closed_count) * 100)) if closed_count else 0,
+                    "avgHours": avg_hours,
+                }
+            )
+
+        team_rankings = []
+        for item in team_stats.values():
+            avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+            closed_count = item["closedCount"]
+            team_rankings.append(
+                {
+                    "teamKey": item["teamKey"],
+                    "teamId": item.get("teamId"),
+                    "teamName": item.get("teamName"),
+                    "teamLeaderId": item["teamLeaderId"],
+                    "teamLeaderName": item["teamLeaderName"],
+                    "teamLabel": item["teamLabel"],
+                    "name": item["teamLabel"],
+                    "entityId": item["entityId"],
+                    "entityName": item["entityName"],
+                    "totalCredits": item["totalCredits"],
+                    "closedCount": closed_count,
+                    "pendingCount": item["pendingCount"],
+                    "activeSolvers": len(item["solverIds"]),
+                    "membersCount": len(item["solverIds"]),
+                    "coverage": int(round((item["withEvidenceCount"] / closed_count) * 100)) if closed_count else 0,
+                    "avgHours": avg_hours,
+                }
+            )
+
+        people_rankings = []
+        for item in people_stats.values():
+            avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+            people_rankings.append(
+                {
+                    "userId": item["userId"],
+                    "name": item["name"],
+                    "team": item["teamLabel"],
+                    "teamId": item.get("teamId"),
+                    "teamName": item.get("teamName"),
+                    "teamLabel": item["teamLabel"],
+                    "entityId": item["entityId"],
+                    "entityName": item["entityName"],
+                    "totalCredits": item["totalCredits"],
+                    "closedCount": item["closedCount"],
+                    "pendingCount": item["pendingCount"],
+                    "evidenceAdded": item["evidenceAdded"],
+                    "avgHours": avg_hours,
+                }
+            )
+
         return Response(
             {
                 "solves": solves,
                 "users": list(user_map.values()),
                 "entities": list(entity_map.values()),
+                "entityRankings": _sort_rankings(entity_rankings),
+                "teamRankings": _sort_rankings(team_rankings),
+                "peopleRankings": _sort_rankings(people_rankings),
             }
         )
 
@@ -1290,6 +1595,17 @@ class RequestStatusUpdateView(APIView):
         deadline_date = serializer.validated_data.get("deadline_date")
         evidence_link = (serializer.validated_data.get("evidence_link") or "").strip()
         evidence_attachment = serializer.validated_data.get("evidence_attachment")
+        if (
+            old_status == ServiceRequest.Status.COMPLETED
+            and requested_status == ServiceRequest.Status.IN_PROGRESS
+        ):
+            rejection_reason = (serializer.validated_data.get("rejection_reason") or "").strip()
+            rejection_note = (serializer.validated_data.get("rejection_note") or "").strip()
+            note_lines = [line for line in [rejection_reason, rejection_note] if line]
+            if note_lines:
+                note = "\n".join(note_lines)
+            elif not note.strip():
+                note = "Result rejected"
         if evidence_link or evidence_attachment:
             actor_role = get_primary_role_key(request.user)
             target_entity_id = get_request_target_entity_id(service_request)
@@ -1379,7 +1695,10 @@ class RequestStatusUpdateView(APIView):
             and old_status == ServiceRequest.Status.COMPLETED
         ):
             service_request.completed_at = None
-            update_fields.append("completed_at")
+            service_request.rejection_reason = note.splitlines()[0].strip() if note.strip() else ""
+            note_lines = [line.strip() for line in note.splitlines() if line.strip()]
+            service_request.resolution_note = "\n".join(note_lines[1:]) if len(note_lines) > 1 else ""
+            update_fields.extend(["completed_at", "rejection_reason", "resolution_note"])
         if effective_new_status == ServiceRequest.Status.CLOSED:
             service_request.closed_at = timezone.now()
             service_request.resolution_note = note
@@ -1636,6 +1955,11 @@ class RequestAssignToMeView(APIView):
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
+        if actor_role == "team_leader" and not can_tl_own_request(request.user, service_request):
+            return Response(
+                {"detail": "You can only take requests owned by your team."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         if service_request.current_assignee_id is not None:
             return Response(
@@ -1746,11 +2070,24 @@ class RequestAssignUserView(APIView):
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        elif actor_role == "team_leader" and assignee.id != request.user.id:
-            return Response(
-                {"detail": "Team Leader can only take request for self."},
-                status=status.HTTP_403_FORBIDDEN,
+        elif actor_role == "team_leader":
+            if not can_tl_own_request(request.user, service_request):
+                return Response(
+                    {"detail": "You can only assign requests owned by your team."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            assignable_user_ids = set(
+                get_tl_assignable_members_queryset(request.user, service_request).values_list(
+                    "id", flat=True
+                )
             )
+            if assignee.id not in assignable_user_ids:
+                return Response(
+                    {
+                        "detail": "Team leaders can only assign requests to regular members of their own team."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         service_request.current_assignee = assignee
         service_request.save(update_fields=["current_assignee"])
 
@@ -1807,50 +2144,99 @@ class RequestTargetReassignView(APIView):
             )
         if not can_reassign_target_team(request.user, service_request):
             return Response(
-                {"detail": "Only admin users and seniors can reassign target teams."},
+                {"detail": "You do not have permission to reassign this request target team."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = RequestTargetReassignSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        new_target_entity = Entity.objects.filter(
-            id=serializer.validated_data["target_team"],
-            is_active=True,
-        ).exclude(entity_type=Entity.EntityType.PROD).first()
-        if new_target_entity is None:
+        target_team_value = serializer.validated_data["target_team"]
+        selected_team = (
+            Team.objects.select_related("leader", "entity")
+            .filter(id=target_team_value, is_active=True)
+            .first()
+        )
+        # Legacy compatibility: allow TL user id and map to that TL's active team.
+        if selected_team is None:
+            selected_tl = (
+                User.objects.select_related("entity")
+                .filter(id=target_team_value, is_active=True)
+                .first()
+            )
+            if selected_tl:
+                selected_team = (
+                    Team.objects.select_related("leader", "entity")
+                    .filter(leader_id=selected_tl.id, is_active=True)
+                    .order_by("id")
+                    .first()
+                )
+        if selected_team is None:
             return Response(
                 {"detail": "Target team not found."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        selected_tl = selected_team.leader
+        if selected_tl is None or not selected_tl.is_active:
+            return Response(
+                {"detail": "Selected team must have an active team leader."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        is_team_leader = UserRole.objects.filter(user_id=selected_tl.id, role__key="team_leader").exists()
+        if not is_team_leader:
+            return Response(
+                {"detail": "Selected team leader must have Team Leader role."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not selected_team.entity_id or selected_team.entity.entity_type == Entity.EntityType.PROD:
+            return Response(
+                {"detail": "Selected team must belong to a support/dev entity."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         request_company_id = get_request_company_id(service_request)
-        if request_company_id and new_target_entity.company_id != request_company_id:
+        if request_company_id and selected_team.company_id != request_company_id:
             return Response(
                 {"detail": "Target team must belong to the same request company."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if is_company_scoped_manager(request.user) and new_target_entity.company_id != request.user.company_id:
+        if is_company_scoped_manager(request.user) and selected_team.company_id != request.user.company_id:
             return Response(
                 {"detail": "Seniors can only reassign requests inside their company."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        if get_primary_role_key(request.user) == "manager" and selected_team.company_id != request.user.company_id:
+            return Response(
+                {"detail": "Managers can only reassign requests inside their company."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
+        new_target_entity = selected_team.entity
         old_target_entity = (
             service_request.target_entity
             or Entity.objects.filter(code=service_request.target_unit.code).first()
         )
-        if old_target_entity and old_target_entity.id == new_target_entity.id:
+        if service_request.target_team_id and service_request.target_team_id == selected_team.id:
             return Response(
                 {"detail": "Request is already assigned to this target team."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         target_unit = get_or_create_unit_for_entity(new_target_entity)
+        service_request.target_team = selected_team
         service_request.target_entity = new_target_entity
         service_request.target_unit = target_unit
+        service_request.target_team_leader = selected_tl
         service_request.current_assignee = None
-        service_request.save(update_fields=["target_entity", "target_unit", "current_assignee"])
+        service_request.save(
+            update_fields=[
+                "target_team",
+                "target_entity",
+                "target_unit",
+                "target_team_leader",
+                "current_assignee",
+            ]
+        )
         RequestTeamReassignmentHistory.objects.create(
             request=service_request,
             old_target_entity=old_target_entity or new_target_entity,
@@ -1863,9 +2249,14 @@ class RequestTargetReassignView(APIView):
             users=filter_recipients_by_request_visibility(service_request, recipients),
             event_type=UserNotification.EventType.REQUEST_MESSAGE,
             title="Request reassigned to your team",
-            message=f"Request {service_request.request_number} was reassigned to {new_target_entity.name}.",
+            message=f"Request {service_request.request_number} was reassigned to {selected_tl.username}'s team.",
             link=f"/requests/{service_request.id}",
-            metadata={"request_id": service_request.id, "target_entity_id": new_target_entity.id},
+            metadata={
+                "request_id": service_request.id,
+                "target_team_id": selected_team.id,
+                "target_entity_id": new_target_entity.id,
+                "target_team_leader_id": selected_tl.id,
+            },
         )
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
@@ -1909,6 +2300,10 @@ def load_request(request_id):
             "company",
             "source_entity",
             "target_entity",
+            "target_team_leader",
+            "target_team",
+            "target_team__leader",
+            "target_team__entity",
             "target_unit",
             "requester_unit",
             "requester_user",
@@ -1948,6 +2343,9 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
             "company",
             "source_entity",
             "target_entity",
+            "target_team",
+            "target_team__leader",
+            "target_team__entity",
             "target_unit",
             "requester_user",
             "requester_user__company",
@@ -1969,6 +2367,18 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
             | Q(company__isnull=True, requester_user__company_id=user.company_id)
         )
 
+    # Keep manager routing visibility company-scoped when assignment permission exists.
+    # This prevents reassigned requests from disappearing after refresh.
+    if (
+        get_primary_role_key(user) == "manager"
+        and has_permission(user, "assign_request")
+        and user.company_id
+    ):
+        visibility_filter |= (
+            Q(company_id=user.company_id)
+            | Q(company__isnull=True, requester_user__company_id=user.company_id)
+        )
+
     if "view_entity_requests" in effective_permissions and user.entity_id:
         visibility_filter |= (
             Q(source_entity_id=user.entity_id)
@@ -1982,23 +2392,50 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
         team_user_ids = list(
             user.__class__.objects.filter(team_leader_id=user.id).values_list("id", flat=True)
         )
-        visibility_filter |= (
-            Q(requester_user_id=user.id)
-            | Q(current_assignee_id=user.id)
-            | Q(requester_user_id__in=team_user_ids)
-            | Q(current_assignee_id__in=team_user_ids)
-            | (
-                Q(target_entity_id=user.entity_id)
-                if user.entity_id
-                else Q(pk__in=[])
+        role_key = get_primary_role_key(user)
+        if role_key == "team_leader":
+            legacy_entity_fallback_q = (
+                Q(target_entity_id=user.entity_id) if user.entity_id else Q(pk__in=[])
             )
-        )
+            team_ownership_filter = (
+                Q(target_team_id__isnull=False, target_team__leader_id=user.id)
+                | Q(
+                    target_team_id__isnull=True,
+                    target_team_leader_id__isnull=False,
+                    target_team_leader_id=user.id,
+                )
+                | (
+                    Q(target_team_id__isnull=True, target_team_leader_id__isnull=True)
+                    & legacy_entity_fallback_q
+                )
+            )
+            visibility_filter |= (
+                Q(requester_user_id=user.id)
+                | Q(current_assignee_id=user.id)
+                | Q(requester_user_id__in=team_user_ids)
+                | Q(current_assignee_id__in=team_user_ids)
+                | team_ownership_filter
+            )
+        else:
+            visibility_filter |= (
+                Q(requester_user_id=user.id)
+                | Q(current_assignee_id=user.id)
+                | Q(requester_user_id__in=team_user_ids)
+                | Q(current_assignee_id__in=team_user_ids)
+                | (
+                    Q(target_entity_id=user.entity_id)
+                    if user.entity_id
+                    else Q(pk__in=[])
+                )
+            )
 
     if "view_own_requests" in effective_permissions:
         visibility_filter |= Q(requester_user_id=user.id) | Q(current_assignee_id=user.id)
 
     pending_visibility = get_pending_approval_visibility_filter(user)
-    if "view_all_requests" in effective_permissions or get_primary_role_key(user) == "super_admin":
+    if get_primary_role_key(user) == "super_admin":
+        role_scoped_queryset = base_queryset
+    elif "view_all_requests" in effective_permissions:
         role_scoped_queryset = base_queryset.filter(
             Q(is_submitted_to_target=True) | pending_visibility,
         )
@@ -2193,12 +2630,8 @@ def can_approve_request_from_requester_hierarchy(actor, service_request):
 
 
 def can_validate_completed_result(actor, service_request):
-    has_base_approve = has_permission(actor, "approve_request")
-    if not has_base_approve:
-        return can_use_request_permission(
-            actor, service_request, "request.approve", False
-        )
     actor_role = get_primary_role_key(actor)
+    requester = service_request.requester_user
     fallback_allowed = False
     if actor_role == "super_admin":
         fallback_allowed = True
@@ -2206,16 +2639,25 @@ def can_validate_completed_result(actor, service_request):
         fallback_allowed = (
             bool(actor.company_id) and actor.company_id == service_request.company_id
         )
-    elif actor_role in {"manager", "team_leader"}:
+    elif actor_role == "manager":
+        fallback_allowed = (
+            bool(actor.company_id)
+            and bool(actor.entity_id)
+            and actor.company_id == requester.company_id
+            and actor.entity_id == requester.entity_id
+        )
+    elif actor_role == "team_leader":
+        fallback_allowed = requester.team_leader_id == actor.id
+    elif actor_role == "user":
+        fallback_allowed = requester.id == actor.id
+
+    # Explicitly block support/dev-side approval for completed-result validation
+    # unless the actor is a valid requester-side approver above.
+    if actor_role in {"manager", "team_leader"}:
         if not actor.entity_id or not actor.entity:
-            fallback_allowed = False
+            fallback_allowed = fallback_allowed and False
         elif actor.entity.entity_type != Entity.EntityType.PROD:
             fallback_allowed = False
-        else:
-            fallback_allowed = (
-                actor.company_id == service_request.company_id
-                and actor.entity_id == service_request.source_entity_id
-            )
     return can_use_request_permission(
         actor,
         service_request,
@@ -2226,12 +2668,12 @@ def can_validate_completed_result(actor, service_request):
 
 def get_pending_approval_visibility_filter(user):
     role_key = get_primary_role_key(user)
+    if role_key == "super_admin":
+        return Q()
     if not has_permission(user, "approve_request"):
         return Q(requester_user_id=user.id)
     if role_key in {"manager", "team_leader"} and not can_access_pending_scope(user):
         return Q(requester_user_id=user.id)
-    if role_key == "super_admin":
-        return Q()
     if role_key == "senior":
         if not user.company_id:
             return Q(requester_user_id=user.id)
@@ -2251,10 +2693,24 @@ def get_pending_approval_visibility_filter(user):
 def can_reassign_target_team(user, service_request):
     if not has_permission(user, "assign_request"):
         return False
+    role_key = get_primary_role_key(user)
+    request_company_id = get_request_company_id(service_request)
+
+    if role_key == "super_admin":
+        return True
+    if role_key == "senior":
+        if is_global_requests_manager(user):
+            return True
+        if is_company_scoped_manager(user):
+            return bool(request_company_id and user.company_id and request_company_id == user.company_id)
+        return False
+    if role_key == "manager":
+        return bool(request_company_id and user.company_id and request_company_id == user.company_id)
+
     if is_global_requests_manager(user):
         return True
     if is_company_scoped_manager(user):
-        return get_request_company_id(service_request) == user.company_id
+        return bool(request_company_id and request_company_id == user.company_id)
     return False
 
 
@@ -2308,7 +2764,7 @@ def get_potential_assignees(user, service_request):
         if actor_role == "senior":
             queryset = queryset.exclude(id=user.id)
     elif actor_role == "team_leader":
-        queryset = queryset.filter(id=user.id)
+        queryset = get_tl_assignable_members_queryset(user, service_request)
 
     return [
         {
@@ -2320,24 +2776,116 @@ def get_potential_assignees(user, service_request):
     ]
 
 
+def can_tl_own_request(user, service_request):
+    if get_primary_role_key(user) != "team_leader":
+        return False
+    if service_request.target_team_id:
+        return bool(
+            service_request.target_team
+            and service_request.target_team.leader_id == user.id
+        )
+    if service_request.target_team_leader_id:
+        return service_request.target_team_leader_id == user.id
+    return bool(user.entity_id and service_request.target_entity_id == user.entity_id)
+
+
+def get_tl_assignable_members_queryset(user, service_request):
+    if get_primary_role_key(user) != "team_leader":
+        return User.objects.none()
+
+    # Resolve candidate member source in order:
+    # 1) request.target_team.members
+    # 2) TL active led team members
+    # 3) legacy users linked by User.team_leader
+    candidate_ids = []
+    request_team = service_request.target_team if service_request.target_team_id else None
+    if request_team and request_team.leader_id == user.id:
+        candidate_ids = list(request_team.members.values_list("id", flat=True))
+        if not candidate_ids:
+            active_led_team = (
+                Team.objects.filter(leader_id=user.id, is_active=True).order_by("id").first()
+            )
+            if active_led_team:
+                candidate_ids = list(active_led_team.members.values_list("id", flat=True))
+    elif service_request.target_team_leader_id == user.id:
+        candidate_ids = list(
+            User.objects.filter(team_leader_id=user.id, is_active=True).values_list("id", flat=True)
+        )
+    elif not service_request.target_team_id and not service_request.target_team_leader_id:
+        # Legacy entity-only request fallback.
+        candidate_ids = list(
+            User.objects.filter(team_leader_id=user.id, is_active=True).values_list("id", flat=True)
+        )
+
+    if not candidate_ids:
+        return User.objects.none()
+
+    regular_user_ids = set(
+        UserRole.objects.filter(role__key="user").values_list("user_id", flat=True)
+    )
+    forbidden_role_user_ids = set(
+        UserRole.objects.filter(
+            role__key__in=["team_leader", "manager", "senior", "super_admin"]
+        ).values_list("user_id", flat=True)
+    )
+    allowed_ids = [
+        user_id
+        for user_id in candidate_ids
+        if user_id in regular_user_ids and user_id not in forbidden_role_user_ids and user_id != user.id
+    ]
+    if not allowed_ids:
+        return User.objects.none()
+
+    return (
+        User.objects.select_related("entity")
+        .filter(
+            id__in=allowed_ids,
+            is_active=True,
+            company_id=user.company_id,
+            entity_id=user.entity_id,
+        )
+        .exclude(entity__entity_type=Entity.EntityType.PROD)
+        .distinct()
+        .order_by("username")
+    )
+
+
 def get_available_reassignment_targets(user, service_request):
+    if not can_reassign_target_team(user, service_request):
+        return []
+
     request_company_id = get_request_company_id(service_request)
     if request_company_id is None:
         return []
 
-    queryset = Entity.objects.filter(
-        company_id=request_company_id,
-        is_active=True,
-    ).exclude(entity_type=Entity.EntityType.PROD).order_by("name")
+    team_leader_ids = set(
+        UserRole.objects.filter(role__key="team_leader").values_list("user_id", flat=True)
+    )
+    queryset = (
+        Team.objects.select_related("leader", "entity")
+        .filter(
+            is_active=True,
+            company_id=request_company_id,
+            leader__isnull=False,
+            leader__is_active=True,
+            entity__is_active=True,
+        )
+        .exclude(entity__entity_type=Entity.EntityType.PROD)
+        .order_by("name")
+    )
     return [
         {
-            "id": entity.id,
-            "name": entity.name,
-            "code": entity.code,
-            "entity_type": entity.entity_type,
-            "label": f"{entity.name} ({entity.get_entity_type_display()})",
+            "id": team.id,
+            "name": team.name,
+            "leader_id": team.leader_id,
+            "leader_name": team.leader.username if team.leader_id else "",
+            "team_leader_name": team.leader.username if team.leader_id else "",
+            "entity_id": team.entity_id,
+            "entity_name": team.entity.name if team.entity_id else "",
+            "label": f"{team.name} — {team.entity.name if team.entity_id else 'Unknown Entity'}",
         }
-        for entity in queryset
+        for team in queryset
+        if team.leader_id in team_leader_ids
     ]
 
 
@@ -2428,6 +2976,11 @@ def apply_scope_filters(queryset, user, scope):
             return queryset.none()
         return queryset.filter(requester_user_id=user.id)
     if normalized_scope == "pending":
+        if role_key == "super_admin":
+            return queryset.filter(
+                is_submitted_to_target=False,
+                status=ServiceRequest.Status.NEW,
+            )
         if role_key == "user" and has_permission(user, "approve_request"):
             return queryset.none()
         if has_permission(user, "approve_request") and can_access_pending_scope(user):
@@ -2459,6 +3012,8 @@ def apply_scope_filters(queryset, user, scope):
 
 
 def can_access_pending_scope(user):
+    if get_primary_role_key(user) == "super_admin":
+        return True
     if has_permission(user, "approve_request"):
         role_key = get_primary_role_key(user)
         if role_key in {"super_admin", "senior"}:
@@ -2548,3 +3103,4 @@ def get_or_create_unit_for_entity(entity):
     if changed:
         unit.save()
     return unit
+

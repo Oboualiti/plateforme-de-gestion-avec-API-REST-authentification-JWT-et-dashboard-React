@@ -522,10 +522,14 @@ function RequestDetailsPage() {
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader && isSupportOrDevEntity
   const canAssignToMember = isTeamLeader && isSupportOrDevEntity && !request?.current_assignee && request?.can_assign_to_me
-  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team) && 
-    (isSuperAdmin || ((isManager || isSenior) && isSupportOrDevEntity))
-  const currentTargetTeamLeaderId = Number(
-    request?.target_team_leader?.id || request?.target_team_leader || 0
+  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team)
+  const hasReassignmentTargets = (request?.available_reassignment_targets || []).length > 0
+  const hasTargetTeamLeader = Boolean(
+    request?.target_team_leader?.id || request?.target_team_leader || request?.target_team_leader_name
+  )
+  const reassignTeamActionLabel = hasTargetTeamLeader ? 'Reassign Team' : 'Assign to Team'
+  const currentTargetTeamId = Number(
+    request?.target_team_id || request?.target_team_leader?.id || request?.target_team_leader || 0
   )
   const potentialAssignees = request?.potential_assignees || []
   const assignmentActions = (canAssignToMe || canAssignToMember || canReassignTargetTeam) ? (
@@ -563,7 +567,7 @@ function RequestDetailsPage() {
           disabled={actionState.busy}
         >
           <Building2 className="h-3.5 w-3.5 mr-1.5" />
-          Assign to Team
+          {reassignTeamActionLabel}
         </Button>
       ) : null}
     </div>
@@ -1695,7 +1699,7 @@ function RequestDetailsPage() {
                 </Select>
                 {potentialAssignees.length === 0 ? (
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                    No team members available for this request.
+                    No team members available to assign.
                   </p>
                 ) : null}
               </div>
@@ -1735,7 +1739,7 @@ function RequestDetailsPage() {
                 Team Reassignment
               </p>
               <h3 className="mt-1 text-base font-extrabold text-foreground">
-                Assign Request To Team
+                {hasTargetTeamLeader ? 'Reassign Request To Team' : 'Assign Request To Team'}
               </h3>
             </div>
             <div className="space-y-3 px-5 py-4">
@@ -1750,11 +1754,16 @@ function RequestDetailsPage() {
                 >
                   <option value="">Select team...</option>
                   {(request?.available_reassignment_targets || []).map((team) => (
-                    <option key={team.id} value={team.id} disabled={Number(team.id) === currentTargetTeamLeaderId}>
-                      {team.label || `${team.team_leader_name}'s Team - ${team.entity_name || 'Unknown Entity'}`}
+                    <option key={team.id} value={team.id} disabled={Number(team.id) === currentTargetTeamId}>
+                      {team.label || `${team.name || team.team_leader_name}'s Team - ${team.entity_name || 'Unknown Entity'}`}
                     </option>
                   ))}
                 </Select>
+                {!hasReassignmentTargets ? (
+                  <p className="text-xs text-muted-foreground">
+                    No assignable team leaders found for this company/entity.
+                  </p>
+                ) : null}
               </div>
               <textarea
                 placeholder="Assignment note..."
@@ -1776,9 +1785,9 @@ function RequestDetailsPage() {
                 type="button"
                 size="sm"
                 onClick={handleReassignTargetTeam}
-                disabled={!reassignTeamForm.targetTeamId || actionState.busy}
+                disabled={!reassignTeamForm.targetTeamId || !hasReassignmentTargets || actionState.busy}
               >
-                Save
+                {hasTargetTeamLeader ? 'Reassign' : 'Assign'}
               </Button>
             </div>
           </section>

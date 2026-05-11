@@ -89,6 +89,9 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     rejection_note = serializers.SerializerMethodField()
     rejected_at = serializers.SerializerMethodField()
     rejected_by_name = serializers.SerializerMethodField()
+    target_team_id = serializers.SerializerMethodField()
+    target_team_name = serializers.SerializerMethodField()
+    target_team_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -108,6 +111,9 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "company_name",
             "source_entity_name",
             "target_entity_name",
+            "target_team_id",
+            "target_team_name",
+            "target_team_label",
             "creator_name",
             "assignee_name",
             "assignee_role",
@@ -127,6 +133,41 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
     def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
+
+    def _resolve_target_team(self, obj):
+        if obj.target_team_id:
+            return obj.target_team
+        return None
+
+    def _resolve_target_team_leader(self, obj):
+        team = self._resolve_target_team(obj)
+        if team and team.leader_id:
+            return team.leader
+        return obj.target_team_leader
+
+    def get_target_team_id(self, obj):
+        team = self._resolve_target_team(obj)
+        if team:
+            return team.id
+        return None
+
+    def get_target_team_name(self, obj):
+        team = self._resolve_target_team(obj)
+        if team:
+            return team.name
+        return ""
+
+    def get_target_team_label(self, obj):
+        team = self._resolve_target_team(obj)
+        if team:
+            entity_name = team.entity.name if team.entity_id else (obj.target_entity.name if obj.target_entity_id else "")
+            return f"{team.name} — {entity_name}" if entity_name else team.name
+        leader = self._resolve_target_team_leader(obj)
+        if leader:
+            entity_name = obj.target_entity.name if obj.target_entity_id else ""
+            return f"{leader.username}'s Team — {entity_name}" if entity_name else f"{leader.username}'s Team"
+        entity_name = obj.target_entity.name if obj.target_entity_id else ""
+        return f"{entity_name} Legacy Queue" if entity_name else "Legacy Queue"
 
     def get_assignee_role(self, obj):
         if not obj.current_assignee_id:
@@ -338,9 +379,10 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     source_entity_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     requester_name = serializers.CharField(source="requester_user.username", read_only=True)
-    target_team_leader_name = serializers.CharField(
-        source="target_team_leader.username", read_only=True
-    )
+    target_team_leader_name = serializers.SerializerMethodField()
+    target_team_id = serializers.SerializerMethodField()
+    target_team_name = serializers.SerializerMethodField()
+    target_team_label = serializers.SerializerMethodField()
     assignee_name = serializers.CharField(
         source="current_assignee.username", read_only=True
     )
@@ -412,6 +454,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "requester_avatar_url",
             "target_team_leader",
             "target_team_leader_name",
+            "target_team_id",
+            "target_team_name",
+            "target_team_label",
             "current_assignee",
             "assignee_name",
             "assignee_avatar_url",
@@ -446,6 +491,45 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
+
+    def _resolve_target_team(self, obj):
+        if obj.target_team_id:
+            return obj.target_team
+        return None
+
+    def _resolve_target_team_leader(self, obj):
+        team = self._resolve_target_team(obj)
+        if team and team.leader_id:
+            return team.leader
+        return obj.target_team_leader
+
+    def get_target_team_id(self, obj):
+        team = self._resolve_target_team(obj)
+        if team:
+            return team.id
+        return None
+
+    def get_target_team_name(self, obj):
+        team = self._resolve_target_team(obj)
+        if team:
+            return team.name
+        return ""
+
+    def get_target_team_label(self, obj):
+        team = self._resolve_target_team(obj)
+        if team:
+            entity_name = team.entity.name if team.entity_id else (obj.target_entity.name if obj.target_entity_id else "")
+            return f"{team.name} — {entity_name}" if entity_name else team.name
+        leader = self._resolve_target_team_leader(obj)
+        if leader:
+            entity_name = obj.target_entity.name if obj.target_entity_id else ""
+            return f"{leader.username}'s Team — {entity_name}" if entity_name else f"{leader.username}'s Team"
+        entity_name = obj.target_entity.name if obj.target_entity_id else ""
+        return f"{entity_name} Legacy Queue" if entity_name else "Legacy Queue"
+
+    def get_target_team_leader_name(self, obj):
+        leader = self._resolve_target_team_leader(obj)
+        return leader.username if leader else ""
 
     def get_company_name(self, obj):
         if obj.company_id:
