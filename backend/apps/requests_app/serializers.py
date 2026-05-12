@@ -92,6 +92,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     target_team_id = serializers.SerializerMethodField()
     target_team_name = serializers.SerializerMethodField()
     target_team_label = serializers.SerializerMethodField()
+    target_team_leader_id = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -114,6 +115,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "target_team_id",
             "target_team_name",
             "target_team_label",
+            "target_team_leader_id",
             "creator_name",
             "assignee_name",
             "assignee_role",
@@ -156,6 +158,14 @@ class RequestSummarySerializer(serializers.ModelSerializer):
         if team:
             return team.name
         return ""
+
+    def get_target_team_leader_id(self, obj):
+        team = self._resolve_target_team(obj)
+        if team and team.leader_id:
+            return team.leader_id
+        if obj.target_team_leader_id:
+            return obj.target_team_leader_id
+        return None
 
     def get_target_team_label(self, obj):
         team = self._resolve_target_team(obj)

@@ -713,6 +713,7 @@ class RequestPermissionWorkflowTests(APITestCase):
         target_ids = {item.get("id") for item in targets}
         self.assertIn(self.support_team.id, target_ids)
         self.assertIn(self.support_peer_team.id, target_ids)
+        self.assertNotIn(self.support_alt_team.id, target_ids)
         self.assertNotIn(self.prod_team.id, target_ids)
         selected_target = next((item for item in targets if item.get("id") == self.support_team.id), None)
         self.assertIsNotNone(selected_target)
@@ -737,14 +738,14 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertTrue(response.data.get("can_reassign_target_team"))
         self.assertEqual(response.data.get("available_reassignment_targets"), [])
 
-    def test_manager_can_still_open_detail_after_reassign_to_other_team_entity_same_company(self):
+    def test_manager_cannot_reassign_to_other_entity_team_even_same_company(self):
         self.client.force_authenticate(user=self.support_manager)
         reassign_response = self.client.post(
             reverse("requests-reassign", kwargs={"request_id": self.submitted_request.id}),
             {"target_team": self.support_alt_team.id, "note": "Route to alternate support team"},
             format="json",
         )
-        self.assertEqual(reassign_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(reassign_response.status_code, status.HTTP_403_FORBIDDEN)
 
         detail_response = self.client.get(
             reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),

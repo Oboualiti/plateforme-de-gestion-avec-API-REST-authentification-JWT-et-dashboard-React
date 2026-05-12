@@ -529,7 +529,7 @@ function RequestDetailsPage() {
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader && isSupportOrDevEntity
   const canAssignToMember = isTeamLeader && isSupportOrDevEntity && !request?.current_assignee && request?.can_assign_to_me
-  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team)
+  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team) && isSupportOrDevEntity
   const hasReassignmentTargets = (request?.available_reassignment_targets || []).length > 0
   const hasTargetTeamLeader = Boolean(
     request?.target_team_leader?.id || request?.target_team_leader || request?.target_team_leader_name

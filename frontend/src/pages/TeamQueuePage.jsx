@@ -322,10 +322,20 @@ function TeamQueuePage() {
             <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search requests..." />
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant={assigneeFilter === 'me' ? 'default' : 'outline'} className="h-10" onClick={() => setAssigneeFilter('me')}>
+            <Button
+              type="button"
+              variant={assigneeFilter === 'me' ? 'default' : 'outline'}
+              className="h-10"
+              onClick={() => setAssigneeFilter((current) => (current === 'me' ? 'all' : 'me'))}
+            >
               {isProdTL ? 'Created by me' : 'Assigned to me'}
             </Button>
-            <Button type="button" variant={assigneeFilter === 'members' ? 'default' : 'outline'} className="h-10" onClick={() => setAssigneeFilter('members')}>
+            <Button
+              type="button"
+              variant={assigneeFilter === 'members' ? 'default' : 'outline'}
+              className="h-10"
+              onClick={() => setAssigneeFilter((current) => (current === 'members' ? 'all' : 'members'))}
+            >
               {isProdTL ? 'Created by my members' : 'Assigned to my members'}
             </Button>
           </div>
@@ -397,7 +407,15 @@ function TeamQueuePage() {
                       {isProdTL && activeTab === 'waiting' ? (
                         <Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" disabled={actionLoadingId === item.id || detailModal.loading} onClick={() => openDetailsModal(item.id)}>Review</Button>
                       ) : (
-                        <Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => openDetailsModal(item.id)}>View</Button>
+                        (() => {
+                          // View action is available only in the Closed requests tab.
+                          if (activeTab !== 'closed') {
+                            return null
+                          }
+                          return (
+                            <Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => openDetailsModal(item.id)}>View</Button>
+                          )
+                        })()
                       )}
                     </td>
                   </tr>

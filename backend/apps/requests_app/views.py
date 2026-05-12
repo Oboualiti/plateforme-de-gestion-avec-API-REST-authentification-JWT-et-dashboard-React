@@ -2356,6 +2356,11 @@ class RequestTargetReassignView(APIView):
                 {"detail": "Managers can only reassign requests inside their company."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        if get_primary_role_key(request.user) == "manager" and selected_team.entity_id != request.user.entity_id:
+            return Response(
+                {"detail": "Managers can only reassign requests to teams inside their entity."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         new_target_entity = selected_team.entity
         old_target_entity = (
@@ -3045,6 +3050,8 @@ def get_available_reassignment_targets(user, service_request):
         .exclude(entity__entity_type=Entity.EntityType.PROD)
         .order_by("name")
     )
+    if get_primary_role_key(user) == "manager" and user.entity_id:
+        queryset = queryset.filter(entity_id=user.entity_id)
     return [
         {
             "id": team.id,
