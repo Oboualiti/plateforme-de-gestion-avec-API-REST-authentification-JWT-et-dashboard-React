@@ -20,6 +20,7 @@ import NotificationsPage from '../pages/NotificationsPage'
 import ProfilePage from '../pages/ProfilePage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
+import TeamQueuePage from '../pages/TeamQueuePage'
 import CreditsBoard from '../pages/CreditsBoard'
 import ProtectedRoute from './ProtectedRoute'
 
@@ -143,6 +144,7 @@ function AppRoutes() {
           <Route path="/credits-board" element={<CreditsBoard />} />
           <Route path="/team" element={<PermissionManagementPage />} />
           <Route path="/requests" element={<RequestsPage />} />
+          <Route path="/team-queue" element={<TeamQueuePage />} />
           <Route path="/pending-requests" element={<RequestsPage forcedScope="pending" />} />
           <Route path="/requests/:requestId" element={<RequestDetailsPage />} />
         </Route>

@@ -171,7 +171,35 @@ def mirror_request_message_to_telegram(service_request, request_message):
     if len(text) > TELEGRAM_MAX_MESSAGE_LEN:
         text = text[: TELEGRAM_MAX_MESSAGE_LEN - 3] + "..."
 
-    _send_telegram_message(service_request, bot_token, chat_id, text)
+    reply_to_message_id = None
+    if getattr(request_message, "reply_to_comment_id", None):
+        reply_to_message_id = getattr(
+            getattr(request_message, "reply_to_comment", None),
+            "telegram_message_id",
+            None,
+        )
+
+    telegram_message_id = _send_telegram_message(
+        service_request,
+        bot_token,
+        chat_id,
+        text,
+        reply_to_message_id=reply_to_message_id,
+    )
+    if telegram_message_id:
+        try:
+            request_message.telegram_message_id = telegram_message_id
+            request_message.telegram_reply_to_message_id = reply_to_message_id
+            request_message.save(
+                update_fields=["telegram_message_id", "telegram_reply_to_message_id"]
+            )
+        except Exception as exc:
+            logger.warning(
+                "Telegram mirror save failed for %s message %s: %s",
+                service_request.request_number,
+                request_message.id,
+                exc,
+            )
     _send_telegram_attachment(service_request, bot_token, chat_id, request_message)
 
 
@@ -226,14 +254,88 @@ def mirror_request_message_edited_to_telegram(service_request, request_message):
     _send_telegram_message(service_request, bot_token, chat_id, text)
 
 
-def _send_telegram_message(service_request, bot_token, chat_id, text):
+def pin_request_message_in_telegram(service_request, request_message):
+    if not getattr(settings, "TELEGRAM_MESSAGE_MIRROR_ENABLED", True):
+        return
+    bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", "").strip()
+    if not bot_token:
+        return
+    chat_id = _resolve_chat_id(service_request)
+    message_id = getattr(request_message, "telegram_message_id", None)
+    if not chat_id or not message_id:
+        return
+    endpoint = f"https://api.telegram.org/bot{bot_token}/pinChatMessage"
     payload = parse.urlencode(
         {
             "chat_id": chat_id,
-            "text": text,
-            "disable_web_page_preview": "true",
+            "message_id": str(message_id),
+            "disable_notification": "true",
         }
     ).encode("utf-8")
+    req = request.Request(endpoint, data=payload, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with request.urlopen(req, timeout=8) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            parsed = json.loads(body) if body else {}
+            if not parsed.get("ok", False):
+                logger.warning(
+                    "Telegram pin failed for %s message %s: %s",
+                    service_request.request_number,
+                    request_message.id,
+                    parsed,
+                )
+    except Exception as exc:
+        logger.warning(
+            "Telegram pin exception for %s message %s: %s",
+            service_request.request_number,
+            request_message.id,
+            exc,
+        )
+
+
+def unpin_request_message_in_telegram(service_request):
+    if not getattr(settings, "TELEGRAM_MESSAGE_MIRROR_ENABLED", True):
+        return
+    bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", "").strip()
+    if not bot_token:
+        return
+    chat_id = _resolve_chat_id(service_request)
+    if not chat_id:
+        return
+    endpoint = f"https://api.telegram.org/bot{bot_token}/unpinChatMessage"
+    payload = parse.urlencode({"chat_id": chat_id}).encode("utf-8")
+    req = request.Request(endpoint, data=payload, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with request.urlopen(req, timeout=8) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            parsed = json.loads(body) if body else {}
+            if not parsed.get("ok", False):
+                logger.warning(
+                    "Telegram unpin failed for %s: %s",
+                    service_request.request_number,
+                    parsed,
+                )
+    except Exception as exc:
+        logger.warning(
+            "Telegram unpin exception for %s: %s",
+            service_request.request_number,
+            exc,
+        )
+
+
+def _send_telegram_message(
+    service_request, bot_token, chat_id, text, reply_to_message_id=None
+):
+    payload_dict = {
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": "true",
+    }
+    if reply_to_message_id:
+        payload_dict["reply_to_message_id"] = str(reply_to_message_id)
+    payload = parse.urlencode(payload_dict).encode("utf-8")
     endpoint = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     req = request.Request(endpoint, data=payload, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -247,12 +349,16 @@ def _send_telegram_message(service_request, bot_token, chat_id, text):
                     service_request.request_number,
                     parsed,
                 )
+                return None
+            result = parsed.get("result") or {}
+            return result.get("message_id")
     except Exception as exc:
         logger.warning(
             "Telegram mirror exception for %s: %s",
             service_request.request_number,
             exc,
         )
+    return None
 
 
 def _send_telegram_attachment(service_request, bot_token, chat_id, request_message):

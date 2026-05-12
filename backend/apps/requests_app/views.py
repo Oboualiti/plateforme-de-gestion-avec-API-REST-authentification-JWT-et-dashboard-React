@@ -71,6 +71,8 @@ from .telegram import (
     mirror_request_created_to_telegram,
     mirror_request_message_edited_to_telegram,
     mirror_request_message_to_telegram,
+    pin_request_message_in_telegram,
+    unpin_request_message_in_telegram,
 )
 
 
@@ -1156,7 +1158,85 @@ class RequestListCreateView(APIView):
     def get(self, request):
         queryset = get_visible_requests_queryset(request.user, include_related=True)
         queryset = apply_scope_filters(queryset, request.user, request.query_params.get("scope"))
+        team_queue_scope = str(request.query_params.get("team_queue", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if team_queue_scope:
+            role_key = get_primary_role_key(request.user)
+            is_prod_entity_user = (
+                (getattr(getattr(request.user, "entity", None), "entity_type", "") or "").upper()
+                == Entity.EntityType.PROD
+            )
+            if role_key == "team_leader":
+                team_member_ids = list(
+                    request.user.__class__.objects.filter(
+                        team_leader_id=request.user.id,
+                        is_active=True,
+                    ).values_list("id", flat=True)
+                )
+                team_member_ids.append(request.user.id)
+                if is_prod_entity_user:
+                    queryset = queryset.filter(requester_user_id__in=team_member_ids)
+                else:
+                    queryset = queryset.filter(
+                        Q(current_assignee_id__in=team_member_ids)
+                        | Q(target_team_id__isnull=False, target_team__leader_id=request.user.id)
+                        | Q(
+                            target_team_id__isnull=True,
+                            target_team_leader_id__isnull=False,
+                            target_team_leader_id=request.user.id,
+                        )
+                    )
+            actor_scope = (request.query_params.get("actor_scope") or "all").strip().lower()
+            is_prod_tl = (
+                role_key == "team_leader"
+                and bool(request.user.entity_id)
+                and request.user.entity
+                and request.user.entity.entity_type == Entity.EntityType.PROD
+            )
+            actor_field = "requester_user__username" if is_prod_tl else "current_assignee__username"
+            actor_exists_q = Q(**{f"{actor_field}__isnull": False})
+            actor_me_q = Q(**{f"{actor_field}__iexact": request.user.username})
+            if actor_scope == "me":
+                queryset = queryset.filter(actor_me_q)
+            elif actor_scope == "members":
+                queryset = queryset.filter(actor_exists_q).exclude(actor_me_q)
+            else:
+                queryset = queryset.filter(actor_exists_q)
+        counts_only = str(request.query_params.get("team_queue_counts", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        rejected_q = Q(
+            status=ServiceRequest.Status.IN_PROGRESS,
+            status_history__old_status=ServiceRequest.Status.COMPLETED,
+            status_history__new_status=ServiceRequest.Status.IN_PROGRESS,
+        )
+        waiting_q = Q(status=ServiceRequest.Status.COMPLETED)
+        closed_q = Q(status=ServiceRequest.Status.CLOSED)
+        assigned_q = ~waiting_q & ~closed_q & ~rejected_q
+        if counts_only:
+            filtered_queryset = apply_request_filters(queryset, request.query_params)
+            payload = {
+                "assigned": filtered_queryset.filter(assigned_q).distinct().count(),
+                "waiting": filtered_queryset.filter(waiting_q).distinct().count(),
+                "sent_back": filtered_queryset.filter(rejected_q).distinct().count(),
+                "closed": filtered_queryset.filter(closed_q).distinct().count(),
+            }
+            return Response(payload)
         queryset = apply_request_filters(queryset, request.query_params)
+        team_bucket = (request.query_params.get("team_bucket") or "").strip().lower()
+        if team_bucket == "assigned":
+            queryset = queryset.filter(assigned_q).distinct()
+        elif team_bucket == "waiting":
+            queryset = queryset.filter(waiting_q).distinct()
+        elif team_bucket in {"sent_back", "sent-back", "sentback"}:
+            queryset = queryset.filter(rejected_q).distinct()
+        elif team_bucket == "closed":
+            queryset = queryset.filter(closed_q).distinct()
         skip_count = str(request.query_params.get("skip_count", "")).strip().lower() in {
             "1",
             "true",
@@ -1474,9 +1554,18 @@ class RequestCommentCreateView(APIView):
             )
         serializer = RequestCommentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        reply_to_comment = None
+        reply_to_comment_id = serializer.validated_data.get("reply_to_comment_id")
+        if reply_to_comment_id:
+            reply_to_comment = RequestMessage.objects.filter(
+                id=reply_to_comment_id, request_id=request_id
+            ).first()
+            if reply_to_comment is None:
+                return Response({"detail": "Reply target comment not found."}, status=status.HTTP_400_BAD_REQUEST)
         request_message = RequestMessage.objects.create(
             request=service_request,
             sender=request.user,
+            reply_to_comment=reply_to_comment,
             message=serializer.validated_data.get("message", ""),
             attachment=serializer.validated_data.get("attachment"),
         )
@@ -1559,6 +1648,63 @@ class RequestCommentUpdateView(APIView):
         comment.save(update_fields=["message", "edited_at"])
         mirror_request_message_edited_to_telegram(service_request, comment)
 
+        service_request = load_request(request_id)
+        mark_request_stuck(service_request)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+
+class RequestCommentPinView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def has_access(self, user, service_request):
+        return get_visible_requests_queryset(user).filter(id=service_request.id).exists()
+
+    def post(self, request, request_id, comment_id):
+        service_request = ServiceRequest.objects.filter(id=request_id).first()
+        if service_request is None or not self.has_access(request.user, service_request):
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        can_view_discussion = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.view_discussion",
+            has_permission(request.user, "view_request_discussion"),
+        )
+        if not can_view_discussion:
+            return Response(
+                {"detail": "You do not have permission to view request discussion."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not can_pin_request_message(request.user, service_request):
+            return Response(
+                {"detail": "You do not have permission to pin request comments."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        comment = RequestMessage.objects.filter(id=comment_id, request_id=request_id).first()
+        if comment is None:
+            return Response({"detail": "Comment not found."}, status=status.HTTP_404_NOT_FOUND)
+        should_pin = bool(request.data.get("pinned", True))
+        if should_pin:
+            RequestMessage.objects.filter(request_id=request_id, is_pinned=True).update(
+                is_pinned=False,
+                pinned_at=None,
+                pinned_by=None,
+            )
+            comment.is_pinned = True
+            comment.pinned_at = timezone.now()
+            comment.pinned_by = request.user
+            comment.save(update_fields=["is_pinned", "pinned_at", "pinned_by"])
+            pin_request_message_in_telegram(service_request, comment)
+        else:
+            comment.is_pinned = False
+            comment.pinned_at = None
+            comment.pinned_by = None
+            comment.save(update_fields=["is_pinned", "pinned_at", "pinned_by"])
+            unpin_request_message_in_telegram(service_request)
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
         return Response(
@@ -2539,6 +2685,30 @@ def can_operate_submitted_request(user, service_request):
     return can_manage_incoming_request(user, service_request)
 
 
+def can_pin_request_message(user, service_request):
+    if not user or not service_request:
+        return False
+    # Request creator can pin discussion messages on their own request.
+    if service_request.requester_user_id == user.id:
+        return True
+    # Assigned support/dev team members can pin.
+    entity_type = str(getattr(getattr(user, "entity", None), "entity_type", "")).upper()
+    if entity_type not in {"SUPPORT", "TDEV"}:
+        return False
+    if service_request.current_assignee_id == user.id:
+        return True
+    if service_request.target_team_id:
+        if service_request.target_team and service_request.target_team.leader_id == user.id:
+            return True
+        if service_request.target_team and service_request.target_team.members.filter(id=user.id).exists():
+            return True
+        return False
+    if service_request.target_team_leader_id and service_request.target_team_leader_id == user.id:
+        return True
+    target_entity_id = get_request_target_entity_id(service_request)
+    return bool(target_entity_id and user.entity_id and target_entity_id == user.entity_id)
+
+
 def get_allowed_status_transitions(user, service_request):
     # CLOSED is terminal: no further status transitions are allowed.
     if service_request.status == ServiceRequest.Status.CLOSED:
@@ -2728,6 +2898,7 @@ def build_request_detail_context(request, service_request):
         "request.comment",
         has_permission(request.user, "comment_request"),
     )
+    can_pin_request_messages = can_pin_request_message(request.user, service_request)
     return {
         "request": request,
         "can_manage_incoming_request": bool(allowed_status_transitions),
@@ -2737,6 +2908,7 @@ def build_request_detail_context(request, service_request):
         "can_reassign_target_team": can_reassign_target_team(request.user, service_request),
         "can_view_request_discussion": can_view_discussion,
         "can_comment_request": can_comment_request,
+        "can_pin_request_messages": can_pin_request_messages,
         "available_reassignment_targets": get_available_reassignment_targets(
             request.user, service_request
         ),
@@ -3103,4 +3275,3 @@ def get_or_create_unit_for_entity(entity):
     if changed:
         unit.save()
     return unit
-

@@ -64,6 +64,15 @@ function RequestListCard({
   onBulkAction,
   page,
   setPage,
+  listKey,
+  onDropItem,
+  onDragStartItem,
+  onDragMoveItem,
+  onDragEndItem,
+  isDragOver,
+  onDragOverList,
+  draggingItemId,
+  draggingFromList,
 }) {
   const filtered = useMemo(() => {
     return requests.filter((item) => {
@@ -82,7 +91,19 @@ function RequestListCard({
   const paged = filtered.slice((safePage - 1) * REQUESTS_PER_PAGE, safePage * REQUESTS_PER_PAGE)
 
   return (
-    <section className="rounded-md border border-border bg-card p-4">
+    <section
+      className={`rounded-md border bg-card p-4 transition-colors ${
+        isDragOver ? 'border-primary bg-primary/15' : 'border-border'
+      }`}
+      onDragOver={(event) => {
+        event.preventDefault()
+        onDragOverList?.(listKey)
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        onDropItem?.(listKey)
+      }}
+    >
       <div className="flex items-center gap-2">
         {icon}
         <h3 className="text-lg font-semibold text-foreground">{title}</h3>
@@ -153,14 +174,23 @@ function RequestListCard({
         </div>
       </div>
 
-      <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">
+      <div className={`mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1 ${isDragOver ? 'rounded-md bg-primary/10 p-1' : ''}`}>
         {paged.length === 0 ? (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
             {emptyText}
           </div>
         ) : (
           paged.map((item) => (
-            <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border border-border bg-background p-3">
+            <div
+              key={item.id}
+              draggable
+              onDragStart={(event) => onDragStartItem?.(event, item, listKey)}
+              onDrag={(event) => onDragMoveItem?.(event)}
+              onDragEnd={() => onDragEndItem?.()}
+              className={`flex cursor-grab items-start justify-between gap-3 rounded-md border border-border bg-background p-3 active:cursor-grabbing ${
+                draggingItemId === item.id && draggingFromList === listKey ? 'opacity-0' : ''
+              }`}
+            >
               <div className="flex min-w-0 items-start gap-3">
                 <input
                   type="checkbox"
@@ -382,6 +412,8 @@ function PermissionControlRequestPermissionsPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiPreview, setAiPreview] = useState(null)
   const [aiPreviewKey, setAiPreviewKey] = useState('')
+  const [dragPreview, setDragPreview] = useState(null)
+  const [dragOverList, setDragOverList] = useState('')
 
   const [userControlKey, setUserControlKey] = useState('view_users')
   const [availableUserControls, setAvailableUserControls] = useState(['view_users'])
@@ -583,6 +615,58 @@ function PermissionControlRequestPermissionsPage() {
     setDeniedRequests((current) => current.filter((row) => row.id !== item.id))
     setAllowedRequests((current) => [item, ...current.filter((row) => row.id !== item.id)])
     setSelectedDeniedIds((current) => current.filter((id) => id !== item.id))
+  }
+
+  function onRequestDragStart(event, item, fromList) {
+    if (!item) return
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(item.id))
+    const rect = event.currentTarget?.getBoundingClientRect?.()
+    const offsetX = (event.clientX || 0) - (rect?.left || 0)
+    const offsetY = (event.clientY || 0) - (rect?.top || 0)
+    // Hide native drag image so our custom preview behaves like the grabbed card.
+    const transparent = document.createElement('img')
+    transparent.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+    event.dataTransfer.setDragImage(transparent, 0, 0)
+    setDragPreview({
+      item,
+      fromList,
+      x: event.clientX || 0,
+      y: event.clientY || 0,
+      offsetX,
+      offsetY,
+      width: rect?.width || 340,
+    })
+  }
+
+  function onRequestDragMove(event) {
+    if (!dragPreview) return
+    if (!event.clientX && !event.clientY) return
+    setDragPreview((current) => (current
+      ? { ...current, x: event.clientX, y: event.clientY }
+      : current))
+  }
+
+  function onRequestDragEnd() {
+    setDragPreview(null)
+    setDragOverList('')
+  }
+
+  function onRequestDrop(targetList) {
+    if (!dragPreview?.item) {
+      setDragOverList('')
+      return
+    }
+    const { item, fromList } = dragPreview
+    if (fromList === targetList) {
+      setDragPreview(null)
+      setDragOverList('')
+      return
+    }
+    if (targetList === 'allowed') moveToAllowed(item)
+    if (targetList === 'denied') moveToDenied(item)
+    setDragPreview(null)
+    setDragOverList('')
   }
 
   function moveUserToDenied(item) {
@@ -1117,6 +1201,15 @@ function PermissionControlRequestPermissionsPage() {
             onBulkAction={bulkMoveAllowedToDenied}
             page={allowedPage}
             setPage={setAllowedPage}
+            listKey="allowed"
+            onDropItem={onRequestDrop}
+            onDragStartItem={onRequestDragStart}
+            onDragMoveItem={onRequestDragMove}
+            onDragEndItem={onRequestDragEnd}
+            isDragOver={dragOverList === 'allowed'}
+            onDragOverList={setDragOverList}
+            draggingItemId={dragPreview?.item?.id || null}
+            draggingFromList={dragPreview?.fromList || ''}
           />
 
           <RequestListCard
@@ -1141,6 +1234,15 @@ function PermissionControlRequestPermissionsPage() {
             onBulkAction={bulkMoveDeniedToAllowed}
             page={deniedPage}
             setPage={setDeniedPage}
+            listKey="denied"
+            onDropItem={onRequestDrop}
+            onDragStartItem={onRequestDragStart}
+            onDragMoveItem={onRequestDragMove}
+            onDragEndItem={onRequestDragEnd}
+            isDragOver={dragOverList === 'denied'}
+            onDragOverList={setDragOverList}
+            draggingItemId={dragPreview?.item?.id || null}
+            draggingFromList={dragPreview?.fromList || ''}
           />
         </div>
       )) : (loadingUserData ? (
@@ -1194,6 +1296,23 @@ function PermissionControlRequestPermissionsPage() {
           />
         </div>
       ))}
+      {dragPreview?.item ? (
+        <div
+          className="pointer-events-none fixed z-[70] rounded-md border border-border bg-card/95 p-3 shadow-elev-md backdrop-blur-sm"
+          style={{
+            left: Math.max(0, dragPreview.x - (dragPreview.offsetX || 0)),
+            top: Math.max(0, dragPreview.y - (dragPreview.offsetY || 0)),
+            width: dragPreview.width || 340,
+          }}
+        >
+          <div className="font-mono text-xs text-muted-foreground">{dragPreview.item.reference}</div>
+          <div className="truncate text-sm font-semibold text-foreground">{dragPreview.item.title || '-'}</div>
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className={chipClass('status', dragPreview.item.status)}>{dragPreview.item.status}</span>
+            <span className={chipClass('priority', dragPreview.item.priority)}>{dragPreview.item.priority}</span>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

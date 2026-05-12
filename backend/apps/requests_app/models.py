@@ -282,10 +282,28 @@ class RequestMessage(models.Model):
         on_delete=models.PROTECT,
         related_name="request_messages_sent",
     )
+    reply_to_comment = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replies",
+    )
     message = models.TextField()
     attachment = models.FileField(upload_to="request_attachments/", null=True, blank=True)
+    telegram_message_id = models.BigIntegerField(null=True, blank=True)
+    telegram_reply_to_message_id = models.BigIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     edited_at = models.DateTimeField(null=True, blank=True)
+    is_pinned = models.BooleanField(default=False)
+    pinned_at = models.DateTimeField(null=True, blank=True)
+    pinned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="request_messages_pinned",
+    )
 
     def __str__(self):
         return f"Message {self.id} on {self.request_id}"
