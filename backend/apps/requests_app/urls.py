@@ -8,6 +8,7 @@ from .views import (
     MainBranchViewSet,
     OperationalUnitViewSet,
     RequestCommentCreateView,
+    RequestCommentPinView,
     RequestCommentUpdateView,
     RequestDeadlineUpdateView,
     RequestDetailView,
@@ -55,6 +56,11 @@ urlpatterns = [
         "requests/<int:request_id>/comments/<int:comment_id>/",
         RequestCommentUpdateView.as_view(),
         name="requests-comments-update",
+    ),
+    path(
+        "requests/<int:request_id>/comments/<int:comment_id>/pin/",
+        RequestCommentPinView.as_view(),
+        name="requests-comments-pin",
     ),
     path(
         "requests/<int:request_id>/status/",

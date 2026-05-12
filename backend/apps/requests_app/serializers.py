@@ -92,6 +92,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     target_team_id = serializers.SerializerMethodField()
     target_team_name = serializers.SerializerMethodField()
     target_team_label = serializers.SerializerMethodField()
+    target_team_leader_id = serializers.SerializerMethodField()
 
     class Meta:
         model = ServiceRequest
@@ -114,6 +115,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "target_team_id",
             "target_team_name",
             "target_team_label",
+            "target_team_leader_id",
             "creator_name",
             "assignee_name",
             "assignee_role",
@@ -156,6 +158,14 @@ class RequestSummarySerializer(serializers.ModelSerializer):
         if team:
             return team.name
         return ""
+
+    def get_target_team_leader_id(self, obj):
+        team = self._resolve_target_team(obj)
+        if team and team.leader_id:
+            return team.leader_id
+        if obj.target_team_leader_id:
+            return obj.target_team_leader_id
+        return None
 
     def get_target_team_label(self, obj):
         team = self._resolve_target_team(obj)
@@ -249,6 +259,10 @@ class RequestCommentSerializer(serializers.ModelSerializer):
     attachment_url = serializers.SerializerMethodField()
     sender_avatar_url = serializers.SerializerMethodField()
     is_edited = serializers.SerializerMethodField()
+    reply_to_comment_id = serializers.IntegerField(read_only=True)
+    is_pinned = serializers.BooleanField(read_only=True)
+    pinned_at = serializers.DateTimeField(read_only=True)
+    pinned_by_name = serializers.CharField(source="pinned_by.username", read_only=True)
 
     class Meta:
         model = RequestMessage
@@ -266,6 +280,10 @@ class RequestCommentSerializer(serializers.ModelSerializer):
             "attachment_url",
             "edited_at",
             "is_edited",
+            "reply_to_comment_id",
+            "is_pinned",
+            "pinned_at",
+            "pinned_by_name",
             "created_at",
         ]
 
@@ -403,6 +421,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     can_reassign_target_team = serializers.SerializerMethodField()
     can_view_request_discussion = serializers.SerializerMethodField()
     can_comment_request = serializers.SerializerMethodField()
+    can_pin_request_messages = serializers.SerializerMethodField()
     available_reassignment_targets = serializers.SerializerMethodField()
     potential_assignees = serializers.SerializerMethodField()
     is_stuck = serializers.SerializerMethodField()
@@ -472,6 +491,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "can_reassign_target_team",
             "can_view_request_discussion",
             "can_comment_request",
+            "can_pin_request_messages",
             "available_reassignment_targets",
             "potential_assignees",
             "is_stuck",
@@ -561,6 +581,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_comment_request(self, obj):
         return bool(self.context.get("can_comment_request"))
+
+    def get_can_pin_request_messages(self, obj):
+        return bool(self.context.get("can_pin_request_messages"))
     def _get_latest_rejection_event(self, obj):
         for item in obj.status_history.all():
             if (
@@ -601,8 +624,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     def get_comments(self, obj):
         if not self.context.get("can_view_request_discussion"):
             return []
+        # Ensure a stable chronological ordering so pinning a message
+        # does not move it in the returned list (prevents it appearing
+        # as the newest message when toggled).
         serializer = RequestCommentSerializer(
-            obj.messages.all(),
+            obj.messages.order_by("created_at"),
             many=True,
             context=self.context,
         )
@@ -700,7 +726,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             )
 
         if self.context.get("can_view_request_discussion"):
-            for item in obj.messages.all():
+            for item in obj.messages.order_by("created_at"):
                 events.append(
                     {
                         "kind": "comment",
@@ -775,6 +801,7 @@ class RequestCreateSerializer(serializers.Serializer):
 class RequestCommentCreateSerializer(serializers.Serializer):
     message = serializers.CharField(required=False, allow_blank=True)
     attachment = serializers.FileField(required=False, allow_null=True)
+    reply_to_comment_id = serializers.IntegerField(required=False)
 
     def validate(self, attrs):
         message = (attrs.get("message") or "").strip()

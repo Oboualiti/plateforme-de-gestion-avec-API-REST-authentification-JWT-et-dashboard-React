@@ -51,9 +51,6 @@ export default function SolveDetailsModal({
   const openUrl = solve.requestUrl || (solve.requestId ? `/requests/${solve.requestId}` : null);
   const status = String(solve.requestStatus || solve.status || "").toUpperCase();
   const isClosed = status === "CLOSED" || solve.isEarned === true;
-  const isCompleted = status === "COMPLETED";
-  const earnedCredits = isClosed ? Number(solve.credits || 0) : 0;
-  const previewCredits = Number(solve.previewCredits ?? solve.creditBreakdown?.total ?? solve.credits ?? 0);
   const canApproveResult = Boolean(solve?.canResultApprove);
   const canRejectResult = Boolean(solve?.canResultReject);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -244,10 +241,6 @@ export default function SolveDetailsModal({
                   <span>{formatDateTime(solve.completedAt)}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Credits: </span>
-                  <span className="font-medium">{earnedCredits}</span>
-                </div>
-                <div>
                   <span className="text-muted-foreground">Priority: </span>
                   <span>{solve.priority || "-"}</span>
                 </div>
@@ -418,30 +411,6 @@ export default function SolveDetailsModal({
             {submitError && <div className="text-xs text-red-500 mt-2">{submitError}</div>}
           </div>
 
-          <div className="border-t border-ink/20 pt-4">
-            <div className="text-xs font-medium text-muted-foreground uppercase mb-2">Credits</div>
-            {isCompleted ? (
-              <div className="mb-3 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
-                Pending approval. Earned credits: <span className="font-bold">0</span>
-                {previewCredits ? <span className="ml-2 text-muted-foreground">Potential credits: {previewCredits}</span> : null}
-              </div>
-            ) : null}
-            <div className="text-xl font-bold mb-3">{earnedCredits} earned</div>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Base · {solve.requestType || "OTHER"}</span>
-                <span className="text-muted-foreground">+{isClosed ? solve.baseCredits || 0 : solve.previewBaseCredits ?? solve.creditBreakdown?.base ?? 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Within SLA</span>
-                <span className="text-muted-foreground">+{isClosed ? solve.slaBonus || 0 : solve.previewSlaBonus ?? solve.creditBreakdown?.sla ?? 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Evidence</span>
-                <span className="text-muted-foreground">+{isClosed ? solve.evidenceBonus || 0 : solve.previewEvidenceBonus ?? solve.creditBreakdown?.evidence ?? 0}</span>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="border-t border-ink/20 p-4">

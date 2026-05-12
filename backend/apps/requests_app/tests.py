@@ -931,6 +931,91 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertEqual(req.rejection_reason, "Missing evidence")
         self.assertEqual(req.resolution_note, "Please attach screenshot or logs.")
 
+    def test_prod_team_leader_can_approve_own_completed_request(self):
+        own_req = ServiceRequest.objects.create(
+            request_number="REQ-TL-OWN-COMPLETE",
+            title="TL own completed request",
+            description="Own request approval flow",
+            category="INFO",
+            requester_user=self.team_leader,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.COMPLETED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        RequestStatusHistory.objects.create(
+            request=own_req,
+            changed_by=self.support_resolver,
+            old_status=ServiceRequest.Status.IN_PROGRESS,
+            new_status=ServiceRequest.Status.COMPLETED,
+            note="Completed by support",
+        )
+
+        self.client.force_authenticate(user=self.team_leader)
+        close_response = self.client.post(
+            reverse("requests-status", kwargs={"request_id": own_req.id}),
+            {"status": ServiceRequest.Status.CLOSED, "note": "Approved by TL requester"},
+            format="json",
+        )
+        self.assertEqual(close_response.status_code, status.HTTP_200_OK)
+        own_req.refresh_from_db()
+        self.assertEqual(own_req.status, ServiceRequest.Status.CLOSED)
+
+    def test_prod_team_leader_can_reject_member_completed_request_via_team_membership(self):
+        member_without_legacy_tl = self._create_user_with_role(
+            "member_no_legacy_tl",
+            "user",
+            entity=self.prod_entity,
+        )
+        self.prod_team.members.add(member_without_legacy_tl)
+        member_without_legacy_tl.team_leader = None
+        member_without_legacy_tl.save(update_fields=["team_leader"])
+
+        req = ServiceRequest.objects.create(
+            request_number="REQ-TL-MEMBER-COMPLETE",
+            title="Member completed request",
+            description="Member request approval flow",
+            category="INFO",
+            requester_user=member_without_legacy_tl,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            status=ServiceRequest.Status.COMPLETED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        RequestStatusHistory.objects.create(
+            request=req,
+            changed_by=self.support_resolver,
+            old_status=ServiceRequest.Status.IN_PROGRESS,
+            new_status=ServiceRequest.Status.COMPLETED,
+            note="Completed by support",
+        )
+
+        self.client.force_authenticate(user=self.team_leader)
+        reject_response = self.client.post(
+            reverse("requests-status", kwargs={"request_id": req.id}),
+            {
+                "status": ServiceRequest.Status.IN_PROGRESS,
+                "rejection_reason": "Need refinement",
+                "rejection_note": "Please update the script output formatting.",
+            },
+            format="json",
+        )
+        self.assertEqual(reject_response.status_code, status.HTTP_200_OK)
+        req.refresh_from_db()
+        self.assertEqual(req.status, ServiceRequest.Status.IN_PROGRESS)
+
     def test_support_side_credits_flags_are_false_for_completed_result(self):
         req = self._completed_request()
         row = self._credits_row_for(self.support_manager, req)
@@ -1040,6 +1125,7 @@ class RequestPermissionWorkflowTests(APITestCase):
         target_ids = {item.get("id") for item in targets}
         self.assertIn(self.support_team.id, target_ids)
         self.assertIn(self.support_peer_team.id, target_ids)
+        self.assertNotIn(self.support_alt_team.id, target_ids)
         self.assertNotIn(self.prod_team.id, target_ids)
         selected_target = next((item for item in targets if item.get("id") == self.support_team.id), None)
         self.assertIsNotNone(selected_target)
@@ -1064,14 +1150,14 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertTrue(response.data.get("can_reassign_target_team"))
         self.assertEqual(response.data.get("available_reassignment_targets"), [])
 
-    def test_manager_can_still_open_detail_after_reassign_to_other_team_entity_same_company(self):
+    def test_manager_cannot_reassign_to_other_entity_team_even_same_company(self):
         self.client.force_authenticate(user=self.support_manager)
         reassign_response = self.client.post(
             reverse("requests-reassign", kwargs={"request_id": self.submitted_request.id}),
             {"target_team": self.support_alt_team.id, "note": "Route to alternate support team"},
             format="json",
         )
-        self.assertEqual(reassign_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(reassign_response.status_code, status.HTTP_403_FORBIDDEN)
 
         detail_response = self.client.get(
             reverse("requests-detail", kwargs={"request_id": self.submitted_request.id}),
@@ -1090,6 +1176,36 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.submitted_request.refresh_from_db()
         self.assertEqual(self.submitted_request.target_team_id, self.support_team.id)
         self.assertEqual(self.submitted_request.target_team_leader_id, self.support_team_leader.id)
+
+    def test_non_owner_team_leader_cannot_take_or_assign_targeted_request(self):
+        self.submitted_request.target_team = self.support_team
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader_peer)
+        take_response = self.client.post(
+            reverse("requests-assign", kwargs={"request_id": self.submitted_request.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(take_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_team_queue_includes_unassigned_targeted_requests_for_owner_tl(self):
+        self.submitted_request.target_team = self.support_team
+        self.submitted_request.target_team_leader = self.support_team_leader
+        self.submitted_request.current_assignee = None
+        self.submitted_request.save(update_fields=["target_team", "target_team_leader", "current_assignee"])
+
+        self.client.force_authenticate(user=self.support_team_leader)
+        response = self.client.get(
+            reverse("requests-list-create"),
+            {"team_queue": "1"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {item.get("id") for item in response.data.get("results", [])}
+        self.assertIn(self.submitted_request.id, ids)
 
     def test_tl_visibility_prefers_target_team_owner_with_legacy_entity_fallback(self):
         self.submitted_request.target_team = self.support_team

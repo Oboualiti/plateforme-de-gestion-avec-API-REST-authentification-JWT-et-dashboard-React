@@ -137,6 +137,9 @@ export function getNavForRole(role, user = null) {
             ...(has("view_team_requests")
               ? [{ label: "Requests", to: "/requests?scope=all", icon: Inbox }]
               : []),
+            ...(has("view_team_requests")
+              ? [{ label: "Team Queue", to: "/team-queue", icon: ListChecks }]
+              : []),
             ...(canCreateRequests
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),

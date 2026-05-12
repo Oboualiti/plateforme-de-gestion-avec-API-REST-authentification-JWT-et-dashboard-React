@@ -431,6 +431,7 @@ function RequestDetailsPage() {
   const [editCommentId, setEditCommentId] = useState(null)
   const [editCommentText, setEditCommentText] = useState('')
   const [editCommentError, setEditCommentError] = useState('')
+  const [replyToComment, setReplyToComment] = useState(null)
   const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
   const [historyPage, setHistoryPage] = useState(1)
   const [statusDialog, setStatusDialog] = useState({
@@ -449,6 +450,9 @@ function RequestDetailsPage() {
   const [deadlineForm, setDeadlineForm] = useState({ value: '', saving: false, error: '' })
   const discussionRef = useRef(null)
   const commentInputRef = useRef(null)
+  const commentNodeRefs = useRef({})
+  const jumpHighlightTimeoutRef = useRef(null)
+  const [highlightedCommentId, setHighlightedCommentId] = useState(null)
 
   const request = state.request
   const roleKeys = user?.role_keys || []
@@ -492,6 +496,9 @@ function RequestDetailsPage() {
     && (request?.can_comment_request ?? effectivePermissionKeys.has('comment_request'))
     && !isDiscussionClosed
   )
+  const canPinMessages = Boolean(
+    canViewRequestDiscussion && (request?.can_pin_request_messages ?? false),
+  )
   const canChangeStatus = Boolean(request?.can_update_status)
   const allowedStatusTransitions = request?.allowed_status_transitions || []
   const lifecycleSelectableStatuses = useMemo(
@@ -522,7 +529,7 @@ function RequestDetailsPage() {
   const hasDeadlineEditAccess = canEditDeadline && effectivePermissionKeys.has('edit_request_deadline')
   const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader && isSupportOrDevEntity
   const canAssignToMember = isTeamLeader && isSupportOrDevEntity && !request?.current_assignee && request?.can_assign_to_me
-  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team)
+  const canReassignTargetTeam = Boolean(request?.can_reassign_target_team) && isSupportOrDevEntity
   const hasReassignmentTargets = (request?.available_reassignment_targets || []).length > 0
   const hasTargetTeamLeader = Boolean(
     request?.target_team_leader?.id || request?.target_team_leader || request?.target_team_leader_name
@@ -574,6 +581,57 @@ function RequestDetailsPage() {
   ) : null
 
   const comments = request?.comments || []
+  const pinnedComment = useMemo(
+    () => comments.find((item) => Boolean(item.is_pinned)) || null,
+    [comments],
+  )
+  const commentsById = useMemo(() => {
+    const map = new Map()
+    comments.forEach((item) => {
+      map.set(Number(item.id), item)
+    })
+    return map
+  }, [comments])
+  function jumpToComment(commentId) {
+    const numericId = Number(commentId)
+    if (!numericId) return
+    const node = commentNodeRefs.current[numericId]
+    if (!node) return
+
+    const container = discussionRef.current
+    if (container && container.contains(node)) {
+      const containerRect = container.getBoundingClientRect()
+      const nodeRect = node.getBoundingClientRect()
+      const margin = Math.min(96, Math.max(32, Math.floor(container.clientHeight * 0.18)))
+      const isFullyVisible = nodeRect.top >= (containerRect.top + margin)
+        && nodeRect.bottom <= (containerRect.bottom - margin)
+
+      if (!isFullyVisible) {
+        const offsetWithinContainer = nodeRect.top - containerRect.top
+        const preferredTop = container.scrollTop + offsetWithinContainer - margin
+        const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
+        const targetTop = Math.max(0, Math.min(preferredTop, maxScrollTop))
+
+        // Gentle 2-step easing instead of a rigid hard-center jump.
+        const firstStepTop = container.scrollTop + (targetTop - container.scrollTop) * 0.65
+        container.scrollTo({ top: firstStepTop, behavior: 'smooth' })
+        window.setTimeout(() => {
+          container.scrollTo({ top: targetTop, behavior: 'smooth' })
+        }, 90)
+      }
+    } else {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+
+    if (jumpHighlightTimeoutRef.current) {
+      window.clearTimeout(jumpHighlightTimeoutRef.current)
+    }
+    setHighlightedCommentId(numericId)
+    jumpHighlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedCommentId((current) => (current === numericId ? null : current))
+      jumpHighlightTimeoutRef.current = null
+    }, 1800)
+  }
   const lastCommentId = comments.length ? comments[comments.length - 1].id : null
   const mentionCandidates = useMemo(() => {
     const map = new Map()
@@ -644,6 +702,13 @@ function RequestDetailsPage() {
         discussionRef.current.scrollTop = discussionRef.current.scrollHeight
     }
   }, [lastCommentId, activeTab])
+  useEffect(() => {
+    return () => {
+      if (jumpHighlightTimeoutRef.current) {
+        window.clearTimeout(jumpHighlightTimeoutRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!canViewRequestDiscussion && activeTab === 'comments') {
@@ -689,8 +754,20 @@ function RequestDetailsPage() {
     if (!comment.trim() && !commentAttachment) return
     const formData = new FormData()
     formData.append('message', comment)
+    if (replyToComment?.id) {
+      formData.append('reply_to_comment_id', String(replyToComment.id))
+    }
     if (commentAttachment) formData.append('attachment', commentAttachment)
     await handleAction(api.post(`/requests/${requestId}/comments/`, formData))
+    setReplyToComment(null)
+  }
+
+  async function toggleCommentPin(commentItem, shouldPin) {
+    await handleAction(
+      api.post(`/requests/${requestId}/comments/${commentItem.id}/pin/`, {
+        pinned: shouldPin,
+      }),
+    )
   }
 
   function startEditComment(commentItem) {
@@ -1300,6 +1377,20 @@ function RequestDetailsPage() {
                     </div>
                   ) : (
                     <>
+                      {pinnedComment ? (
+                        <button
+                          type="button"
+                          onClick={() => jumpToComment(pinnedComment.id)}
+                          className="sticky top-0 z-20 w-full rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-left"
+                        >
+                          <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">
+                            Pinned message {pinnedComment.pinned_by_name ? `by ${pinnedComment.pinned_by_name}` : ''}
+                          </p>
+                          <p className="mt-1 truncate text-sm font-medium text-foreground">
+                            {pinnedComment.message || (pinnedComment.attachment_url ? 'Attachment' : 'Pinned message')}
+                          </p>
+                        </button>
+                      ) : null}
                       <div ref={discussionRef} className="max-h-[420px] overflow-y-auto space-y-5 pr-2 custom-scrollbar">
                         {comments.length === 0 ? (
                            <div className="py-12 text-center text-muted-foreground">
@@ -1308,7 +1399,17 @@ function RequestDetailsPage() {
                            </div>
                         ) : (
                           comments.map(c => (
-                            <div key={c.id} className="flex gap-4">
+                            <div
+                              key={c.id}
+                              ref={(node) => {
+                                if (node) commentNodeRefs.current[c.id] = node
+                              }}
+                              id={`comment-${c.id}`}
+                              className={cn(
+                                'flex gap-4 rounded-md transition-all',
+                                highlightedCommentId === c.id ? 'bg-primary/15 ring-2 ring-primary/50' : '',
+                              )}
+                            >
                               <Avatar name={c.sender_name} size={32} photoUrl={c.sender_avatar_url} identifiers={[c.sender_username, c.sender_name]} />
                               <div className="flex-1 min-w-0">
                                  <div className="flex items-baseline justify-between gap-4 mb-1">
@@ -1325,6 +1426,25 @@ function RequestDetailsPage() {
                                          edited
                                        </span>
                                      ) : null}
+                                     {canCommentRequest ? (
+                                       <button
+                                         type="button"
+                                         className="text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
+                                         onClick={() => setReplyToComment(c)}
+                                       >
+                                         Reply
+                                       </button>
+                                     ) : null}
+                                     {canPinMessages ? (
+                                       <button
+                                         type="button"
+                                         className="text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
+                                         disabled={actionState.busy}
+                                         onClick={() => toggleCommentPin(c, !Boolean(c.is_pinned))}
+                                       >
+                                         {c.is_pinned ? 'Unpin' : 'Pin'}
+                                       </button>
+                                     ) : null}
                                      {canCommentRequest && Number(c.sender) === Number(user?.id) ? (
                                        <button
                                          type="button"
@@ -1337,6 +1457,30 @@ function RequestDetailsPage() {
                                    </div>
                                 </div>
                                 <div className="rounded-lg rounded-tl-none border border-ink/10 bg-card p-4 text-sm font-medium text-foreground/95 whitespace-pre-line shadow-sm">
+                                  {c.is_pinned ? (
+                                    <p className="mb-2 text-[10px] font-extrabold uppercase tracking-widest text-primary">
+                                      Pinned {c.pinned_by_name ? `by ${c.pinned_by_name}` : ''}
+                                    </p>
+                                  ) : null}
+                                  {c.reply_to_comment_id ? (
+                                    <button
+                                      type="button"
+                                      className="mb-2 block w-full rounded-md border border-ink/10 bg-muted/30 px-3 py-2 text-left text-xs hover:bg-primary/10"
+                                      onClick={() => jumpToComment(c.reply_to_comment_id)}
+                                    >
+                                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                        Replying to #{c.reply_to_comment_id}
+                                      </p>
+                                      <p className="mt-1 truncate font-medium text-foreground">
+                                        {(() => {
+                                          const repliedComment = commentsById.get(Number(c.reply_to_comment_id))
+                                          if (!repliedComment) return 'Original message'
+                                          if (repliedComment.message) return repliedComment.message
+                                          return repliedComment.attachment_url ? 'Attachment' : 'Original message'
+                                        })()}
+                                      </p>
+                                    </button>
+                                  ) : null}
                                   {editCommentId === c.id ? (
                                     <div className="space-y-2">
                                       <textarea
@@ -1423,6 +1567,22 @@ function RequestDetailsPage() {
 
                       {canCommentRequest ? (
                         <form onSubmit={submitComment} className="mt-4 rounded-xl border border-ink/10 shadow-brutal bg-background overflow-visible relative z-20">
+                          {replyToComment ? (
+                            <div className="border-b border-ink/10 bg-muted/30 px-4 py-2 text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="truncate">
+                                  Replying to <span className="font-extrabold">{replyToComment.sender_name}</span>: {replyToComment.message || 'Attachment'}
+                                </p>
+                                <button
+                                  type="button"
+                                  className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                                  onClick={() => setReplyToComment(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="relative flex items-start gap-2 p-1">
                              <textarea
                               ref={commentInputRef}

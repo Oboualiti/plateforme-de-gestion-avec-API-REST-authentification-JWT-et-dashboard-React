@@ -46,6 +46,11 @@ function priorityPillClass(priority) {
   return `inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${priorityToneMap[priority] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`
 }
 
+function getStatusLabel(status, isPendingScope) {
+  if (isPendingScope && status === 'NEW') return 'Pending'
+  return statusLabelMap[status] || status || '-'
+}
+
 function typePillClass(type) {
   let baseClass = 'bg-primary/10 text-primary border-primary/20'
   if (type === 'SCRIPT') baseClass = 'bg-indigo-500/10 text-indigo-700 border-indigo-500/20 dark:text-indigo-400'
@@ -892,13 +897,13 @@ function RequestsPage({ forcedScope = '' }) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-1">
-                        {item.was_rejected ? (
+                        {item.was_rejected && item.status !== 'CLOSED' ? (
                           <span className="inline-flex items-center rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-600">
                             SENT BACK
                           </span>
                         ) : (
                           <span className={statusPillClass(item.status)}>
-                            {isPendingScope && item.status === 'NEW' ? 'Pending' : (statusLabelMap[item.status] || item.status || '-')}
+                            {getStatusLabel(item.status, isPendingScope)}
                           </span>
                         )}
                         {item.was_rejected && item.rejected_by_name ? (
