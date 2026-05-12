@@ -1203,8 +1203,6 @@ class RequestListCreateView(APIView):
                 queryset = queryset.filter(actor_me_q)
             elif actor_scope == "members":
                 queryset = queryset.filter(actor_exists_q).exclude(actor_me_q)
-            else:
-                queryset = queryset.filter(actor_exists_q)
         counts_only = str(request.query_params.get("team_queue_counts", "")).strip().lower() in {
             "1",
             "true",
@@ -2540,9 +2538,13 @@ def get_visible_requests_queryset(user, include_related=False, include_ordering=
         )
 
     if "view_team_requests" in effective_permissions:
-        team_user_ids = list(
+        legacy_team_user_ids = set(
             user.__class__.objects.filter(team_leader_id=user.id).values_list("id", flat=True)
         )
+        team_member_ids = set(
+            Team.objects.filter(leader_id=user.id, is_active=True).values_list("members__id", flat=True)
+        )
+        team_user_ids = list(legacy_team_user_ids | team_member_ids)
         role_key = get_primary_role_key(user)
         if role_key == "team_leader":
             legacy_entity_fallback_q = (
@@ -2786,6 +2788,22 @@ def get_allowed_status_transitions(user, service_request):
 
 
 def can_approve_request_from_requester_hierarchy(actor, service_request):
+    def requester_managed_by_tl():
+        if not actor or get_primary_role_key(actor) != "team_leader":
+            return False
+        requester = service_request.requester_user
+        if not requester:
+            return False
+        if requester.id == actor.id:
+            return True
+        if requester.team_leader_id == actor.id:
+            return True
+        return Team.objects.filter(
+            leader_id=actor.id,
+            is_active=True,
+            members__id=requester.id,
+        ).exists()
+
     actor_role = get_primary_role_key(actor)
     requester = service_request.requester_user
     if actor_role == "super_admin":
@@ -2800,7 +2818,7 @@ def can_approve_request_from_requester_hierarchy(actor, service_request):
             and actor.entity_id == requester.entity_id
         )
     if actor_role == "team_leader":
-        return requester.team_leader_id == actor.id
+        return requester_managed_by_tl()
     return False
 
 
@@ -2822,7 +2840,15 @@ def can_validate_completed_result(actor, service_request):
             and actor.entity_id == requester.entity_id
         )
     elif actor_role == "team_leader":
-        fallback_allowed = requester.team_leader_id == actor.id
+        fallback_allowed = (
+            requester.id == actor.id
+            or requester.team_leader_id == actor.id
+            or Team.objects.filter(
+                leader_id=actor.id,
+                is_active=True,
+                members__id=requester.id,
+            ).exists()
+        )
     elif actor_role == "user":
         fallback_allowed = requester.id == actor.id
 
@@ -2861,7 +2887,14 @@ def get_pending_approval_visibility_filter(user):
             requester_user__entity_id=user.entity_id,
         )
     if role_key == "team_leader":
-        return Q(requester_user__team_leader_id=user.id) | Q(requester_user_id=user.id)
+        member_ids = list(
+            Team.objects.filter(leader_id=user.id, is_active=True).values_list("members__id", flat=True)
+        )
+        return (
+            Q(requester_user__team_leader_id=user.id)
+            | Q(requester_user_id=user.id)
+            | Q(requester_user_id__in=member_ids)
+        )
     return Q(requester_user_id=user.id)
 
 
@@ -3217,6 +3250,8 @@ def can_assign_request(user, service_request):
     if actor_role in {"manager", "team_leader"}:
         if not user.entity_id or user.entity.entity_type == Entity.EntityType.PROD:
             fallback_allowed = False
+    if actor_role == "team_leader" and not can_tl_own_request(user, service_request):
+        fallback_allowed = False
     return can_use_request_permission(
         user, service_request, "request.assign", fallback_allowed
     )
