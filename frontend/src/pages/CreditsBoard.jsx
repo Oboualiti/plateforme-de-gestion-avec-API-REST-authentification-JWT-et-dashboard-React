@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Building2,
   Calendar,
+  ChevronDown,
   CheckCircle2,
   ChevronRight,
   Clock3,
@@ -14,6 +15,7 @@ import {
   Filter,
   FolderOpen,
   Info,
+  MoreHorizontal,
   Bug,
   FileCode2,
   Gauge,
@@ -21,6 +23,7 @@ import {
   Paperclip,
   Search,
   Shield,
+  ShieldAlert,
   Star,
   Timer,
   Trophy,
@@ -204,6 +207,54 @@ function sortByEarnedCreditsThenClosedCount(a, b) {
   const bHours = Number.isFinite(Number(b.avgHours)) && Number(b.avgHours) > 0 ? Number(b.avgHours) : Number.POSITIVE_INFINITY;
   if (aHours !== bHours) return aHours - bHours;
   return String(a.name || a.team || "").localeCompare(String(b.name || b.team || ""));
+}
+
+function buildCompanyRankings(rows) {
+  const map = new Map();
+  rows.forEach((solve) => {
+    const companyId = solve.companyId || "unknown";
+    const companyName = solve.sourceCompanyName || solve.solverCompanyName || `Company ${companyId}`;
+    const key = String(companyId);
+    const current = map.get(key) || {
+      companyId,
+      name: companyName,
+      closedCount: 0,
+      pendingCount: 0,
+      hoursTotal: 0,
+      hoursCount: 0,
+      withEvidence: 0,
+      totalCredits: 0,
+      entityIds: new Set(),
+      teamLeaderIds: new Set(),
+      solverIds: new Set(),
+    };
+    if (solve.entityId) current.entityIds.add(String(solve.entityId));
+    const teamLeaderId = getSolveTeamLeaderId(solve);
+    if (teamLeaderId) current.teamLeaderIds.add(String(teamLeaderId));
+    if (solve.solverId) current.solverIds.add(String(solve.solverId));
+
+    if (closedOnly(solve)) {
+      current.closedCount += 1;
+      current.totalCredits += getEarnedCredits(solve);
+      if (Number.isFinite(Number(solve.timeToResolveHours))) {
+        current.hoursTotal += Number(solve.timeToResolveHours);
+        current.hoursCount += 1;
+      }
+      if (solve.hasEvidence) current.withEvidence += 1;
+    } else if (completedOnly(solve)) {
+      current.pendingCount += 1;
+    }
+    map.set(key, current);
+  });
+
+  return [...map.values()].map((item) => ({
+    ...item,
+    entitiesCount: item.entityIds.size,
+    teamsCount: item.teamLeaderIds.size,
+    activeSolvers: item.solverIds.size,
+    avgHours: item.hoursCount ? item.hoursTotal / item.hoursCount : 0,
+    coverage: item.closedCount ? Math.round((item.withEvidence / item.closedCount) * 100) : 0,
+  })).sort(sortByEarnedCreditsThenClosedCount);
 }
 
 function buildEntityRankings(rows, entities = []) {
@@ -431,10 +482,10 @@ function canEditEvidence(solve, currentUser, userRole, userEntityId, userCompany
 }
 
 function rankTone(idx) {
-  if (idx === 0) return "border-warning bg-warning text-ink";
-  if (idx === 1) return "border-ink/20 bg-muted text-foreground";
-  if (idx === 2) return "border-orange-200 bg-orange-100 text-ink";
-  return "border-ink/15 bg-card text-foreground";
+  if (idx === 0) return "border-warning bg-warning text-ink shadow-sm";
+  if (idx === 1) return "border-slate-300 bg-slate-200 text-slate-700 shadow-sm";
+  if (idx === 2) return "border-amber-300 bg-amber-200 text-amber-900 shadow-sm";
+  return "border-ink/15 bg-card text-foreground shadow-sm";
 }
 
 function TopSolverBadge({ className = "" }) {
@@ -539,14 +590,274 @@ function exportSolvesCsv(rows) {
   URL.revokeObjectURL(url);
 }
 
-function CreditsFiltersToolbar({ filters, onChange, onApply, entities, users, canFilterEntity, canFilterUser }) {
-  const toolbarControl = "!w-[152px] shrink-0 text-sm";
-  const toolbarButton = "h-10 shrink-0 px-4 text-sm font-semibold";
+function sameFilters(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function normalizeRequesterDemandPayload(payload) {
+  const raw = payload?.requestDemandRankings || payload?.requesterRankings || {};
+  return {
+    sourceEntities: raw?.sourceEntities || raw?.source_entities || [],
+    sourceTeams: raw?.sourceTeams || raw?.source_teams || [],
+    requesters: raw?.requesters || raw?.requesterRankings || raw?.requester_rankings || [],
+  };
+}
+
+function getBoardContext(user) {
+  const role = getPrimaryRole(user);
+  const entityType = String(user?.entity_type || user?.entity?.entity_type || "").toUpperCase();
+  const isProd = entityType === "PROD";
+  const isSupportDev = entityType === "SUPPORT" || entityType === "TDEV";
+  const canRequesterMode = ["super_admin", "senior", "manager", "team_leader"].includes(role);
+  const variant = role === "super_admin"
+    ? "super_admin"
+    : role === "senior"
+      ? "senior"
+      : role === "manager" && isProd
+        ? "manager_prod"
+        : role === "manager" && isSupportDev
+          ? "manager_support"
+          : role === "team_leader" && isProd
+            ? "leader_prod"
+            : role === "team_leader" && isSupportDev
+              ? "leader_support"
+              : role === "user"
+                ? "user"
+                : "default";
+
+  const base = {
+    role,
+    entityType,
+    variant,
+    isProd,
+    isSupportDev,
+    canRequesterMode,
+    visibleModes: canRequesterMode ? ["solvers", "requesters"] : ["solvers"],
+    visibleSolverTabs: ["entities", "teams", "people"],
+    visibleRequesterTabs: ["sourceEntities", "sourceTeams", "requesters"],
+    defaultMode: isProd && ["manager", "team_leader"].includes(role) ? "requesters" : "solvers",
+    cardPreset: "default",
+    insightPreset: "default",
+    scopeLabel: "My Scope",
+    titleSuffix: "",
+    headerSubtitle: canRequesterMode
+      ? "Track solved work, requester demand, and ranking intelligence."
+      : "Track your performance, contributions, and rankings.",
+  };
+
+  if (role === "super_admin") {
+    return {
+      ...base,
+      visibleSolverTabs: ["companies", "entities", "teams", "people"],
+      cardPreset: "super_admin",
+      scopeLabel: "Global",
+      headerSubtitle: "Track solved work, requester demand, and ranking intelligence across the platform.",
+    };
+  }
+  if (role === "senior") {
+    return {
+      ...base,
+      cardPreset: "senior",
+      scopeLabel: "Company",
+      headerSubtitle: "Track solved work, recognize support/dev work, and analyze performance for your company.",
+    };
+  }
+  if (role === "manager" && isSupportDev) {
+    return {
+      ...base,
+      cardPreset: "manager_support",
+      scopeLabel: "Entity",
+      headerSubtitle: "Track solved work, incoming requests, and ranking intelligence across the platform.",
+    };
+  }
+  if (role === "manager" && isProd) {
+    return {
+      ...base,
+      cardPreset: "manager_prod",
+      scopeLabel: "Entity",
+      headerSubtitle: "Track resolved requests, recognize support/dev work and analyze performance for PROD.",
+    };
+  }
+  if (role === "team_leader" && isSupportDev) {
+    return {
+      ...base,
+      visibleSolverTabs: ["teams", "people"],
+      visibleRequesterTabs: ["sourceTeams", "requesters"],
+      cardPreset: "tl_support",
+      scopeLabel: "Team",
+      headerSubtitle: "Team performance overview. Track solved work, request demand, and rankings for your team.",
+    };
+  }
+  if (role === "team_leader" && isProd) {
+    return {
+      ...base,
+      visibleSolverTabs: ["teams", "people"],
+      visibleRequesterTabs: ["sourceTeams", "requesters"],
+      cardPreset: "tl_prod",
+      scopeLabel: "Team",
+      titleSuffix: "(Team View)",
+      headerSubtitle: "Track team demand, requester performance, and credit consumption.",
+    };
+  }
+  if (role === "user") {
+    if (isProd) {
+      return {
+        ...base,
+        canRequesterMode: true,
+        visibleModes: ["requesters"],
+        visibleSolverTabs: ["teams", "people"],
+        visibleRequesterTabs: ["requesters", "sourceTeams"],
+        defaultMode: "requesters",
+        variant: "user_prod",
+        cardPreset: "user_prod",
+        scopeLabel: "Me",
+        headerSubtitle: "Track your request activity, fulfillment performance, and rankings.",
+      };
+    }
+    return {
+      ...base,
+      canRequesterMode: false,
+      visibleModes: ["solvers"],
+      visibleSolverTabs: ["teams", "people"],
+      visibleRequesterTabs: [],
+      cardPreset: "user",
+      scopeLabel: "Me",
+      headerSubtitle: "Track your performance, contributions, and rankings.",
+    };
+  }
+  return base;
+}
+
+function exportRankingCsv(rows, columns, filenamePrefix = "credits-rankings") {
+  const header = columns.map((c) => c.label);
+  const body = rows.map((row, idx) => columns.map((c) => c.value(row, idx)));
+  const content = [header, ...body].map((line) => line.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function CreditsFiltersToolbar({
+  filters,
+  onChange,
+  exportAction,
+  companies,
+  entities,
+  teams,
+  people,
+  canFilterCompany,
+  canFilterEntity,
+  canFilterTeam,
+  canFilterUser,
+  showRequestType = false,
+  requestTypeOptions = [],
+  allPeopleLabel = "All people",
+}) {
+  const controlShell = "relative h-[46px] min-w-[150px] rounded-lg border border-slate-200 bg-white px-0";
+  const selectClass = "absolute inset-0 z-10 w-full [&>button]:h-full [&>button]:w-full [&>button]:justify-start [&>button]:rounded-lg [&>button]:border-0 [&>button]:bg-transparent [&>button]:px-2.5 [&>button]:pb-1 [&>button]:pt-5 [&>button]:text-[13px] [&>button]:font-medium [&>button]:text-slate-900 [&>button]:shadow-none [&>button]:focus:ring-0 [&>button>svg]:hidden";
+
+  const Field = ({ icon: Icon, label, children }) => (
+    <div className={controlShell}>
+      <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500">
+        {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+        {label}
+      </div>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+      {children}
+    </div>
+  );
+
   return (
-    <div className="flex w-max max-w-full flex-nowrap items-center justify-end gap-3">
-      <div className="relative shrink-0">
-        <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Select className={`${toolbarControl} [&_button]:pl-9`} value={filters.date} onChange={(e) => onChange("date", e.target.value)}>
+    <div className="mb-5 flex flex-wrap items-end gap-2.5 md:flex-nowrap">
+      <Field icon={Calendar} label="Date Range">
+        <Select className={selectClass} value={filters.date} onChange={(e) => onChange("date", e.target.value)}>
+          <option value="30d">Last 30 days</option>
+          <option value="7d">Last 7 days</option>
+          <option value="90d">Last 90 days</option>
+          <option value="all">All time</option>
+        </Select>
+      </Field>
+
+      {canFilterCompany ? (
+        <Field icon={Building2} label="Company">
+          <Select className={selectClass} value={filters.companyId} onChange={(e) => onChange("companyId", e.target.value)}>
+            <option value="all">All companies</option>
+            {companies.map((company) => <option key={company.id} value={String(company.id)}>{company.name}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+
+      {canFilterEntity ? (
+        <Field icon={Building2} label="Entity">
+          <Select className={selectClass} value={filters.entityId} onChange={(e) => onChange("entityId", e.target.value)}>
+            <option value="all">All entities</option>
+            {entities.map((entity) => <option key={entity.id} value={String(entity.id)}>{entity.name}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+
+      {canFilterTeam ? (
+        <Field icon={Users} label="Team">
+          <Select className={selectClass} value={filters.teamId} onChange={(e) => onChange("teamId", e.target.value)}>
+            <option value="all">All teams</option>
+            {teams.map((team) => <option key={team.id} value={String(team.id)}>{team.name}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+
+      {canFilterUser ? (
+        <Field icon={Users} label="Person">
+          <Select className={selectClass} value={filters.personId} onChange={(e) => onChange("personId", e.target.value)}>
+            <option value="all">{allPeopleLabel}</option>
+            {people.map((person) => <option key={person.id} value={String(person.id)}>{person.name}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+
+      {showRequestType ? (
+        <Field icon={Filter} label="Request Type">
+          <Select className={selectClass} value={filters.requestType || "all"} onChange={(e) => onChange("requestType", e.target.value)}>
+            <option value="all">All Request Types</option>
+            {requestTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+
+      {exportAction ? <div className="ml-auto flex shrink-0 items-end gap-2">{exportAction}</div> : null}
+    </div>
+  );
+}
+
+function CompactCreditsFiltersToolbar({
+  filters,
+  onChange,
+  companies,
+  entities,
+  teams,
+  people,
+  allPeopleLabel,
+  canFilterCompany,
+  canFilterEntity,
+  canFilterTeam,
+  canFilterUser,
+  showRequestType = false,
+  requestTypeOptions = [],
+  exportAction
+}) {
+  const toolbarControl = "absolute inset-0 z-10 w-full [&>button]:h-full [&>button]:w-full [&>button]:justify-start [&>button]:rounded-lg [&>button]:border-0 [&>button]:bg-transparent [&>button]:px-2.5 [&>button]:pb-1 [&>button]:pt-5 [&>button]:text-[13px] [&>button]:font-medium [&>button]:text-slate-900 [&>button]:shadow-none [&>button]:focus:ring-0 [&>button>svg]:hidden";
+  const wrapClass = "relative h-[46px] min-w-[150px] rounded-lg border border-slate-200 bg-white";
+  return (
+    <div className="mb-5 flex w-full flex-wrap items-end gap-2.5 md:flex-nowrap">
+      <div className={`${wrapClass} shrink-0`}>
+        <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Calendar className="h-3.5 w-3.5" /> Date Range</div>
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+        <Select className={`${toolbarControl}`} value={filters.date} onChange={(e) => onChange("date", e.target.value)}>
           <option value="30d">Last 30 days</option>
           <option value="7d">Last 7 days</option>
           <option value="90d">Last 90 days</option>
@@ -554,28 +865,72 @@ function CreditsFiltersToolbar({ filters, onChange, onApply, entities, users, ca
         </Select>
       </div>
 
+      {canFilterCompany ? (
+        <div className={wrapClass}>
+          <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5" /> Company</div>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Select className={toolbarControl} value={filters.companyId} onChange={(e) => onChange("companyId", e.target.value)}>
+            <option value="all">All companies</option>
+            {companies.map((company) => (
+              <option key={company.id} value={String(company.id)}>{company.name}</option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
+
       {canFilterEntity ? (
-        <Select className={toolbarControl} value={filters.entityId} onChange={(e) => onChange("entityId", e.target.value)}>
-          <option value="all">All teams</option>
-          {entities.map((entity) => (
-            <option key={entity.id} value={String(entity.id)}>{entity.name}</option>
-          ))}
-        </Select>
+        <div className={wrapClass}>
+          <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5" /> Entity</div>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Select className={toolbarControl} value={filters.entityId} onChange={(e) => onChange("entityId", e.target.value)}>
+            <option value="all">All entities</option>
+            {entities.map((entity) => (
+              <option key={entity.id} value={String(entity.id)}>{entity.name}</option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
+
+      {canFilterTeam ? (
+        <div className={wrapClass}>
+          <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Users className="h-3.5 w-3.5" /> Team</div>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Select className={toolbarControl} value={filters.teamId} onChange={(e) => onChange("teamId", e.target.value)}>
+            <option value="all">All teams</option>
+            {teams.map((team) => (
+              <option key={team.id} value={String(team.id)}>{team.name}</option>
+            ))}
+          </Select>
+        </div>
       ) : null}
 
       {canFilterUser ? (
-        <Select className={toolbarControl} value={filters.userId} onChange={(e) => onChange("userId", e.target.value)}>
-          <option value="all">All solvers</option>
-          {users.map((user) => (
-            <option key={user.id} value={String(user.id)}>{user.full_name || user.username}</option>
-          ))}
-        </Select>
+        <div className={wrapClass}>
+          <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Users className="h-3.5 w-3.5" /> Person</div>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Select className={toolbarControl} value={filters.personId} onChange={(e) => onChange("personId", e.target.value)}>
+            <option value="all">{allPeopleLabel}</option>
+            {people.map((person) => (
+              <option key={person.id} value={String(person.id)}>{person.name}</option>
+            ))}
+          </Select>
+        </div>
       ) : null}
 
-      <Button className={toolbarButton} onClick={onApply}>
-        <Filter className="mr-2 h-4 w-4" />
-        Apply
-      </Button>
+      {showRequestType ? (
+        <div className={wrapClass}>
+          <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Filter className="h-3.5 w-3.5" /> Request Type</div>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Select className={toolbarControl} value={filters.requestType || "all"} onChange={(e) => onChange("requestType", e.target.value)}>
+            <option value="all">All Request Types</option>
+            {requestTypeOptions.map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
+      {exportAction ? <div className="ml-auto shrink-0">{exportAction}</div> : null}
+
     </div>
   );
 }
@@ -583,31 +938,93 @@ function CreditsFiltersToolbar({ filters, onChange, onApply, entities, users, ca
 function CreditsBoardHeader({
   filters,
   onChange,
-  onApply,
+  companies,
   entities,
-  users,
+  teams,
+  people,
+  allPeopleLabel,
+  canFilterCompany,
   canFilterEntity,
+  canFilterTeam,
   canFilterUser,
-  isBasicUser,
+  showRequestType = false,
+  requestTypeOptions = [],
+  subtitle,
+  titleSuffix = "",
+  exportAction,
 }) {
-return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-bold leading-tight text-foreground">Resolved Requests</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {isBasicUser ? "Review request outcomes for your scope." : "Track solved requests and recognize support/dev work."}
-        </p>
+  return (
+    <section className="mb-5">
+      <div className="mb-5 flex flex-col gap-1">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
+            Credits Board
+            {titleSuffix ? <span className="ml-2 text-xl text-muted-foreground">{titleSuffix}</span> : null}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+        </div>
       </div>
-
-      <div className="w-full overflow-x-auto lg:w-auto lg:overflow-visible">
+      <div className="mb-5 flex flex-wrap items-end gap-3">
         <CreditsFiltersToolbar
           filters={filters}
           onChange={onChange}
-          onApply={onApply}
+          exportAction={exportAction}
+          companies={companies}
           entities={entities}
-          users={users}
+          teams={teams}
+          people={people}
+          allPeopleLabel={allPeopleLabel}
+          canFilterCompany={canFilterCompany}
           canFilterEntity={canFilterEntity}
+          canFilterTeam={canFilterTeam}
           canFilterUser={canFilterUser}
+          showRequestType={showRequestType}
+          requestTypeOptions={requestTypeOptions}
+        />
+      </div>
+    </section>
+  );
+}
+
+function CreditsBoardHeaderCompact({
+  filters,
+  onChange,
+  companies,
+  entities,
+  teams,
+  people,
+  allPeopleLabel,
+  canFilterCompany,
+  canFilterEntity,
+  canFilterTeam,
+  canFilterUser,
+  showRequestType = false,
+  requestTypeOptions = [],
+  subtitle,
+  exportAction,
+}) {
+  return (
+    <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-4xl font-bold leading-tight text-foreground">Credits Board</h1>
+        <p className="mt-2 text-base text-muted-foreground">{subtitle}</p>
+      </div>
+      <div className="mb-5 flex flex-wrap items-end gap-3 lg:mb-0">
+        <CompactCreditsFiltersToolbar
+          filters={filters}
+          onChange={onChange}
+          exportAction={exportAction}
+          companies={companies}
+          entities={entities}
+          teams={teams}
+          people={people}
+          allPeopleLabel={allPeopleLabel}
+          canFilterCompany={canFilterCompany}
+          canFilterEntity={canFilterEntity}
+          canFilterTeam={canFilterTeam}
+          canFilterUser={canFilterUser}
+          showRequestType={showRequestType}
+          requestTypeOptions={requestTypeOptions}
         />
       </div>
     </div>
@@ -645,6 +1062,157 @@ function StatsCards({ stats }) {
         );
       })}
     </div>
+  );
+}
+
+function RankingTopCards({ cards, theme = "default" }) {
+  const tones = [
+    {
+      card: "from-amber-50 via-white to-white border-amber-200/70",
+      icon: "border-amber-200 bg-amber-100 text-amber-700",
+      label: "text-amber-700",
+      badge: "border-amber-200 bg-amber-50 text-amber-700",
+    },
+    {
+      card: "from-blue-50 via-white to-white border-blue-200/70",
+      icon: "border-blue-200 bg-blue-100 text-blue-700",
+      label: "text-blue-700",
+      badge: "border-blue-200 bg-blue-50 text-blue-700",
+    },
+    {
+      card: "from-purple-50 via-white to-white border-purple-200/70",
+      icon: "border-purple-200 bg-purple-100 text-purple-700",
+      label: "text-purple-700",
+      badge: "border-purple-200 bg-purple-50 text-purple-700",
+    },
+    {
+      card: "from-emerald-50 via-white to-white border-emerald-200/70",
+      icon: "border-emerald-200 bg-emerald-100 text-emerald-700",
+      label: "text-emerald-700",
+      badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    },
+  ];
+  const executiveTones = [
+    {
+      card: "border-primary/25 bg-primary/5 dark:border-secondary/45 dark:bg-secondary/20",
+      icon: "text-primary dark:text-secondary-foreground",
+      label: "text-primary dark:text-secondary-foreground",
+      badge: "border-primary/30 bg-primary/10 text-primary dark:border-secondary/55 dark:bg-secondary/35 dark:text-secondary-foreground",
+    },
+    {
+      card: "border-info/25 bg-info/5 dark:border-secondary/45 dark:bg-secondary/20",
+      icon: "text-info dark:text-secondary-foreground",
+      label: "text-info dark:text-secondary-foreground",
+      badge: "border-info/30 bg-info/10 text-info dark:border-secondary/55 dark:bg-secondary/35 dark:text-secondary-foreground",
+    },
+    {
+      card: "border-primary/20 bg-primary-soft/50 dark:border-secondary/45 dark:bg-secondary/20",
+      icon: "text-primary dark:text-secondary-foreground",
+      label: "text-primary dark:text-secondary-foreground",
+      badge: "border-primary/25 bg-primary/10 text-primary dark:border-secondary/55 dark:bg-secondary/35 dark:text-secondary-foreground",
+    },
+    {
+      card: "border-success/25 bg-success/5 dark:border-secondary/45 dark:bg-secondary/20",
+      icon: "text-success dark:text-secondary-foreground",
+      label: "text-success dark:text-secondary-foreground",
+      badge: "border-success/30 bg-success/10 text-success dark:border-secondary/55 dark:bg-secondary/35 dark:text-secondary-foreground",
+    },
+  ];
+  const activeTones = theme === "executive" ? executiveTones : tones;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card, idx) => {
+        const tone = activeTones[idx % activeTones.length];
+        const Icon = card.icon || Star;
+        const isNegative = String(card.delta || "").startsWith("-");
+        return (
+          <Card
+            key={`${card.label}-${idx}`}
+            className={`relative min-h-[120px] overflow-hidden rounded-lg border shadow-sm transition-shadow hover:shadow-md ${theme === "executive" ? "" : "bg-gradient-to-br"} ${tone.card}`}
+          >
+            <CardContent className="relative z-10 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${tone.label}`}>
+                  <Icon className={`h-3.5 w-3.5 ${tone.icon}`} />
+                  {card.label}
+                </span>
+                <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${tone.badge}`}>
+                  {idx === 0 ? <Trophy className="h-3.5 w-3.5" /> : idx === 3 ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Star className="h-3.5 w-3.5" />}
+                </span>
+              </div>
+              <div className="mt-3 min-w-0">
+                <p className="mt-1 truncate text-[31px] font-extrabold leading-none text-foreground">{card.value}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{card.hint || "Based on current filters"}</p>
+              </div>
+              <div className={`mt-3 inline-flex items-center gap-1 text-xs font-bold ${isNegative ? "text-red-600" : "text-emerald-600"}`}>
+                {isNegative ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
+                <span>{card.delta || "vs previous 30 days"}</span>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function RankingInsightStrip({ items = [] }) {
+  if (!items.length) return null;
+  const tones = [
+    { icon: "border-success/30 bg-success/10 text-success dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+    { icon: "border-destructive/30 bg-destructive/10 text-destructive dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+    { icon: "border-info/30 bg-info/10 text-info dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+    { icon: "border-muted-foreground/30 bg-muted/40 text-muted-foreground dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+    { icon: "border-primary/30 bg-primary/10 text-primary dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+  ];
+  return (
+    <Card className="rounded-xl border border-ink/10 bg-card shadow-sm">
+      <CardContent className="p-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {items.map((item, idx) => {
+            const tone = tones[idx % tones.length];
+            const Icon = item.icon || Gauge;
+            return (
+              <div key={`${item.label}-${idx}`} className="flex items-center gap-3 rounded-lg border border-ink/10 bg-card/80 p-3 transition-colors hover:bg-muted/30 dark:bg-surface-2/60 dark:hover:bg-surface-2">
+                <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${tone.icon}`}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-muted-foreground">{item.label}</p>
+                  <p className="truncate text-sm font-bold leading-tight text-foreground">{item.value}</p>
+                  <p className="truncate text-xs text-muted-foreground">{item.hint || "based on current filters"}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+function InsightStrip({ items = [] })
+{
+  if (!items.length) return null;
+  return (
+    <Card className="rounded-2xl border border-ink/10 bg-card shadow-sm">
+      <CardContent className="p-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {items.map((item, idx) => (
+            <div key={`${item.label}-${idx}`} className="flex items-center gap-4 rounded-lg border border-ink/10 bg-card/80 p-4 transition-colors hover:bg-muted/30 dark:bg-surface-2/60 dark:hover:bg-surface-2">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-card">
+                {item.icon ? <item.icon className="h-5 w-5 text-muted-foreground" /> : <Gauge className="h-5 w-5 text-muted-foreground" />}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted-foreground">{item.label}</p>
+                <p className="truncate text-lg font-bold">{item.value}</p>
+                {item.hint ? <p className="text-xs text-muted-foreground">{item.hint}</p> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -785,7 +1353,7 @@ function ProdResolvedRequestsTable({
 
   return (
     <>
-      <div className="px-5">
+      <div className="px-4">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: "26%" }} />
@@ -839,7 +1407,7 @@ function ProdResolvedRequestsTable({
                   </div>
                 </td>
                 <td className="px-3 py-4 align-middle truncate">{solve.targetEntityName || "-"}</td>
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   {solve.hasEvidence ? (
                     <button type="button" className="inline-flex items-center gap-1 text-primary hover:underline" onClick={() => onViewDetails(solve)}>
                       <Paperclip className="h-3.5 w-3.5" />
@@ -895,7 +1463,7 @@ function ProdResolvedRequestsTable({
   );
 }
 
-function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves }) {
+function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves, canOpenSolvesDrilldown = true }) {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -910,6 +1478,7 @@ function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves }) {
   return (
     <>
       <div className="px-5">
+        <div className="overflow-hidden rounded-lg border border-ink/10">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: "5%" }} />
@@ -934,7 +1503,7 @@ function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves }) {
               <th className="px-3 py-3 text-center" title="Active solvers">Solvers</th>
               <th className="px-3 py-3 text-center" title="Evidence coverage">Evidence</th>
               <th className="px-3 py-3 text-center" title="Average resolution time">Avg Time</th>
-              <th className="px-3 py-3 text-right">Actions</th>
+              {canOpenSolvesDrilldown ? <th className="px-3 py-3 text-right">Actions</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-ink/10">
@@ -974,21 +1543,24 @@ function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves }) {
                   <td className="px-3 py-4 text-center align-middle">
                     <DurationCell value={formatDurationHours(entity.avgHours)} />
                   </td>
-                  <td className="px-3 py-4 text-right align-middle">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 px-3 text-sm font-semibold"
-                      onClick={() => onViewSolves(entity)}
-                    >
-                      Solves →
-                    </Button>
-                  </td>
+                  {canOpenSolvesDrilldown ? (
+                    <td className="px-3 py-4 text-right align-middle">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-3 text-sm font-semibold"
+                        onClick={() => onViewSolves(entity)}
+                      >
+                        Solves →
+                      </Button>
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
           </tbody>
         </table>
+        </div>
       </div>
       {!entitiesRankings.length ? <div className="py-6 text-center text-sm text-muted-foreground">No entities with solved requests yet.</div> : null}
       <div className="flex items-center justify-between px-5 py-4 text-sm text-muted-foreground">
@@ -1009,7 +1581,103 @@ function ProdEntitiesRankingTable({ entitiesRankings, onViewSolves }) {
   );
 }
 
-function ProdTeamsRankingTable({ teams, onViewSolves }) {
+function ProdCompaniesRankingTable({ companiesRankings, onViewSolves, canOpenSolvesDrilldown = true }) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [companiesRankings.length]);
+
+  const totalPages = Math.max(1, Math.ceil(companiesRankings.length / CREDITS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * CREDITS_PAGE_SIZE;
+  const pageCompanies = companiesRankings.slice(startIndex, startIndex + CREDITS_PAGE_SIZE);
+
+  return (
+    <>
+      <div className="px-5">
+        <div className="overflow-hidden rounded-lg border border-ink/10 bg-white shadow-sm">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "9%" }} />
+          </colgroup>
+          <thead className="bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-ink/10">
+              <th className="px-3 py-3 text-center">Rank</th>
+              <th className="px-3 py-3 text-left">Company</th>
+              <th className="px-3 py-3 text-center">Credits</th>
+              <th className="px-3 py-3 text-center">Closed</th>
+              <th className="px-3 py-3 text-center" title="Completed work waiting for requester approval">Pending</th>
+              <th className="px-3 py-3 text-center">Entities</th>
+              <th className="px-3 py-3 text-center">Teams</th>
+              <th className="px-3 py-3 text-center" title="Active solvers">Solvers</th>
+              <th className="px-3 py-3 text-center" title="Average resolution time">Avg Time</th>
+              {canOpenSolvesDrilldown ? <th className="px-3 py-3 text-right">Actions</th> : null}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink/10">
+            {pageCompanies.map((company, idx) => (
+              <tr key={company.companyId || company.name} className="border-t border-ink/10 transition-colors hover:bg-muted/30">
+                <td className="px-3 py-4 text-center align-middle">
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold shadow-sm ${rankTone(idx)}`}>{idx + 1}</span>
+                </td>
+                <td className="px-3 py-4 align-middle">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <span className="font-medium truncate">{company.name}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-4 text-center align-middle"><CreditsCell value={company.totalCredits} /></td>
+                <td className="px-3 py-4 text-center align-middle"><CountCell value={company.closedCount} /></td>
+                <td className="px-3 py-4 text-center align-middle"><PendingApprovalCell value={company.pendingCount} /></td>
+                <td className="px-3 py-4 text-center align-middle"><CountCell value={company.entitiesCount} tone="blue" /></td>
+                <td className="px-3 py-4 text-center align-middle"><CountCell value={company.teamsCount} tone="blue" /></td>
+                <td className="px-3 py-4 text-center align-middle"><CountCell value={company.activeSolvers} tone="blue" /></td>
+                <td className="px-3 py-4 text-center align-middle"><DurationCell value={formatDurationHours(company.avgHours)} /></td>
+                {canOpenSolvesDrilldown ? (
+                  <td className="px-3 py-4 text-right align-middle">
+                    <Button size="sm" variant="ghost" className="h-8 px-3 text-sm font-semibold" onClick={() => onViewSolves(company)}>
+                      Solves →
+                    </Button>
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      {!companiesRankings.length ? <div className="py-6 text-center text-sm text-muted-foreground">No companies with solved requests yet.</div> : null}
+      <div className="flex items-center justify-between px-5 py-4 text-sm text-muted-foreground">
+        <span>Showing {companiesRankings.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, companiesRankings.length)} of {companiesRankings.length} companies</span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === 1} onClick={() => setPage((p) => p - 1)}>
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </Button>
+            <Button size="sm" className="h-9 w-9 rounded-md p-0 shadow-none">{currentPage}</Button>
+            <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === totalPages} onClick={() => setPage((p) => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ProdTeamsRankingTable({ teams, onViewSolves, canOpenSolvesDrilldown = true }) {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -1024,6 +1692,7 @@ function ProdTeamsRankingTable({ teams, onViewSolves }) {
   return (
     <>
       <div className="px-5">
+        <div className="overflow-hidden rounded-lg border border-ink/10 bg-white shadow-sm">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: "5%" }} />
@@ -1048,7 +1717,7 @@ function ProdTeamsRankingTable({ teams, onViewSolves }) {
               <th className="px-3 py-3 text-center">Members</th>
               <th className="px-3 py-3 text-center">Evidence</th>
               <th className="px-3 py-3 text-center">Avg Time</th>
-              <th className="px-3 py-3 text-right">Actions</th>
+              {canOpenSolvesDrilldown ? <th className="px-3 py-3 text-right">Actions</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-ink/10">
@@ -1057,7 +1726,7 @@ function ProdTeamsRankingTable({ teams, onViewSolves }) {
                 <td className="px-3 py-4 text-center align-middle">
                   <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold shadow-sm ${rankTone(idx)}`}>{idx + 1}</span>
                 </td>
-                <td className="px-3 py-4 align-middle">
+                <td className="px-3 py-3 align-middle">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
                       <Users className="h-4 w-4" />
@@ -1072,20 +1741,23 @@ function ProdTeamsRankingTable({ teams, onViewSolves }) {
                 <td className="px-3 py-4 text-center align-middle"><CountCell value={team.membersCount} tone="blue" /></td>
                 <td className="px-3 py-4 text-center align-middle"><CoverageCell value={team.coverage} /></td>
                 <td className="px-3 py-4 text-center align-middle"><DurationCell value={formatDurationHours(team.avgHours)} /></td>
-                <td className="px-3 py-4 text-right align-middle">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-3 text-sm font-semibold"
-                    onClick={() => onViewSolves(team)}
-                  >
-                    Solves →
-                  </Button>
-                </td>
+                {canOpenSolvesDrilldown ? (
+                  <td className="px-3 py-4 text-right align-middle">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-3 text-sm font-semibold"
+                      onClick={() => onViewSolves(team)}
+                    >
+                      Solves →
+                    </Button>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       {!teams.length ? <div className="py-6 text-center text-sm text-muted-foreground">No teams with solved requests yet.</div> : null}
       <div className="flex items-center justify-between px-5 py-4 text-sm text-muted-foreground">
@@ -1106,7 +1778,7 @@ function ProdTeamsRankingTable({ teams, onViewSolves }) {
   );
 }
 
-function ProdPeopleRankingTable({ people, onViewSolves }) {
+function ProdPeopleRankingTable({ people, onViewSolves, canOpenSolvesDrilldown = true }) {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -1121,6 +1793,7 @@ function ProdPeopleRankingTable({ people, onViewSolves }) {
   return (
     <>
       <div className="px-5">
+        <div className="overflow-hidden rounded-lg border border-ink/10 bg-white shadow-sm">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col style={{ width: "5%" }} />
@@ -1145,13 +1818,13 @@ function ProdPeopleRankingTable({ people, onViewSolves }) {
               <th className="px-3 py-3 text-center" title="Completed work waiting for requester approval">Pending</th>
               <th className="px-3 py-3 text-center" title="Evidence added">Evidence</th>
               <th className="px-3 py-3 text-center" title="Average resolution time">Avg Time</th>
-              <th className="px-3 py-3 text-right">Actions</th>
+              {canOpenSolvesDrilldown ? <th className="px-3 py-3 text-right">Actions</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-ink/10">
             {pagePeople.map((person, idx) => (
               <tr key={person.userId} className="border-t border-ink/10 transition-colors hover:bg-muted/30">
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold shadow-sm ${rankTone(idx)}`}>{idx + 1}</span>
                 </td>
                 <td className="px-3 py-4 align-middle">
@@ -1174,39 +1847,142 @@ function ProdPeopleRankingTable({ people, onViewSolves }) {
                 <td className="px-3 py-4 align-middle truncate">
                   <span className="text-sm">{person.entityName || "Unknown entity"}</span>
                 </td>
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   <CreditsCell value={person.totalCredits} />
                 </td>
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   <CountCell value={person.closedCount} />
                 </td>
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   <PendingApprovalCell value={person.pendingCount} />
                 </td>
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   <EvidenceCell value={person.evidenceAdded} />
                 </td>
-                <td className="px-3 py-4 text-center align-middle">
+                <td className="px-3 py-3 text-center align-middle">
                   <DurationCell value={formatDurationHours(person.avgHours)} />
                 </td>
-                <td className="px-3 py-4 text-right align-middle">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-3 text-sm font-semibold"
-                    onClick={() => onViewSolves(person)}
-                  >
-                    Solves →
-                  </Button>
+                {canOpenSolvesDrilldown ? (
+                  <td className="px-3 py-4 text-right align-middle">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-3 text-sm font-semibold"
+                      onClick={() => onViewSolves(person)}
+                    >
+                      Solves →
+                    </Button>
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      {!people.length ? <div className="py-6 text-center text-sm text-muted-foreground">No people with solved requests yet.</div> : null}
+      <div className="flex items-center justify-between px-5 py-4 text-sm text-muted-foreground">
+        <span>Showing {people.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, people.length)} of {people.length} solvers</span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === 1} onClick={() => setPage(p => p - 1)}>
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </Button>
+            <Button size="sm" className="h-9 w-9 rounded-md p-0 shadow-none">{currentPage}</Button>
+            <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === totalPages} onClick={() => setPage(p => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ProdRequestersRankingTable({ requesters = [] }) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [requesters.length]);
+
+  const safeRequesters = Array.isArray(requesters) ? requesters : [];
+  const totalPages = Math.max(1, Math.ceil(safeRequesters.length / CREDITS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * CREDITS_PAGE_SIZE;
+  const pageRequesters = safeRequesters.slice(startIndex, startIndex + CREDITS_PAGE_SIZE);
+
+  return (
+    <>
+      <div className="px-5">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "12%" }} />
+          </colgroup>
+          <thead className="bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-ink/10">
+              <th className="px-3 py-3 text-center">Rank</th>
+              <th className="px-3 py-3 text-left">Requester</th>
+              <th className="px-3 py-3 text-left">Entity</th>
+              <th className="px-3 py-3 text-center">Created</th>
+              <th className="px-3 py-3 text-center">Closed</th>
+              <th className="px-3 py-3 text-center">Pending</th>
+              <th className="px-3 py-3 text-center">Sent Back</th>
+              <th className="px-3 py-3 text-center">Completion Rate</th>
+              <th className="px-3 py-3 text-center">Avg Time</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink/10">
+            {pageRequesters.map((requester, idx) => (
+              <tr key={requester?.userId ?? idx} className="border-t border-ink/10 transition-colors hover:bg-muted/30">
+                <td className="px-3 py-4 text-center align-middle">
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold shadow-sm ${rankTone(startIndex + idx)}`}>
+                    {startIndex + idx + 1}
+                  </span>
+                </td>
+                <td className="px-3 py-4 align-middle">
+                  <div className="flex items-center gap-2 truncate">
+                    <Avatar name={requester?.name ?? ""} size={28} />
+                    <span className="block truncate font-medium">{requester?.name ?? "Unknown"}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-4 align-middle truncate">
+                  <span className="text-sm">{requester?.entityName ?? "Unknown entity"}</span>
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CountCell value={requester?.createdCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CountCell value={requester?.closedCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <PendingApprovalCell value={requester?.pendingCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CountCell value={requester?.sentBackCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CoverageCell value={requester?.completionRate ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <DurationCell value={formatDurationHours(requester?.avgHours ?? 0)} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {!people.length ? <div className="py-6 text-center text-sm text-muted-foreground">No people with solved requests yet.</div> : null}
+      {!safeRequesters.length ? <div className="py-6 text-center text-sm text-muted-foreground">No requesters yet.</div> : null}
       <div className="flex items-center justify-between px-5 py-4 text-sm text-muted-foreground">
-        <span>Showing {people.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, people.length)} of {people.length} solvers</span>
+        <span>Showing {safeRequesters.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, safeRequesters.length)} of {safeRequesters.length} requesters</span>
         {totalPages > 1 && (
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === 1} onClick={() => setPage(p => p - 1)}>
@@ -2066,6 +2842,569 @@ return (
   );
 }
 
+function RequestDemandRankingTable({ rows = [], searchTerm = "" }) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length]);
+
+  const filteredRows = Array.isArray(rows) ? rows.filter((row) => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return true;
+    const searchableFields = [row.name || "", row.entityName || "", row.teamLabel || ""].join(" ").toLowerCase();
+    return searchableFields.includes(q);
+  }) : [];
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / CREDITS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * CREDITS_PAGE_SIZE;
+  const pageRows = filteredRows.slice(startIndex, startIndex + CREDITS_PAGE_SIZE);
+
+  return (
+    <>
+      <div className="px-4">
+        <div className="overflow-hidden rounded-lg border border-ink/10 bg-white shadow-sm">
+        <table className="w-full text-sm">
+          <colgroup>
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "29%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "14%" }} />
+          </colgroup>
+          <thead className="bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-ink/10">
+              <th className="px-3 py-3 text-center">Rank</th>
+              <th className="px-3 py-3 text-left">Name</th>
+              <th className="px-3 py-3 text-center">Created</th>
+              <th className="px-3 py-3 text-center">Closed</th>
+              <th className="px-3 py-3 text-center">Pending</th>
+              <th className="px-3 py-3 text-center">Sent Back</th>
+              <th className="px-3 py-3 text-center">Completion Rate</th>
+              <th className="px-3 py-3 text-center">Avg Time</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink/10">
+            {pageRows.map((row, idx) => (
+              <tr key={row.entityId || row.teamKey || row.userId || idx} className="border-t border-ink/10 transition-colors hover:bg-muted/30">
+                <td className="px-3 py-4 text-center align-middle">
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold shadow-sm ${rankTone(startIndex + idx)}`}>
+                    {startIndex + idx + 1}
+                  </span>
+                </td>
+                <td className="px-3 py-4 align-middle">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="block truncate font-medium">{row.name || row.teamLabel || "Unknown"}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CountCell value={row.createdCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CountCell value={row.closedCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <PendingApprovalCell value={row.pendingCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CountCell value={row.sentBackCount ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <CoverageCell value={row.completionRate ?? 0} />
+                </td>
+                <td className="px-3 py-4 text-center align-middle">
+                  <DurationCell value={formatDurationHours(row.avgHours ?? 0)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      {!filteredRows.length ? <div className="py-4 text-center text-sm text-muted-foreground">No data yet.</div> : null}
+      <div className="flex items-center justify-between px-4 py-3 text-sm text-muted-foreground">
+        <span>Showing {filteredRows.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, filteredRows.length)} of {filteredRows.length} items</span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === 1} onClick={() => setPage(p => p - 1)}>
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </Button>
+            <Button size="sm" className="h-9 w-9 rounded-md p-0 shadow-none">{currentPage}</Button>
+            <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === totalPages} onClick={() => setPage(p => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function MetricPill({ children, tone = "slate" }) {
+  const tones = {
+    slate: "border-slate-200 bg-slate-50 text-slate-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    red: "border-red-200 bg-red-50 text-red-700",
+  };
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${tones[tone] || tones.slate}`}>{children}</span>;
+}
+
+function EvidenceBar({ value }) {
+  const pct = Math.max(0, Math.min(100, Number(value || 0)));
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <span className="w-9 text-center text-xs font-bold tabular-nums">{pct}%</span>
+      <span className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-slate-100">
+        <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+      </span>
+    </div>
+  );
+}
+
+function RankChip({ rank }) {
+  const tone = rank === 1
+    ? "border-warning bg-warning text-ink"
+    : rank === 2
+      ? "border-slate-300 bg-slate-200 text-slate-700"
+      : rank === 3
+        ? "border-amber-300 bg-amber-200 text-amber-900"
+        : "border-slate-200 bg-slate-100 text-slate-700";
+  return <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md border text-xs font-bold ${tone}`}>{rank}</span>;
+}
+
+function NameCell({ icon: Icon = Building2, name, sub, avatar = false }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      {avatar ? (
+        <Avatar name={name || "-"} size={28} />
+      ) : (
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-blue-700">
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+      )}
+      <div className="min-w-0">
+        <div className="truncate font-bold text-foreground">{name || "-"}</div>
+        {sub ? <div className="truncate text-xs text-muted-foreground">{sub}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function RowMenu() {
+  return (
+    <Button variant="outline" size="sm" className="h-8 w-8 rounded-md border-ink/10 bg-card p-0 shadow-none">
+      <MoreHorizontal className="h-4 w-4" />
+    </Button>
+  );
+}
+
+function RankingsTable({ rows = [], tabKey, isRequesterContext, context, currentUserId, canOpenSolvesDrilldown, onViewSolves }) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length, tabKey, isRequesterContext]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / CREDITS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * CREDITS_PAGE_SIZE;
+  const pageRows = rows.slice(startIndex, startIndex + CREDITS_PAGE_SIZE);
+  const canShowSolves = !isRequesterContext && canOpenSolvesDrilldown;
+  const isProdRequester = context?.isProd && isRequesterContext;
+  const showActions = canShowSolves || (isProdRequester && (tabKey === "sourceTeams" || context?.variant === "user_prod"));
+  const getName = (row) => row.name || row.teamLabel || row.team || row.entityName || "-";
+
+  function renderSolverCells(row, rank) {
+    const isCurrentUser = tabKey === "people" && String(row.userId) === String(currentUserId);
+    const closed = Number(row.closedCount || row.solvedCount || row.completed || 0);
+    const pending = Number(row.pendingCount || 0);
+    if (tabKey === "people") {
+      return [
+        <RankChip rank={rank} />,
+        <NameCell avatar name={isCurrentUser ? "You" : getName(row)} sub={row.team || row.entityName} />,
+        <span className="font-bold tabular-nums">{closed.toLocaleString()}</span>,
+        <MetricPill tone="amber">{pending}</MetricPill>,
+        <EvidenceBar value={row.coverage ?? (closed ? Math.round((Number(row.evidenceAdded || 0) / closed) * 100) : 0)} />,
+        <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+      ];
+    }
+    if (tabKey === "teams") {
+      return [
+        <RankChip rank={rank} />,
+        <NameCell icon={Users} name={getName(row)} sub={row.entityName || ""} />,
+        <span className="font-bold tabular-nums">{Number(row.totalCredits || 0).toLocaleString()}</span>,
+        <span className="tabular-nums">{closed.toLocaleString()}</span>,
+        <MetricPill tone="amber">{pending}</MetricPill>,
+        <span className="tabular-nums">{Number(row.activeSolvers || row.uniqueSolvers || row.membersCount || 0)}</span>,
+        <span className="tabular-nums">{Number(row.requestsToTeam || row.createdCount || row.closedCount || 0).toLocaleString()}</span>,
+        <EvidenceBar value={row.completionRate || row.coverage || 0} />,
+        <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+      ];
+    }
+    if (tabKey === "companies") {
+      return [
+        <RankChip rank={rank} />,
+        <NameCell icon={Building2} name={getName(row)} sub={row.companyName || ""} />,
+        <span className="font-bold tabular-nums">{Number(row.totalCredits || 0).toLocaleString()}</span>,
+        <span className="tabular-nums">{closed.toLocaleString()}</span>,
+        <MetricPill tone="amber">{pending}</MetricPill>,
+        <span className="tabular-nums">{Number(row.entitiesCount || 0)}</span>,
+        <span className="tabular-nums">{Number(row.teamsCount || 0)}</span>,
+        <span className="tabular-nums">{Number(row.activeSolvers || 0)}</span>,
+        <EvidenceBar value={row.coverage || 0} />,
+        <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+      ];
+    }
+    if (tabKey === "entities") {
+      return [
+        <RankChip rank={rank} />,
+        <NameCell icon={Building2} name={getName(row)} sub={row.entityName || ""} />,
+        <span className="font-bold tabular-nums">{Number(row.totalCredits || 0).toLocaleString()}</span>,
+        <span className="tabular-nums">{closed.toLocaleString()}</span>,
+        <MetricPill tone="amber">{pending}</MetricPill>,
+        <span className="tabular-nums">{Number(row.teamsCount || 0)}</span>,
+        <span className="tabular-nums">{Number(row.activeSolvers || row.uniqueSolvers || 0)}</span>,
+        <span className="tabular-nums">{Number(row.incomingCredits || row.requestersCount || row.createdCount || 0).toLocaleString()}</span>,
+        <EvidenceBar value={row.coverage || 0} />,
+        <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+      ];
+    }
+    const common = [
+      <RankChip rank={rank} />,
+      <NameCell icon={tabKey === "teams" ? Users : Building2} name={getName(row)} sub={row.entityName || row.companyName || row.team || ""} />,
+      <span className="font-bold tabular-nums">{Number(row.totalCredits || 0).toLocaleString()}</span>,
+      <span className="tabular-nums">{closed.toLocaleString()}</span>,
+      <MetricPill tone="amber">{pending}</MetricPill>,
+      tabKey === "companies" ? <span className="tabular-nums">{Number(row.entitiesCount || 0)}</span> : <span className="tabular-nums">{Number(row.teamsCount || row.membersCount || 0)}</span>,
+      tabKey === "companies" ? <span className="tabular-nums">{Number(row.teamsCount || 0)}</span> : <span className="tabular-nums">{Number(row.activeSolvers || row.uniqueSolvers || row.membersCount || 0)}</span>,
+      <span className="tabular-nums">{Number(row.activeSolvers || row.uniqueSolvers || row.membersCount || 0)}</span>,
+      tabKey === "companies" ? <EvidenceBar value={row.coverage || row.completionRate || 0} /> : <span className="tabular-nums">{Number(row.incomingCredits || row.requestersCount || row.createdCount || 0).toLocaleString()}</span>,
+      <EvidenceBar value={row.coverage || row.completionRate || 0} />,
+      <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+    ];
+    return common.slice(0, solverColumns.length);
+  }
+
+  function renderRequesterCells(row, rank) {
+    const created = Number(row.createdCount || row.requests || row.requestCount || 0);
+    const closed = Number(row.closedCount || row.resolvedCount || 0);
+    const sentBack = Number(row.sentBackCount || 0);
+    if (context?.variant === "user_prod") {
+      return [
+        { key: "rank", label: "Rank", width: "8%", align: "text-center" },
+        { key: "name", label: tabKey === "sourceTeams" ? "Team" : "Requester", width: "28%", align: "text-left" },
+        { key: "requests", label: "Requests", width: "14%", align: "text-center" },
+        { key: "open", label: "Open", width: "12%", align: "text-center" },
+        { key: "coverage", label: "Coverage", width: "18%", align: "text-center" },
+        { key: "avg", label: "Avg Fulfillment Time", width: "20%", align: "text-center" },
+      ];
+    }
+    if (isProdRequester && tabKey === "sourceTeams") {
+      const credits = Number(row.totalCredits || row.creditsRequested || 0);
+      return [
+        <RankChip rank={rank} />,
+        <NameCell icon={FolderOpen} name={getName(row)} sub={row.entityName} />,
+        <span className="font-bold tabular-nums">{created.toLocaleString()}</span>,
+        <span className="tabular-nums">{credits.toLocaleString()}</span>,
+        <span className="tabular-nums">{Number(row.teamShare || row.percentOfTeamTotal || 0)}%</span>,
+        <span className="tabular-nums">{created ? (credits / created).toFixed(1) : "-"}</span>,
+        <span className="font-bold text-orange-600 tabular-nums">{Number(row.sentBackRate || sentBack || 0)}%</span>,
+        <span className="font-bold text-emerald-600 tabular-nums">{Number(row.completionRate || 0)}%</span>,
+        <span className="text-xs font-bold text-emerald-600">Based on filters</span>,
+      ];
+    }
+    if (isProdRequester) {
+      return [
+        <RankChip rank={rank} />,
+        <NameCell icon={FolderOpen} name={getName(row)} sub={row.entityName} />,
+        <span className="font-bold tabular-nums">{Number(row.totalCredits || 0).toLocaleString()}</span>,
+        <span className="tabular-nums">{created.toLocaleString()}</span>,
+        <MetricPill tone="amber">{closed}</MetricPill>,
+        <span className="tabular-nums">{Number(row.supportEntitiesCount || row.supportEntities || 0)}</span>,
+        <span className="tabular-nums">{Number(row.teamsInvolved || row.teamsCount || 0)}</span>,
+        <EvidenceBar value={row.completionRate || 0} />,
+        <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+      ];
+    }
+    return [
+      <RankChip rank={rank} />,
+      <NameCell avatar={tabKey === "requesters"} icon={FolderOpen} name={getName(row)} sub={row.entityName} />,
+      <span className="font-bold tabular-nums">{created.toLocaleString()}</span>,
+      <span className="tabular-nums">{closed.toLocaleString()}</span>,
+      <MetricPill tone="amber">{Number(row.pendingCount || 0)}</MetricPill>,
+      <MetricPill tone={sentBack ? "red" : "slate"}>{sentBack}</MetricPill>,
+      <EvidenceBar value={row.completionRate || 0} />,
+      <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>,
+    ];
+  }
+
+  function buildColumns() {
+    if (!isRequesterContext) {
+      if (tabKey === "companies") {
+        return [
+          { key: "rank", label: "Rank", width: "7%", align: "text-center" },
+          { key: "name", label: "Company", width: "20%", align: "text-left" },
+          { key: "credits", label: "Credits", width: "10%", align: "text-center" },
+          { key: "closed", label: "Closed", width: "9%", align: "text-center" },
+          { key: "pending", label: "Pending", width: "9%", align: "text-center" },
+          { key: "entities", label: "Entities", width: "9%", align: "text-center" },
+          { key: "teams", label: "Teams", width: "9%", align: "text-center" },
+          { key: "solvers", label: "Solvers", width: "9%", align: "text-center" },
+          { key: "evidence", label: "Evidence", width: "12%", align: "text-center" },
+          { key: "avg", label: "Avg Time", width: "9%", align: "text-center" },
+        ];
+      }
+      if (tabKey === "entities") {
+        return [
+          { key: "rank", label: "Rank", width: "7%", align: "text-center" },
+          { key: "name", label: "Entity", width: "20%", align: "text-left" },
+          { key: "credits", label: "Credits", width: "10%", align: "text-center" },
+          { key: "closed", label: "Closed", width: "9%", align: "text-center" },
+          { key: "pending", label: "Pending", width: "9%", align: "text-center" },
+          { key: "teams", label: "Teams", width: "9%", align: "text-center" },
+          { key: "solvers", label: "Solvers", width: "9%", align: "text-center" },
+          { key: "requesters", label: context?.variant === "manager_support" ? "Incoming Credits" : "Requesters", width: "12%", align: "text-center" },
+          { key: "evidence", label: "Evidence", width: "9%", align: "text-center" },
+          { key: "avg", label: "Avg Time", width: "9%", align: "text-center" },
+        ];
+      }
+      if (tabKey === "teams") {
+        return [
+          { key: "rank", label: "Rank", width: "7%", align: "text-center" },
+          { key: "name", label: "Team", width: "22%", align: "text-left" },
+          { key: "credits", label: "Credits", width: "11%", align: "text-center" },
+          { key: "closed", label: "Closed", width: "10%", align: "text-center" },
+          { key: "pending", label: "Pending", width: "10%", align: "text-center" },
+          { key: "solvers", label: "Solvers", width: "9%", align: "text-center" },
+          { key: "requests", label: "Requests to Team", width: "12%", align: "text-center" },
+          { key: "completion", label: "Completion", width: "11%", align: "text-center" },
+          { key: "avg", label: "Avg Time", width: "8%", align: "text-center" },
+        ];
+      }
+      return [
+        { key: "rank", label: "Rank", width: "9%", align: "text-center" },
+        { key: "name", label: "Solver", width: "27%", align: "text-left" },
+        { key: "closed", label: "Closed", width: "14%", align: "text-center" },
+        { key: "pending", label: "Pending", width: "14%", align: "text-center" },
+        { key: "evidence", label: "Evidence", width: "16%", align: "text-center" },
+        { key: "avg", label: "Avg Resolution Time", width: "16%", align: "text-center" },
+      ];
+    }
+    if (isProdRequester && tabKey === "sourceTeams") {
+      return [
+        { key: "rank", label: "Rank", width: "6%", align: "text-center" },
+        { key: "name", label: "Source Team", width: "20%", align: "text-left" },
+        { key: "requests", label: "Requests", width: "9%", align: "text-center" },
+        { key: "credits", label: "Credits Requested", width: "10%", align: "text-center" },
+        { key: "share", label: "% of Team Total", width: "11%", align: "text-center" },
+        { key: "avgCredits", label: "Avg. Credits / Request", width: "12%", align: "text-center" },
+        { key: "sentBack", label: "Sent-back Rate", width: "9%", align: "text-center" },
+        { key: "closure", label: "Closure Rate", width: "10%", align: "text-center" },
+        { key: "trend", label: "Trend", width: "8%", align: "text-center" },
+      ];
+    }
+    if (isProdRequester) {
+      return [
+        { key: "rank", label: "Rank", width: "6%", align: "text-center" },
+        { key: "name", label: "Source Entity", width: "20%", align: "text-left" },
+        { key: "credits", label: "Credits", width: "10%", align: "text-center" },
+        { key: "requests", label: "Requests", width: "10%", align: "text-center" },
+        { key: "resolved", label: "Resolved", width: "10%", align: "text-center" },
+        { key: "support", label: "Support Entities", width: "10%", align: "text-center" },
+        { key: "teams", label: "Teams Involved", width: "10%", align: "text-center" },
+        { key: "closure", label: "Closure Rate", width: "11%", align: "text-center" },
+        { key: "avg", label: "Avg Resolution Time", width: "11%", align: "text-center" },
+      ];
+    }
+    return [
+      { key: "rank", label: "Rank", width: "8%", align: "text-center" },
+      { key: "name", label: tabKey === "sourceTeams" ? "Source Team" : tabKey === "requesters" ? "Requester" : "Source Entity", width: "20%", align: "text-left" },
+      { key: "created", label: "Created", width: "11%", align: "text-center" },
+      { key: "closed", label: "Closed", width: "11%", align: "text-center" },
+      { key: "pending", label: "Pending", width: "10%", align: "text-center" },
+      { key: "sentBack", label: "Sent Back", width: "10%", align: "text-center" },
+      { key: "completion", label: "Completion", width: "11%", align: "text-center" },
+      { key: "avg", label: "Avg Time", width: "11%", align: "text-center" },
+    ];
+  }
+
+  const baseColumns = buildColumns();
+  const columns = showActions ? [...baseColumns, { key: "actions", label: "Actions", width: "7%", align: "text-center" }] : baseColumns;
+
+  function renderCell(row, rank, key) {
+    const closed = Number(row.closedCount || row.solvedCount || row.completed || row.resolvedCount || 0);
+    const pending = Number(row.pendingCount || 0);
+    const created = Number(row.createdCount || row.requests || row.requestCount || 0);
+    const sentBack = Number(row.sentBackCount || row.sentBackRate || 0);
+    const isCurrentUser = (!isRequesterContext && tabKey === "people" && String(row.userId) === String(currentUserId))
+      || (isRequesterContext && context?.variant === "user_prod" && tabKey === "requesters" && String(row.userId) === String(currentUserId));
+    if (key === "rank") return <RankChip rank={rank} />;
+    if (key === "name") {
+      const isAvatar = tabKey === "people" || tabKey === "requesters";
+      const icon = isAvatar
+        ? null
+        : tabKey === "teams" || tabKey === "sourceTeams"
+          ? Users
+          : Building2;
+      return <NameCell avatar={isAvatar} icon={icon} name={isCurrentUser ? "You" : getName(row)} sub={row.team || row.entityName || ""} />;
+    }
+    if (key === "credits") return <span className="font-bold tabular-nums">{Number(row.totalCredits || row.creditsRequested || 0).toLocaleString()}</span>;
+    if (key === "closed" || key === "resolved") return key === "resolved" ? <MetricPill tone="amber">{closed}</MetricPill> : <span className="tabular-nums">{closed.toLocaleString()}</span>;
+    if (key === "pending") return <MetricPill tone="amber">{pending}</MetricPill>;
+    if (key === "entities") return <span className="tabular-nums">{Number(row.entitiesCount || 0)}</span>;
+    if (key === "teams") return <span className="tabular-nums">{Number(row.teamsCount || row.teamsInvolved || 0)}</span>;
+    if (key === "solvers") return <span className="tabular-nums">{Number(row.activeSolvers || row.uniqueSolvers || row.membersCount || 0)}</span>;
+    if (key === "requesters") return <span className="tabular-nums">{Number(row.incomingCredits || row.requestersCount || row.createdCount || 0).toLocaleString()}</span>;
+    if (key === "requests") return <span className="tabular-nums">{created.toLocaleString()}</span>;
+    if (key === "open") return <span className="tabular-nums">{pending.toLocaleString()}</span>;
+    if (key === "coverage") return <EvidenceBar value={row.completionRate || row.coverage || 0} />;
+    if (key === "support") return <span className="tabular-nums">{Number(row.supportEntitiesCount || row.supportEntities || 0)}</span>;
+    if (key === "evidence") return <EvidenceBar value={row.coverage ?? (closed ? Math.round((Number(row.evidenceAdded || 0) / closed) * 100) : 0)} />;
+    if (key === "completion" || key === "closure") return <EvidenceBar value={row.completionRate || row.coverage || 0} />;
+    if (key === "avg") return <MetricPill>{formatDurationHours(row.avgHours || 0)}</MetricPill>;
+    if (key === "created") return <span className="font-bold tabular-nums">{created.toLocaleString()}</span>;
+    if (key === "sentBack") return <MetricPill tone={sentBack ? "red" : "slate"}>{key === "sentBack" && String(row.sentBackRate || "").includes("%") ? row.sentBackRate : sentBack}</MetricPill>;
+    if (key === "share") return <span className="tabular-nums">{Number(row.teamShare || row.percentOfTeamTotal || 0)}%</span>;
+    if (key === "avgCredits") {
+      const credits = Number(row.totalCredits || row.creditsRequested || 0);
+      return <span className="tabular-nums">{created ? (credits / created).toFixed(1) : "-"}</span>;
+    }
+    if (key === "trend") return <span className="text-xs font-bold text-emerald-600">Based on filters</span>;
+    return "-";
+  }
+
+  return (
+    <>
+      <div className="px-4 pb-2">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            {columns.map((col) => <col key={col.key} style={{ width: col.width }} />)}
+          </colgroup>
+          <thead className="bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-ink/10">
+              {columns.map((col) => (
+                <th key={col.key} className={`px-3 py-3 align-middle ${col.align}`}>{col.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink/10">
+            {pageRows.map((row, idx) => {
+              const rank = startIndex + idx + 1;
+              const isCurrentUser = !isRequesterContext && tabKey === "people" && String(row.userId) === String(currentUserId);
+              return (
+                <tr key={`${tabKey}-${row.companyId || row.entityId || row.teamKey || row.teamLeaderId || row.userId || row.name || idx}`} className={`border-t border-ink/10 transition-colors hover:bg-muted/30 ${isCurrentUser ? "bg-warning/10" : ""}`}>
+                  {baseColumns.map((col) => (
+                    <td key={col.key} className={`px-3 py-3 align-middle ${col.align}`}>{renderCell(row, rank, col.key)}</td>
+                  ))}
+                  {showActions ? (
+                    <td className="px-3 py-3 text-center align-middle">
+                      {canShowSolves ? (
+                        <Button size="sm" variant="outline" className="h-8 rounded-md border-ink/10 bg-card px-3 text-xs font-semibold shadow-none" onClick={() => onViewSolves(row)}>Solves</Button>
+                      ) : (
+                        <RowMenu />
+                      )}
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {!rows.length ? <div className="py-6 text-center text-sm text-muted-foreground">No rankings found.</div> : null}
+      </div>
+      <div className="flex items-center justify-between px-5 py-3 text-xs text-muted-foreground">
+        <span>Showing {rows.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, rows.length)} of {rows.length}</span>
+        {totalPages > 1 ? (
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" className="h-8 w-8 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === 1} onClick={() => setPage((p) => p - 1)}><ChevronRight className="h-4 w-4 rotate-180" /></Button>
+            <Button size="sm" className="h-8 w-8 rounded-md bg-warning p-0 text-ink shadow-none">{currentPage}</Button>
+            <Button size="sm" variant="outline" className="h-8 w-8 rounded-md border-ink/10 p-0 shadow-none" disabled={currentPage === totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function RequestDemandRankingCard({
+  activeTab,
+  setActiveTab,
+  requestDemandData = {},
+  searchTerm = "",
+  filterTerm = "",
+  showHeaderSearch = true,
+  embedded = false,
+  onSearchChange,
+}) {
+  const showCard = Boolean(requestDemandData && (requestDemandData.sourceEntities?.length || requestDemandData.sourceTeams?.length || requestDemandData.requesters?.length));
+
+  if (!showCard) {
+    return (
+      <Card className={embedded ? "overflow-hidden border-0 bg-transparent shadow-none" : "overflow-hidden rounded-lg border border-ink/10 bg-card shadow-sm"}>
+        <CardHeader className="border-b border-ink/10 px-4 py-3">
+          <CardTitle className="text-base font-bold">Request Demand Ranking</CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 text-center text-sm text-muted-foreground">
+          No request demand data available yet.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const tabs = [
+    { key: "source_entities", label: "Entities" },
+    { key: "source_teams", label: "Teams" },
+    { key: "requesters", label: "Requesters" },
+  ];
+
+  const currentData = activeTab === "source_entities" 
+    ? requestDemandData.sourceEntities || []
+    : activeTab === "source_teams"
+    ? requestDemandData.sourceTeams || []
+    : requestDemandData.requesters || [];
+
+  return (
+    <Card className={embedded ? "overflow-hidden border-0 bg-transparent shadow-none" : "overflow-hidden rounded-lg border border-ink/10 bg-card shadow-sm"}>
+      <CardHeader className="border-b border-ink/10 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <CardTitle className="text-base font-bold">Request Demand Ranking</CardTitle>
+          {showHeaderSearch ? (
+            <div className="relative ml-auto w-full max-w-[56%]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(e) => onSearchChange?.(e.target.value)}
+                placeholder="Search demand ranking..."
+                className="h-9 border border-ink/10 pl-10"
+              />
+            </div>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="mx-4 flex gap-6 border-b border-ink/10 pt-3">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`pb-2 text-sm font-semibold ${activeTab === tab.key ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <RequestDemandRankingTable rows={currentData} searchTerm={filterTerm || searchTerm} />
+      </CardContent>
+    </Card>
+  );
+}
+
 function SolvedWorkCard({
   activeTab,
   activeQuickFilter,
@@ -2084,6 +3423,9 @@ function SolvedWorkCard({
   onApproveResult,
   onRejectResult,
   statusActionBusyId = null,
+  backendRequesterRankings = [],
+  searchTerm = "",
+  onSearchChange,
 }) {
   const isBasicUser = userRole === "user";
   const isProdReviewer = isProdEntityUser && (userRole === "manager" || userRole === "team_leader");
@@ -2128,17 +3470,35 @@ function SolvedWorkCard({
 
   return (
     <Card className="overflow-hidden rounded-lg border border-ink/10 bg-card shadow-sm">
-      <CardHeader className="border-b border-ink/10 px-5 py-4">
-        <CardTitle className="text-base font-bold">Resolution Activity</CardTitle>
+      <CardHeader className="border-b border-ink/10 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <CardTitle className="text-base font-bold">Resolution Activity</CardTitle>
+          <div className="relative ml-auto w-full max-w-[56%]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchTerm}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+              placeholder="Search solved request, reference, solver, team..."
+              className="h-9 border border-ink/10 pl-10 pr-16"
+            />
+            <button
+              type="button"
+              onClick={() => onSearchChange?.("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="mx-5 flex gap-8 border-b border-ink/10 pt-5">
+        <div className="mx-4 flex gap-6 border-b border-ink/10 pt-3">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`pb-3 text-sm font-semibold ${activeTab === tab.key ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+              className={`pb-2 text-sm font-semibold ${activeTab === tab.key ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
             >
               {tab.label}
             </button>
@@ -2271,65 +3631,93 @@ export default function CreditsBoard() {
   const [backendEntityRankings, setBackendEntityRankings] = useState([]);
   const [backendTeamRankings, setBackendTeamRankings] = useState([]);
   const [backendPeopleRankings, setBackendPeopleRankings] = useState([]);
+  const [requestDemandData, setRequestDemandData] = useState({ sourceEntities: [], sourceTeams: [], requesters: [] });
   const [selectedSolve, setSelectedSolve] = useState(null);
   const [detailsFocus, setDetailsFocus] = useState(null);
   const [prodPanel, setProdPanel] = useState(null);
   const [reloadTick, setReloadTick] = useState(0);
 
   const role = getPrimaryRole(user);
+  const isSuperAdmin = role === "super_admin";
+  const boardContext = useMemo(() => getBoardContext(user), [user]);
   const entityType = String(user?.entity_type || user?.entity?.entity_type || "").toUpperCase();
   const isProdEntityUser = entityType === "PROD";
-  const isProdRequesterView = isProdEntityUser;
+  const isProdRequesterView = false;
   const isBasicUser = role === "user";
-  const canExport = !isBasicUser && ["super_admin", "senior", "manager"].includes(role);
-  const canFilterEntity = !isBasicUser && ["super_admin", "senior", "manager", "team_leader"].includes(role);
-  const canFilterUser = !isBasicUser && ["super_admin", "senior", "manager", "team_leader"].includes(role);
+  const canExport = true;
+  const canFilterCompany = !isBasicUser && role === "super_admin";
+  const canFilterEntity = ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
+  const canFilterTeam = ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
+  const canFilterUser = boardContext.cardPreset === "tl_prod";
 
-  const defaultEntityId = role === "team_leader" && !isProdEntityUser
+  const defaultEntityId = (role === "team_leader" && !isProdEntityUser) || boardContext.cardPreset === "tl_prod"
     ? String(user?.entity ?? user?.entity_id ?? "all")
     : "all";
+  const defaultCompanyId = role === "super_admin"
+    ? "all"
+    : String(user?.company_id ?? user?.company ?? "all");
 
-  const [draftFilters, setDraftFilters] = useState({ date: "30d", entityId: defaultEntityId, userId: "all" });
-  const [appliedFilters, setAppliedFilters] = useState({ date: "30d", entityId: defaultEntityId, userId: "all" });
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState({ date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" });
+  const [canOpenSolvesDrilldown, setCanOpenSolvesDrilldown] = useState(true);
+  const canSeeRequesterRankings = boardContext.canRequesterMode;
+  const [rankingMode, setRankingMode] = useState(boardContext.defaultMode || "solvers");
+  const [solverRankingTab, setSolverRankingTab] = useState(boardContext.visibleSolverTabs.includes("entities") ? "entities" : boardContext.visibleSolverTabs[0] || "people");
+  const [requesterRankingTab, setRequesterRankingTab] = useState(boardContext.visibleRequesterTabs[0] || "sourceEntities");
+  const [rankingSearch, setRankingSearch] = useState("");
+  const [debouncedRankingSearch, setDebouncedRankingSearch] = useState("");
+  const [topN, setTopN] = useState(10);
+  const [rankingSort, setRankingSort] = useState("rank");
+  const [resolutionSearchTerm, setResolutionSearchTerm] = useState("");
+  const [debouncedResolutionSearch, setDebouncedResolutionSearch] = useState("");
   const [activeQuickFilter, setActiveQuickFilter] = useState("all");
 
-  // Debounce search input by 300ms
+  // Debounce ranking search input by 300ms
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
+      setDebouncedRankingSearch(rankingSearch);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchTerm]);
-  const [activeTab, setActiveTab] = useState(isProdRequesterView ? "entities" : (isProdEntityUser ? "requests" : (isBasicUser ? "my_solves" : "people")));
+  }, [rankingSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedResolutionSearch(resolutionSearchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [resolutionSearchTerm]);
+  const [activeTab, setActiveTab] = useState("requests");
   const [statusActionBusyId, setStatusActionBusyId] = useState(null);
   const [prodRequestCounts, setProdRequestCounts] = useState({ inProgress: 0 });
+  const isRequesterContext = canSeeRequesterRankings && rankingMode === "requesters";
+  const dynamicAllPeopleLabel = isRequesterContext ? "All requesters" : "All solvers";
+  const showRequestTypeFilter = boardContext.cardPreset === "tl_prod" && isRequesterContext;
 
   useEffect(() => {
     const nextEntity = role === "team_leader" ? defaultEntityId : "all";
-    setDraftFilters((prev) => ({ ...prev, entityId: nextEntity }));
-    setAppliedFilters((prev) => ({ ...prev, entityId: nextEntity }));
-  }, [role, defaultEntityId]);
+    setAppliedFilters((prev) => ({ ...prev, companyId: defaultCompanyId, entityId: nextEntity, teamId: "all", personId: "all", requestType: "all" }));
+  }, [role, defaultEntityId, defaultCompanyId]);
 
   useEffect(() => {
-    if (isProdRequesterView) {
-      setActiveTab("entities");
-      return;
+    if (!boardContext.visibleModes.includes(rankingMode)) {
+      setRankingMode(boardContext.visibleModes[0] || "solvers");
     }
+    if (!boardContext.visibleSolverTabs.includes(solverRankingTab)) {
+      setSolverRankingTab(boardContext.visibleSolverTabs[0] || "people");
+    }
+    if (!boardContext.visibleRequesterTabs.includes(requesterRankingTab)) {
+      setRequesterRankingTab(boardContext.visibleRequesterTabs[0] || "sourceEntities");
+    }
+  }, [boardContext, rankingMode, solverRankingTab, requesterRankingTab]);
+
+  useEffect(() => {
+    if (boardContext.defaultMode && boardContext.visibleModes.includes(boardContext.defaultMode)) {
+      setRankingMode(boardContext.defaultMode);
+    }
+  }, [boardContext.defaultMode, boardContext.visibleModes]);
+
+  useEffect(() => {
     if (isProdEntityUser) setActiveTab("requests");
-  }, [isProdEntityUser, isProdRequesterView]);
-
-  useEffect(() => {
-    if (!isRequestListTab(activeTab)) {
-      if (activeQuickFilter !== "all") setActiveQuickFilter("all");
-      return;
-    }
-    const validFilters = new Set(getCreditsQuickFilters(activeTab).map((chip) => chip.key));
-    if (!validFilters.has(activeQuickFilter)) {
-      setActiveQuickFilter("all");
-    }
-  }, [activeTab, activeQuickFilter]);
+  }, [isProdEntityUser]);
 
   async function changeSolvedResultStatus(solve, nextStatus, extra = {}) {
     const requestId = getRequestIdFromSolve(solve);
@@ -2374,7 +3762,34 @@ export default function CreditsBoard() {
     async function loadData() {
       try {
         setLoading(true);
-        const response = await api.get("/credits/solves/", { params: { include_rankings: true } });
+        const params = { include_rankings: true };
+        
+        if (appliedFilters.companyId !== "all") params.company_id = appliedFilters.companyId;
+        if (appliedFilters.entityId !== "all") {
+          if (isRequesterContext) params.source_entity_id = appliedFilters.entityId;
+          else params.target_entity_id = appliedFilters.entityId;
+        }
+        if (appliedFilters.teamId !== "all") {
+          if (isRequesterContext) params.source_team_id = appliedFilters.teamId;
+          else params.target_team_id = appliedFilters.teamId;
+        }
+        if (appliedFilters.personId !== "all") {
+          if (isRequesterContext) params.requester_user_id = appliedFilters.personId;
+          else params.solver_user_id = appliedFilters.personId;
+        }
+        if (appliedFilters.requestType && appliedFilters.requestType !== "all") {
+          params.request_type = appliedFilters.requestType;
+        }
+        
+        if (appliedFilters.date !== "all") {
+          const now = new Date();
+          const days = appliedFilters.date === "7d" ? 7 : appliedFilters.date === "30d" ? 30 : appliedFilters.date === "90d" ? 90 : 30;
+          const fromDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+          params.date_from = fromDate.toISOString().split("T")[0];
+          params.date_to = now.toISOString().split("T")[0];
+        }
+
+        const response = await api.get("/credits/solves/", { params });
         const payload = response.data || {};
         const rawSolves = Array.isArray(payload) ? payload : payload.solves || [];
         setSolves(rawSolves.map(normalizeSolve));
@@ -2383,20 +3798,11 @@ export default function CreditsBoard() {
         setBackendEntityRankings(payload.entityRankings || payload.teamRankings || []);
         setBackendTeamRankings(payload.teamRankings || []);
         setBackendPeopleRankings(payload.peopleRankings || []);
-        if (isProdRequesterView) {
-          const statuses = ["NEW", "ACCEPTED", "IN_PROGRESS"];
-          const countCalls = statuses.map((status) => (
-            api.get("/requests/", { params: { scope: "all", status, page: 1, page_size: 1 } })
-          ));
-          const countResponses = await Promise.all(countCalls);
-          const inProgress = countResponses.reduce((sum, item) => {
-            const data = item?.data || {};
-            return sum + Number(data.count || 0);
-          }, 0);
-          setProdRequestCounts({ inProgress });
-        } else {
-          setProdRequestCounts({ inProgress: 0 });
-        }
+        setRequestDemandData(normalizeRequesterDemandPayload(payload));
+        const backendAllowsDrilldown = Boolean(payload.canOpenSolvesDrilldown ?? true);
+        const roleDisallowsDrilldown = boardContext.isProd && ["manager", "team_leader", "user"].includes(role);
+        setCanOpenSolvesDrilldown(backendAllowsDrilldown && !roleDisallowsDrilldown);
+        setProdRequestCounts({ inProgress: 0 });
       } catch (error) {
         console.error("Failed to load credits board", error);
         setSolves([]);
@@ -2405,6 +3811,8 @@ export default function CreditsBoard() {
         setBackendEntityRankings([]);
         setBackendTeamRankings([]);
         setBackendPeopleRankings([]);
+        setRequestDemandData({ sourceEntities: [], sourceTeams: [], requesters: [] });
+        setCanOpenSolvesDrilldown(true);
         setProdRequestCounts({ inProgress: 0 });
       } finally {
         setLoading(false);
@@ -2412,7 +3820,7 @@ export default function CreditsBoard() {
     }
 
     if (!authLoading && user) loadData();
-  }, [authLoading, user, reloadTick, isProdRequesterView]);
+  }, [authLoading, user, reloadTick, appliedFilters, boardContext.isProd, role]);
 
   // TODO: Implement server-side pagination when backend supports:
   // GET /credits/solves/?status=COMPLETED&page=2&page_size=5
@@ -2430,13 +3838,108 @@ export default function CreditsBoard() {
     return entities.filter((row) => ids.has(row.id));
   }, [entities, roleScopedSolves]);
 
+  const visibleCompanies = useMemo(() => {
+    const map = new Map();
+    roleScopedSolves.forEach((solve) => {
+      if (!solve.companyId) return;
+      if (!map.has(String(solve.companyId))) {
+        map.set(String(solve.companyId), {
+          id: solve.companyId,
+          name: solve.sourceCompanyName || `Company ${solve.companyId}`,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [roleScopedSolves]);
+
+  const visibleTeams = useMemo(() => {
+    const map = new Map();
+    roleScopedSolves.forEach((solve) => {
+      if (!solve.targetTeamId) return;
+      map.set(String(solve.targetTeamId), {
+        id: solve.targetTeamId,
+        name: solve.targetTeamLabel || solve.targetTeamName || `Team ${solve.targetTeamId}`,
+      });
+    });
+    return Array.from(map.values());
+  }, [roleScopedSolves]);
+
+  const visiblePeople = useMemo(
+    () => visibleUsers.map((row) => ({ id: row.id, name: row.full_name || row.username || `User ${row.id}` })),
+    [visibleUsers],
+  );
+  const requesterEntities = useMemo(() => {
+    const rows = Array.isArray(requestDemandData?.sourceEntities) ? requestDemandData.sourceEntities : [];
+    const map = new Map();
+    rows.forEach((row) => {
+      if (!row?.entityId) return;
+      map.set(String(row.entityId), { id: row.entityId, name: row.name || `Entity ${row.entityId}` });
+    });
+    return Array.from(map.values());
+  }, [requestDemandData]);
+
+  const requesterTeams = useMemo(() => {
+    const rows = Array.isArray(requestDemandData?.sourceTeams) ? requestDemandData.sourceTeams : [];
+    const map = new Map();
+    rows.forEach((row) => {
+      if (!row?.teamLeaderId) return;
+      map.set(String(row.teamLeaderId), {
+        id: row.teamLeaderId,
+        name: row.teamLabel || row.name || `Team ${row.teamLeaderId}`,
+      });
+    });
+    return Array.from(map.values());
+  }, [requestDemandData]);
+
+  const requesterPeople = useMemo(() => {
+    const rows = Array.isArray(requestDemandData?.requesters) ? requestDemandData.requesters : [];
+    const map = new Map();
+    rows.forEach((row) => {
+      if (!row?.userId) return;
+      map.set(String(row.userId), { id: row.userId, name: row.name || `Requester ${row.userId}` });
+    });
+    return Array.from(map.values());
+  }, [requestDemandData]);
+
+  const toolbarEntities = isRequesterContext ? requesterEntities : visibleEntities;
+  const toolbarTeams = isRequesterContext ? requesterTeams : visibleTeams;
+  const toolbarPeople = isRequesterContext ? requesterPeople : visiblePeople;
+  const requestTypeOptions = useMemo(() => {
+    const set = new Set();
+    roleScopedSolves.forEach((solve) => {
+      const value = String(solve?.requestType || solve?.request_type || solve?.requestCategory || "").trim();
+      if (value) set.add(value);
+    });
+    return Array.from(set);
+  }, [roleScopedSolves]);
+
+  useEffect(() => {
+    setAppliedFilters((prev) => {
+      let changed = false;
+      let nextEntityId = prev.entityId;
+      let nextTeamId = prev.teamId;
+
+      if (prev.entityId !== "all" && !toolbarEntities.some((e) => String(e.id) === String(prev.entityId))) {
+        nextEntityId = "all";
+        changed = true;
+      }
+      if (prev.teamId !== "all" && !toolbarTeams.some((t) => String(t.id) === String(prev.teamId))) {
+        nextTeamId = "all";
+        changed = true;
+      }
+
+      return changed ? { ...prev, entityId: nextEntityId, teamId: nextTeamId } : prev;
+    });
+  }, [toolbarEntities, toolbarTeams]);
+
   const filteredSolves = useMemo(() => {
     const now = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
 
     return roleScopedSolves.filter((solve) => {
       if (appliedFilters.entityId !== "all" && String(solve.entityId) !== String(appliedFilters.entityId)) return false;
-      if (appliedFilters.userId !== "all" && String(solve.solverId) !== String(appliedFilters.userId)) return false;
+      if (appliedFilters.teamId !== "all" && String(solve.targetTeamId || "") !== String(appliedFilters.teamId)) return false;
+      if (appliedFilters.personId !== "all" && String(solve.solverId) !== String(appliedFilters.personId)) return false;
 
       if (appliedFilters.date !== "all") {
         const solvedAt = new Date(solve.completedAt || 0).getTime();
@@ -2449,27 +3952,12 @@ export default function CreditsBoard() {
   }, [roleScopedSolves, appliedFilters]);
 
   const enrichedSolves = useMemo(() => {
-    const normalized = filteredSolves.map((solve) => ({
+    return filteredSolves.map((solve) => ({
       ...solve,
       solverName: getUserById(users, solve.solverId)?.full_name || solve.solverName || "Unknown solver",
       targetEntityName: getEntityById(entities, solve.entityId)?.name || solve.targetEntityName,
     }));
-
-    const q = debouncedSearch.trim().toLowerCase();
-    if (!q) return normalized;
-
-    return normalized.filter((solve) => {
-      const haystack = [
-        solve.requestTitle,
-        solve.requestReference,
-        solve.solverName,
-        solve.targetEntityName,
-        solve.sourceCompanyName,
-        solve.sourceEntityName,
-      ].filter(Boolean).join(" ").toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [filteredSolves, users, entities, debouncedSearch]);
+  }, [filteredSolves, users, entities]);
 
   const closedOnlySolves = useMemo(
     () => enrichedSolves.filter(closedOnly),
@@ -2479,6 +3967,216 @@ export default function CreditsBoard() {
     () => enrichedSolves.filter(completedOnly),
     [enrichedSolves],
   );
+
+  const rankingFilteredSolves = useMemo(() => {
+    const q = debouncedRankingSearch.trim().toLowerCase();
+    if (!q) return enrichedSolves;
+    return enrichedSolves.filter((solve) => {
+      const haystack = [
+        solve.requestTitle,
+        solve.requestReference,
+        solve.solverName,
+        solve.targetEntityName,
+        solve.targetTeamLabel,
+        solve.sourceEntityName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [enrichedSolves, debouncedRankingSearch]);
+
+  const solverEntityRows = useMemo(
+    () => (backendEntityRankings.length > 0 ? backendEntityRankings : buildEntityRankings(rankingFilteredSolves, entities)),
+    [backendEntityRankings, rankingFilteredSolves, entities],
+  );
+  const solverTeamRows = useMemo(
+    () => (backendTeamRankings.length > 0 ? backendTeamRankings : buildTeamLeaderRankings(rankingFilteredSolves, entities)),
+    [backendTeamRankings, rankingFilteredSolves, entities],
+  );
+  const solverPeopleRows = useMemo(
+    () => (backendPeopleRankings.length > 0 ? backendPeopleRankings : buildPeopleRankings(rankingFilteredSolves, users, entities)),
+    [backendPeopleRankings, rankingFilteredSolves, users, entities],
+  );
+  const solverCompanyRows = useMemo(
+    () => buildCompanyRankings(rankingFilteredSolves),
+    [rankingFilteredSolves],
+  );
+
+  function sortRows(rows, mode, sortKey) {
+    const arr = [...rows];
+    if (sortKey === "rank") return arr;
+    if (mode === "solvers") {
+      if (sortKey === "credits") return arr.sort((a, b) => Number(b.totalCredits || 0) - Number(a.totalCredits || 0));
+      if (sortKey === "solved") return arr.sort((a, b) => Number(b.closedCount || b.solvedCount || 0) - Number(a.closedCount || a.solvedCount || 0));
+      if (sortKey === "pending") return arr.sort((a, b) => Number(b.pendingCount || 0) - Number(a.pendingCount || 0));
+      if (sortKey === "avg_time") return arr.sort((a, b) => Number(a.avgHours || 0) - Number(b.avgHours || 0));
+    } else {
+      if (sortKey === "created") return arr.sort((a, b) => Number(b.createdCount || 0) - Number(a.createdCount || 0));
+      if (sortKey === "closed") return arr.sort((a, b) => Number(b.closedCount || 0) - Number(a.closedCount || 0));
+      if (sortKey === "completion") return arr.sort((a, b) => Number(b.completionRate || 0) - Number(a.completionRate || 0));
+      if (sortKey === "avg_time") return arr.sort((a, b) => Number(a.avgHours || 0) - Number(b.avgHours || 0));
+    }
+    return arr;
+  }
+
+  const currentRankingRows = useMemo(() => {
+    const requesterData = requesterRankingTab === "sourceEntities"
+      ? (requestDemandData.sourceEntities || [])
+      : requesterRankingTab === "sourceTeams"
+      ? (requestDemandData.sourceTeams || [])
+      : (requestDemandData.requesters || []);
+    const solverData = solverRankingTab === "companies"
+      ? solverCompanyRows
+      : solverRankingTab === "entities"
+      ? solverEntityRows
+      : solverRankingTab === "teams"
+      ? solverTeamRows
+      : solverPeopleRows;
+    const raw = isRequesterContext ? requesterData : solverData;
+    const q = debouncedRankingSearch.trim().toLowerCase();
+    const searched = !q || !isRequesterContext
+      ? raw
+      : raw.filter((row) => [row.name, row.teamLabel, row.entityName].filter(Boolean).join(" ").toLowerCase().includes(q));
+    return sortRows(searched, isRequesterContext ? "requesters" : "solvers", rankingSort).slice(0, Number(topN) || 10);
+  }, [isRequesterContext, requesterRankingTab, requestDemandData, solverRankingTab, solverCompanyRows, solverEntityRows, solverTeamRows, solverPeopleRows, rankingSort, topN]);
+
+  const requesterRows = useMemo(() => ({
+    entities: Array.isArray(requestDemandData?.sourceEntities) ? requestDemandData.sourceEntities : [],
+    teams: Array.isArray(requestDemandData?.sourceTeams) ? requestDemandData.sourceTeams : [],
+    people: Array.isArray(requestDemandData?.requesters) ? requestDemandData.requesters : [],
+  }), [requestDemandData]);
+
+  const rankingCards = useMemo(() => {
+    const topCompany = solverCompanyRows[0];
+    const topEntity = solverEntityRows[0];
+    const topTeam = solverTeamRows[0];
+    const topSolver = solverPeopleRows[0];
+    const topRequester = requesterRows.people[0];
+    const requesterCompletion = requesterRows.people.length
+      ? Math.round(requesterRows.people.reduce((s, r) => s + Number(r.completionRate || 0), 0) / requesterRows.people.length)
+      : 0;
+    const myRow = solverPeopleRows.find((p) => String(p.userId) === String(user?.id));
+    const myRank = myRow ? solverPeopleRows.findIndex((p) => String(p.userId) === String(user?.id)) + 1 : null;
+
+    const presets = {
+      super_admin: [
+        { label: "Top Company", value: topCompany?.name || "-", hint: `${Number(topCompany?.totalCredits || 0).toLocaleString()} credits`, icon: Building2 },
+        { label: "Top Solver", value: topSolver?.name || "-", hint: `${Number(topSolver?.closedCount || 0)} closed`, icon: Users },
+        { label: "Top Requester", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} created`, icon: Star },
+        { label: "Global Completion", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+      ],
+      senior: [
+        { label: "Top Support Entity", value: topEntity?.name || "-", hint: `${Number(topEntity?.totalCredits || 0).toLocaleString()} credits`, icon: Building2 },
+        { label: "Top Solver", value: topSolver?.name || "-", hint: `${Number(topSolver?.closedCount || 0)} closed`, icon: Users },
+        { label: "Top Requester", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} created`, icon: Star },
+        { label: "Company Completion", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+      ],
+      manager_support: [
+        { label: "Top Team (Target)", value: topTeam?.name || "-", hint: `${Number(topTeam?.totalCredits || 0).toLocaleString()} credits`, icon: Users },
+        { label: "Top Solver", value: topSolver?.name || "-", hint: `${Number(topSolver?.closedCount || 0)} closed`, icon: Star },
+        { label: "Top Requester (Incoming)", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} requested`, icon: FolderOpen },
+        { label: "Global Completion", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+      ],
+      manager_prod: [
+        { label: "Top Support Entity", value: topEntity?.name || "-", hint: `${Number(topEntity?.closedCount || 0)} closed`, icon: Building2 },
+        { label: "Top Solver", value: topSolver?.name || "-", hint: `${Number(topSolver?.closedCount || 0)} closed`, icon: Users },
+        { label: "Top Requester", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} created`, icon: FolderOpen },
+        { label: "Closure Rate", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+      ],
+      tl_support: [
+        { label: "Team Closed", value: Number(topTeam?.closedCount || 0).toLocaleString(), hint: topTeam?.name || "Team", icon: CheckCircle2 },
+        { label: "Top Solver (team)", value: topSolver?.name || "-", hint: `${Number(topSolver?.closedCount || 0)} closed`, icon: Star },
+        { label: "Top Requester (to team)", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} created`, icon: FolderOpen },
+        { label: "Team Completion", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+      ],
+      tl_prod: [
+        { label: "Team Demand", value: Number(topTeam?.createdCount || 0).toLocaleString(), hint: topTeam?.name || "Team", icon: FolderOpen },
+        { label: "Top Requester", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} created`, icon: Star },
+        { label: "Team Closure", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+        { label: "Sent-back Risk", value: Number(topTeam?.sentBackCount || 0).toLocaleString(), hint: "requester side", icon: ShieldAlert },
+      ],
+      user: [
+        { label: "My Rank", value: myRank ? `#${myRank}` : "-", hint: "solver ranking", icon: Trophy },
+        { label: "My Closed Count", value: Number(myRow?.closedCount || 0).toLocaleString(), hint: "Requests closed", icon: CheckCircle2 },
+        { label: "My Avg Resolution Time", value: formatDurationHours(Number(myRow?.avgHours || 0)), hint: "Average time to solve", icon: Timer },
+        { label: "My Evidence Coverage", value: `${Number(myRow?.closedCount || 0) ? Math.round((Number(myRow?.evidenceAdded || 0) / Number(myRow?.closedCount || 0)) * 100) : 0}%`, hint: "Evidence added", icon: Shield },
+      ],
+      user_prod: (() => {
+        const myRequesterRow = requesterRows.people.find((p) => String(p.userId) === String(user?.id));
+        const myRequesterRank = myRequesterRow ? requesterRows.people.findIndex((p) => String(p.userId) === String(user?.id)) + 1 : null;
+        const created = Number(myRequesterRow?.createdCount || 0);
+        const pending = Number(myRequesterRow?.pendingCount || 0);
+        const completion = Number(myRequesterRow?.completionRate || 0);
+        return [
+          { label: "My Rank", value: myRequesterRank ? `#${myRequesterRank}` : "-", hint: "requester ranking", icon: Trophy },
+          { label: "My Requests Created", value: created.toLocaleString(), hint: "Requests submitted", icon: ReceiptText },
+          { label: "My Avg Fulfillment Time", value: formatDurationHours(Number(myRequesterRow?.avgHours || 0)), hint: "Average time to delivery", icon: Timer },
+          { label: "My Requirement Coverage", value: `${completion}%`, hint: `${pending} open`, icon: Shield },
+        ];
+      })(),
+      default: [
+        { label: "Top Solver", value: topSolver?.name || "-", hint: `${Number(topSolver?.closedCount || 0)} closed`, icon: Users },
+        { label: "Top Team", value: topTeam?.name || "-", hint: `${Number(topTeam?.totalCredits || 0).toLocaleString()} credits`, icon: Building2 },
+        { label: "Top Requester", value: topRequester?.name || "-", hint: `${Number(topRequester?.createdCount || 0)} created`, icon: Star },
+        { label: "Completion", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
+      ],
+    };
+    return presets[boardContext.cardPreset] || presets.default;
+  }, [boardContext, requesterRows, solverCompanyRows, solverEntityRows, solverPeopleRows, solverTeamRows, user?.id]);
+
+  const rankingInsights = useMemo(() => {
+    const getInsightName = (row) => row?.name || row?.teamLabel || "-";
+    if (isRequesterContext) {
+      const rows = currentRankingRows;
+      const mostSentBack = [...rows].sort((a, b) => Number(b.sentBackCount || 0) - Number(a.sentBackCount || 0))[0];
+      const bestCompletion = [...rows].sort((a, b) => Number(b.completionRate || 0) - Number(a.completionRate || 0))[0];
+      const mostPending = [...rows].sort((a, b) => Number(b.pendingCount || 0) - Number(a.pendingCount || 0))[0];
+      const bestAvgTime = [...rows].filter((r) => Number(r.avgHours || 0) > 0).sort((a, b) => Number(a.avgHours || 0) - Number(b.avgHours || 0))[0];
+      return [
+        { label: "Best Completion", value: `${getInsightName(bestCompletion)} (${Number(bestCompletion?.completionRate || 0)}%)`, icon: ArrowUp },
+        { label: "Most Pending", value: `${getInsightName(mostPending)} (${Number(mostPending?.pendingCount || 0)})`, icon: Clock3 },
+        { label: "Most Sent Back", value: `${getInsightName(mostSentBack)} (${Number(mostSentBack?.sentBackCount || 0)})`, icon: ArrowDown },
+        { label: "Best Avg Time", value: `${getInsightName(bestAvgTime)} (${formatDurationHours(Number(bestAvgTime?.avgHours || 0))})`, icon: Timer },
+      ];
+    }
+    const rows = currentRankingRows;
+    if (["super_admin", "senior"].includes(boardContext.cardPreset)) {
+      const biggestClimber = [...rows].sort((a, b) => Number(b.closedCount || b.solvedCount || b.completed || 0) - Number(a.closedCount || a.solvedCount || a.completed || 0))[0];
+      const biggestDrop = [...rows].sort((a, b) => Number(b.pendingCount || 0) - Number(a.pendingCount || 0))[0];
+      const newInTopTen = rows.find((r) => Number(r.pendingCount || 0) <= 1) || rows[0];
+      const bestAvgTime = [...rows].filter((r) => Number(r.avgHours || 0) > 0).sort((a, b) => Number(a.avgHours || 0) - Number(b.avgHours || 0))[0];
+      return [
+        { label: "Biggest Climber", value: `${getInsightName(biggestClimber)} (+${Number(biggestClimber?.closedCount || biggestClimber?.solvedCount || biggestClimber?.completed || 0)})`, icon: ArrowUp },
+        { label: "Biggest Drop", value: `${getInsightName(biggestDrop)} (-${Number(biggestDrop?.pendingCount || 0)})`, icon: ArrowDown },
+        { label: "New in Top 10", value: `${getInsightName(newInTopTen)} (New)`, icon: Star },
+        { label: "Best Avg Time", value: `${getInsightName(bestAvgTime)} (${formatDurationHours(Number(bestAvgTime?.avgHours || 0))})`, icon: Timer },
+      ];
+    }
+    const strongest = rows[0];
+    const mostPending = [...rows].sort((a, b) => Number(b.pendingCount || 0) - Number(a.pendingCount || 0))[0];
+    const bestEvidence = [...rows].sort((a, b) => Number(b.coverage || 0) - Number(a.coverage || 0))[0];
+    const bestAvgTime = [...rows].filter((r) => Number(r.avgHours || 0) > 0).sort((a, b) => Number(a.avgHours || 0) - Number(b.avgHours || 0))[0];
+    return [
+      { label: "Top Performer", value: `${getInsightName(strongest)} (${Number(strongest?.totalCredits || 0)} credits)`, icon: Trophy },
+      { label: "Pending Load", value: `${getInsightName(mostPending)} (${Number(mostPending?.pendingCount || 0)})`, icon: Clock3 },
+      { label: "Best Evidence", value: `${getInsightName(bestEvidence)} (${Number(bestEvidence?.coverage || 0)}%)`, icon: Shield },
+      { label: "Best Avg Time", value: `${getInsightName(bestAvgTime)} (${formatDurationHours(Number(bestAvgTime?.avgHours || 0))})`, icon: Timer },
+    ];
+  }, [boardContext.cardPreset, currentRankingRows, isRequesterContext]);
+
+  const rankingSearchPlaceholder = useMemo(() => {
+    if (isRequesterContext) {
+      if (requesterRankingTab === "sourceEntities") return "Search source entities...";
+      if (requesterRankingTab === "sourceTeams") return "Search source teams...";
+      return "Search requesters...";
+    }
+    if (solverRankingTab === "companies") return "Search companies...";
+    if (solverRankingTab === "entities") return "Search entities...";
+    if (solverRankingTab === "teams") return "Search teams...";
+    return "Search solvers...";
+  }, [isRequesterContext, requesterRankingTab, solverRankingTab]);
 
   const stats = useMemo(() => buildRoleAwareStats(closedOnlySolves, user, { users, entities }), [closedOnlySolves, user, users, entities]);
   const prodStats = useMemo(() => buildProdStats(closedOnlySolves, user, users), [closedOnlySolves, user, users]);
@@ -2539,68 +4237,97 @@ export default function CreditsBoard() {
   if (!user) return <PageHeader title="Credits Board" description="Not authenticated" />;
 
   return (
-    <div className="space-y-0">
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto w-full max-w-[1400px] px-6 py-6">
       {isProdRequesterView ? (
         <ProdCreditsHeader
-          filters={draftFilters}
-          onDateChange={(value) => setDraftFilters((prev) => ({ ...prev, date: value }))}
-          onApply={() => setAppliedFilters(draftFilters)}
+          filters={appliedFilters}
+          onDateChange={(value) => setAppliedFilters((prev) => ({ ...prev, date: value }))}
+          onApply={() => {}}
           entityName={user?.entity_name || user?.entity?.name || user?.entity_code || "My Entity"}
         />
       ) : (
-<CreditsBoardHeader
-        filters={draftFilters}
-        onChange={(key, value) => setDraftFilters((prev) => ({ ...prev, [key]: value }))}
-        onApply={() => setAppliedFilters(draftFilters)}
-        entities={visibleEntities}
-        users={visibleUsers}
+      <CreditsBoardHeader
+        filters={appliedFilters}
+        onChange={(key, value) => setAppliedFilters((prev) => ({ ...prev, [key]: value }))}
+        companies={visibleCompanies}
+        entities={toolbarEntities}
+        teams={toolbarTeams}
+        people={toolbarPeople}
+        allPeopleLabel={dynamicAllPeopleLabel}
+        canFilterCompany={canFilterCompany}
         canFilterEntity={canFilterEntity}
+        canFilterTeam={canFilterTeam}
         canFilterUser={canFilterUser}
-        isBasicUser={isBasicUser}
+        showRequestType={showRequestTypeFilter}
+        requestTypeOptions={requestTypeOptions}
+        subtitle={boardContext.headerSubtitle}
+        titleSuffix={boardContext.titleSuffix}
+        exportAction={(
+          <div className="flex items-center gap-2">
+            {canExport ? (
+              <Button variant="outline" className="h-[46px] rounded-lg !border !border-border !bg-card px-4 text-sm font-semibold !text-foreground shadow-none hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2" onClick={() => {
+                const cols = isRequesterContext
+                  ? [
+                      { label: "Rank", value: (_, i) => i + 1 },
+                      { label: "Name", value: (r) => r.name || r.teamLabel || "-" },
+                      { label: "Created", value: (r) => Number(r.createdCount || 0).toLocaleString() },
+                      { label: "Closed", value: (r) => Number(r.closedCount || 0).toLocaleString() },
+                      { label: "Pending", value: (r) => Number(r.pendingCount || 0).toLocaleString() },
+                      { label: "Sent Back", value: (r) => Number(r.sentBackCount || 0).toLocaleString() },
+                      { label: "Completion Rate", value: (r) => `${Number(r.completionRate || 0)}%` },
+                      { label: "Avg Time", value: (r) => formatDurationHours(r.avgHours || 0) },
+                    ]
+                  : [
+                      { label: "Rank", value: (_, i) => i + 1 },
+                      { label: "Name", value: (r) => r.name || r.teamLabel || "-" },
+                      { label: "Credits", value: (r) => Number(r.totalCredits || 0).toLocaleString() },
+                      { label: "Closed", value: (r) => Number(r.closedCount || 0).toLocaleString() },
+                      { label: "Pending", value: (r) => Number(r.pendingCount || 0).toLocaleString() },
+                      { label: "Avg Time", value: (r) => formatDurationHours(r.avgHours || 0) },
+                    ];
+                exportRankingCsv(currentRankingRows, cols, "credits-rankings");
+              }}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            ) : null}
+            {boardContext.cardPreset !== "user_prod" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-[46px] rounded-lg !border !border-border !bg-card px-4 text-sm font-semibold !text-foreground shadow-none hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"
+                onClick={() => setAppliedFilters({ date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" })}
+              >
+                Reset
+              </Button>
+            ) : null}
+            {boardContext.cardPreset === "tl_prod" || boardContext.cardPreset === "user_prod" ? (
+              <Button
+                type="button"
+                className="h-[46px] rounded-lg border border-warning bg-warning px-4 text-sm font-semibold text-ink shadow-none hover:bg-warning/90"
+                onClick={() => setReloadTick((x) => x + 1)}
+              >
+                Apply Filters
+              </Button>
+            ) : null}
+          </div>
+        )}
       />
       )}
 
       <div className="mt-5">
-        {isProdRequesterView ? <ProdSummaryCards metrics={prodSummaryMetrics} /> : <StatsCards stats={visibleStats} />}
+        {isProdRequesterView ? <ProdSummaryCards metrics={prodSummaryMetrics} /> : <RankingTopCards cards={rankingCards} theme="executive" />}
       </div>
-
-      {canExport ? (
-        <div className="mt-3 flex justify-end">
-          <Button variant="outline" onClick={() => exportSolvesCsv(enrichedSolves)}>
-            <Download className="mr-2 h-4 w-4" />Export visible solves CSV
-          </Button>
-        </div>
-      ) : null}
-
-      {!isProdRequesterView ? (
-        <div className="mt-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={isBasicUser ? "Search your solved requests..." : "Search solved request, reference, solver, team..."}
-              className="h-11 rounded-md border border-ink/10 bg-card pl-10 pr-16"
-            />
-            <button
-              type="button"
-              onClick={() => setSearchTerm("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-4">
         {isProdRequesterView ? (
           <Card className="overflow-hidden rounded-lg border border-ink/10 bg-card shadow-sm">
-            <CardHeader className="border-b border-ink/10 px-5 py-4">
+            <CardHeader className="border-b border-ink/10 px-4 py-3">
               <CardTitle className="text-base font-bold">Resolution Activity</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="mx-5 flex gap-8 border-b border-ink/10 pt-5">
+              <div className="mx-4 flex gap-6 border-b border-ink/10 pt-3">
                 {[
                   { key: "entities", label: "Entities" },
                   { key: "teams", label: "Teams" },
@@ -2612,19 +4339,19 @@ export default function CreditsBoard() {
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`pb-3 text-sm font-semibold ${activeTab === tab.key ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+                    className={`pb-2 text-sm font-semibold ${activeTab === tab.key ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
                   >
                     {tab.label}
                   </button>
                 ))}
               </div>
-              <div className="mx-5 mt-4 space-y-3 mb-4">
+              <div className="mx-4 mt-3 mb-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      value={resolutionSearchTerm}
+                      onChange={(e) => setResolutionSearchTerm(e.target.value)}
                       placeholder={
                         activeTab === "entities"
                           ? "Search entities..."
@@ -2644,7 +4371,7 @@ export default function CreditsBoard() {
               </div>
               {activeTab === "entities" ? (
                 <ProdEntitiesRankingTable
-                  entitiesRankings={(backendEntityRankings.length > 0 ? backendEntityRankings : buildEntityRankings(enrichedSolves, entities)).filter((entity) => (entity.name || "").toLowerCase().includes(debouncedSearch.trim().toLowerCase()))}
+                  entitiesRankings={(backendEntityRankings.length > 0 ? backendEntityRankings : buildEntityRankings(enrichedSolves, entities)).filter((entity) => (entity.name || "").toLowerCase().includes(debouncedResolutionSearch.trim().toLowerCase()))}
                   onViewSolves={(entity) => {
                     const rows = enrichedSolves.filter((solve) => closedOnly(solve) && String(solve.entityId) === String(entity.entityId));
                     setProdPanel({
@@ -2658,7 +4385,7 @@ export default function CreditsBoard() {
               ) : null}
               {activeTab === "teams" ? (
                 <ProdTeamsRankingTable
-                  teams={(backendTeamRankings.length > 0 ? backendTeamRankings : buildTeamLeaderRankings(enrichedSolves, entities)).filter((team) => (team.name || "").toLowerCase().includes(debouncedSearch.trim().toLowerCase()))}
+                  teams={(backendTeamRankings.length > 0 ? backendTeamRankings : buildTeamLeaderRankings(enrichedSolves, entities)).filter((team) => (team.name || "").toLowerCase().includes(debouncedResolutionSearch.trim().toLowerCase()))}
                   onViewSolves={(team) => {
                     const rows = enrichedSolves.filter((solve) => {
                       const solveTeamLeaderId = getSolveTeamLeaderId(solve);
@@ -2678,7 +4405,7 @@ export default function CreditsBoard() {
               ) : null}
               {activeTab === "people" ? (
                 <ProdPeopleRankingTable
-                  people={(backendPeopleRankings.length > 0 ? backendPeopleRankings : buildPeopleRankings(enrichedSolves, users, entities)).filter((person) => (person.name || "").toLowerCase().includes(debouncedSearch.trim().toLowerCase()))}
+                  people={(backendPeopleRankings.length > 0 ? backendPeopleRankings : buildPeopleRankings(enrichedSolves, users, entities)).filter((person) => (person.name || "").toLowerCase().includes(debouncedResolutionSearch.trim().toLowerCase()))}
                   onViewSolves={(person) => {
                     const rows = enrichedSolves.filter((solve) => closedOnly(solve) && String(solve.solverId) === String(person.userId));
                     setProdPanel({
@@ -2693,7 +4420,7 @@ export default function CreditsBoard() {
               {activeTab === "requests" ? (
                 <ProdResolvedRequestsTable
                   rows={filterRowsForCreditsView(enrichedSolves.filter(completedOnly), activeQuickFilter).filter((solve) => {
-                    const q = debouncedSearch.trim().toLowerCase();
+                    const q = debouncedResolutionSearch.trim().toLowerCase();
                     if (!q) return true;
                     return [
                       solve.requestTitle,
@@ -2706,7 +4433,7 @@ export default function CreditsBoard() {
               {activeTab === "closed_requests" ? (
                 <ProdResolvedRequestsTable
                   rows={filterRowsForCreditsView(enrichedSolves.filter(closedOnly), activeQuickFilter).filter((solve) => {
-                    const q = debouncedSearch.trim().toLowerCase();
+                    const q = debouncedResolutionSearch.trim().toLowerCase();
                     if (!q) return true;
                     return [
                       solve.requestTitle,
@@ -2729,28 +4456,238 @@ export default function CreditsBoard() {
               />
             </CardContent>
           </Card>
-        ) : enrichedSolves.length ? (
-<SolvedWorkCard
-            activeTab={activeTab}
-            activeQuickFilter={activeQuickFilter}
-            setActiveTab={setActiveTab}
-            setActiveQuickFilter={setActiveQuickFilter}
-            solves={closedOnlySolves}
-            allSolves={enrichedSolves}
-            users={users}
-            entities={entities}
-            onViewDetails={(solve, focus) => { setSelectedSolve(solve); setDetailsFocus(focus); }}
-            currentUser={user}
-            userRole={role}
-            userEntityId={user?.entity}
-            userCompanyId={user?.company}
-            isProdEntityUser={isProdEntityUser}
-            onApproveResult={(solve) => changeSolvedResultStatus(solve, "CLOSED")}
-            onRejectResult={(solve, extra) => changeSolvedResultStatus(solve, "IN_PROGRESS", extra)}
-            statusActionBusyId={statusActionBusyId}
-          />
         ) : (
-          <EmptyStateMessage role={role} isProdEntityUser={isProdEntityUser} />
+          <div className="space-y-4">
+            <Card className="overflow-hidden rounded-xl border border-ink/10 bg-card shadow-sm">
+              <CardHeader className="border-b border-ink/10 px-5 py-5">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-lg font-bold">{boardContext.cardPreset === "user_prod" ? "Requester Rankings" : "Rankings"}</CardTitle>
+                  <div className="relative ml-auto w-full max-w-[260px]">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={rankingSearch}
+                      onChange={(e) => setRankingSearch(e.target.value)}
+                      placeholder={rankingSearchPlaceholder}
+                      className="h-10 rounded-lg border border-ink/10 bg-white pl-10 shadow-none"
+                    />
+                  </div>
+                  <Select className="!h-9 !w-[110px] rounded-lg border-ink/10 bg-white text-sm shadow-none" value={String(topN)} onChange={(e) => setTopN(Number(e.target.value))}>
+                    <option value="5">Top 5</option>
+                    <option value="10">Top 10</option>
+                    <option value="20">Top 20</option>
+                    <option value="50">Top 50</option>
+                    <option value="999999">All</option>
+                  </Select>
+                  <Select className="!h-9 !w-[210px] rounded-lg border-ink/10 bg-white text-sm shadow-none" value={rankingSort} onChange={(e) => setRankingSort(e.target.value)}>
+                    <option value="rank">Sort: Rank default</option>
+                    {isRequesterContext ? (
+                      <>
+                        <option value="created">Sort: Created (High to Low)</option>
+                        <option value="closed">Sort: Closed (High to Low)</option>
+                        <option value="completion">Sort: Completion Rate (High to Low)</option>
+                        <option value="avg_time">Sort: Avg Time (Low to High)</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="credits">Sort: Credits (High to Low)</option>
+                        <option value="solved">Sort: Solved/Closed (High to Low)</option>
+                        <option value="pending">Sort: Pending (High to Low)</option>
+                        <option value="avg_time">Sort: Avg Time (Low to High)</option>
+                      </>
+                    )}
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="px-4 pt-3">
+                  {canSeeRequesterRankings && boardContext.visibleModes.length > 1 ? (
+                    <div className="inline-flex rounded-xl border border-ink/15 bg-muted/30 p-1 dark:bg-surface-2/60">
+                      <Button
+                        size="sm"
+                        variant={rankingMode === "solvers" ? "default" : "ghost"}
+                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "solvers" ? "!border !border-warning !bg-warning !text-ink hover:!bg-warning/90 hover:!text-ink" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
+                        onClick={() => setRankingMode("solvers")}
+                      >
+                        <Trophy className="mr-2 h-4 w-4" />
+                        Solver Rankings
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={rankingMode === "requesters" ? "default" : "ghost"}
+                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "requesters" ? "!border !border-warning !bg-warning !text-ink hover:!bg-warning/90 hover:!text-ink" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
+                        onClick={() => setRankingMode("requesters")}
+                      >
+                        <Users className="mr-2 h-4 w-4" />
+                        Requester Rankings
+                      </Button>
+                    </div>
+                  ) : null}
+                  {!isProdRequesterView && boardContext.variant !== "user" && boardContext.variant !== "leader_prod" && boardContext.variant !== "user_prod" ? (
+                    <div className="mt-3 px-4">
+                      {(() => {
+                        if (!rankingInsights.length) return null;
+                        const tones = [
+                          { icon: "border-success/30 bg-success/10 text-success dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+                          { icon: "border-destructive/30 bg-destructive/10 text-destructive dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+                          { icon: "border-info/30 bg-info/10 text-info dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+                          { icon: "border-muted-foreground/30 bg-muted/40 text-muted-foreground dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+                        ];
+                        const insights = rankingInsights;
+                        return (
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            {insights.map((item, idx) => {
+                              const Icon = item.icon;
+                              const tone = tones[idx % tones.length];
+                              return (
+                                <div key={item.label} className="flex items-center gap-3 rounded-lg border border-ink/10 bg-card/80 p-3 transition-colors hover:bg-muted/30 dark:bg-surface-2/60 dark:hover:bg-surface-2">
+                                  <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${tone.icon}`}>
+                                    <Icon className="h-4 w-4" />
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-[11px] font-semibold text-muted-foreground">{item.label}</p>
+                                    <p className="truncate text-xs font-bold leading-tight text-foreground">{item.value}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : null}
+                </div>
+
+                {rankingMode === "solvers" || !canSeeRequesterRankings ? (
+                  <>
+                    <div className="mx-4 mt-3 flex gap-7 border-b border-ink/10">
+                      {boardContext.visibleSolverTabs.map((tabKey) => {
+                        const labelMap = { companies: "Companies", entities: "Entities", teams: "Teams", people: "Solvers" };
+                        return (
+                        <button
+                          key={tabKey}
+                          type="button"
+                          onClick={() => setSolverRankingTab(tabKey)}
+                          className={`pb-3 text-sm font-semibold ${solverRankingTab === tabKey ? "border-b-2 border-warning text-foreground" : "text-muted-foreground"}`}
+                        >
+                          {labelMap[tabKey] || tabKey}
+                        </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mx-4 mt-3 flex flex-wrap gap-2 border-b border-ink/10 pb-3">
+                      {[
+                        { key: "date", label: `Date: ${appliedFilters.date === "all" ? "All time" : appliedFilters.date === "7d" ? "Last 7 days" : appliedFilters.date === "90d" ? "Last 90 days" : "Last 30 days"}` },
+                        ...(canFilterCompany ? [{ key: "companyId", label: `Company: ${appliedFilters.companyId === "all" ? "All Companies" : (visibleCompanies.find((c) => String(c.id) === String(appliedFilters.companyId))?.name || "Selected")}` }] : []),
+                        { key: "entityId", label: `Entity: ${appliedFilters.entityId === "all" ? "All Entities" : (toolbarEntities.find((e) => String(e.id) === String(appliedFilters.entityId))?.name || "Selected")}` },
+                        { key: "teamId", label: `Team: ${appliedFilters.teamId === "all" ? "All Teams" : (toolbarTeams.find((t) => String(t.id) === String(appliedFilters.teamId))?.name || "Selected")}` },
+                        ...(canFilterUser && appliedFilters.personId !== "all" ? [{ key: "personId", label: `Person: ${toolbarPeople.find((p) => String(p.id) === String(appliedFilters.personId))?.name || "Selected"}` }] : []),
+                      ].map((chip) => (
+                        <button key={chip.key} type="button" className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-card px-3 py-1.5 text-xs text-foreground" onClick={() => setAppliedFilters((prev) => ({ ...prev, [chip.key]: "all" }))}>
+                          <span>{chip.label}</span>
+                          <X className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      ))}
+                      <button type="button" className="inline-flex items-center px-1 text-xs font-semibold text-primary" onClick={() => setAppliedFilters((prev) => ({ ...prev, date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" }))}>Clear all</button>
+                    </div>
+                    {solverRankingTab === "companies" ? <RankingsTable rows={currentRankingRows} tabKey="companies" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(company) => {
+                      if (!canOpenSolvesDrilldown) return;
+                      const rows = rankingFilteredSolves.filter((solve) => String(solve.companyId || "") === String(company.companyId || ""));
+                      setProdPanel({
+                        contextType: "team",
+                        title: `${company.name || "Company"} solved requests`,
+                        subtitle: `${rows.length} solved request${rows.length === 1 ? "" : "s"} · ${company.activeSolvers || 0} active solver${(company.activeSolvers || 0) === 1 ? "" : "s"} · ${company.totalCredits} credits`,
+                        rows,
+                      });
+                    }} /> : null}
+                    {solverRankingTab === "entities" ? <RankingsTable rows={currentRankingRows} tabKey="entities" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(entity) => {
+                      if (!canOpenSolvesDrilldown) return;
+                      const rows = rankingFilteredSolves.filter((solve) => closedOnly(solve) && String(solve.entityId) === String(entity.entityId));
+                      setProdPanel({
+                        contextType: "team",
+                        title: `${entity.name || "Entity"} solved requests`,
+                        subtitle: `${rows.length} solved request${rows.length === 1 ? "" : "s"} · ${entity.activeSolvers || 0} active solver${(entity.activeSolvers || 0) === 1 ? "" : "s"} · ${entity.totalCredits} credits`,
+                        rows,
+                      });
+                    }} /> : null}
+                    {solverRankingTab === "teams" ? <RankingsTable rows={currentRankingRows} tabKey="teams" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(team) => {
+                      if (!canOpenSolvesDrilldown) return;
+                      const rows = rankingFilteredSolves.filter((solve) => {
+                        const solveTeamLeaderId = getSolveTeamLeaderId(solve);
+                        if (team.teamLeaderId) return closedOnly(solve) && String(solveTeamLeaderId) === String(team.teamLeaderId);
+                        return closedOnly(solve) && !solveTeamLeaderId && String(solve.entityId) === String(team.entityId);
+                      });
+                      setProdPanel({
+                        contextType: "team",
+                        title: `${team.name || "Team"} solved requests`,
+                        subtitle: `${rows.length} solved request${rows.length === 1 ? "" : "s"} · ${team.membersCount || 0} member${(team.membersCount || 0) === 1 ? "" : "s"} · ${team.totalCredits} credits`,
+                        rows,
+                      });
+                    }} /> : null}
+                    {solverRankingTab === "people" ? <RankingsTable rows={currentRankingRows} tabKey="people" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(person) => {
+                      if (!canOpenSolvesDrilldown) return;
+                      const rows = rankingFilteredSolves.filter((solve) => closedOnly(solve) && String(solve.solverId) === String(person.userId));
+                      setProdPanel({
+                        contextType: "person",
+                        title: `${person.name || "Solver"} solved requests`,
+                        subtitle: `${person.team || "Unknown team"} · ${rows.length} solved request${rows.length === 1 ? "" : "s"} · ${person.totalCredits} credits`,
+                        rows,
+                      });
+                    }} /> : null}
+                  </>
+                ) : (
+                  <>
+                    <div className="mx-4 mt-3 flex gap-7 border-b border-ink/10">
+                      {boardContext.visibleRequesterTabs.map((tabKey) => {
+                        const labelMap = boardContext.cardPreset === "tl_prod"
+                          ? { sourceEntities: "Source Entities", sourceTeams: "Source Teams", requesters: "Requesters" }
+                          : { sourceEntities: "Entities", sourceTeams: "Teams", requesters: "Requesters" };
+                        return (
+                          <button
+                            key={tabKey}
+                            type="button"
+                            onClick={() => setRequesterRankingTab(tabKey)}
+                            className={`pb-3 text-sm font-semibold ${requesterRankingTab === tabKey ? "border-b-2 border-warning text-foreground" : "text-muted-foreground"}`}
+                          >
+                            {labelMap[tabKey] || tabKey}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mx-4 mt-3 flex flex-wrap gap-2 border-b border-ink/10 pb-3">
+                      {[
+                        { key: "date", label: `Date: ${appliedFilters.date === "all" ? "All time" : appliedFilters.date === "7d" ? "Last 7 days" : appliedFilters.date === "90d" ? "Last 90 days" : "Last 30 days"}` },
+                        ...(canFilterCompany ? [{ key: "companyId", label: `Company: ${appliedFilters.companyId === "all" ? "All Companies" : (visibleCompanies.find((c) => String(c.id) === String(appliedFilters.companyId))?.name || "Selected")}` }] : []),
+                        { key: "entityId", label: `Entity: ${appliedFilters.entityId === "all" ? "All Entities" : (toolbarEntities.find((e) => String(e.id) === String(appliedFilters.entityId))?.name || "Selected")}` },
+                        { key: "teamId", label: `Team: ${appliedFilters.teamId === "all" ? "All Teams" : (toolbarTeams.find((t) => String(t.id) === String(appliedFilters.teamId))?.name || "Selected")}` },
+                        ...(canFilterUser && appliedFilters.personId !== "all" ? [{ key: "personId", label: `Person: ${toolbarPeople.find((p) => String(p.id) === String(appliedFilters.personId))?.name || "Selected"}` }] : []),
+                        ...(showRequestTypeFilter ? [{ key: "requestType", label: `Request Type: ${appliedFilters.requestType === "all" ? "All" : appliedFilters.requestType}` }] : []),
+                      ].map((chip) => (
+                        <button key={chip.key} type="button" className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-card px-3 py-1.5 text-xs text-foreground" onClick={() => setAppliedFilters((prev) => ({ ...prev, [chip.key]: "all" }))}>
+                          <span>{chip.label}</span>
+                          <X className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      ))}
+                      <button type="button" className="inline-flex items-center px-1 text-xs font-semibold text-primary" onClick={() => setAppliedFilters((prev) => ({ ...prev, date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" }))}>Clear all</button>
+                    </div>
+                    <RankingsTable rows={currentRankingRows} tabKey={requesterRankingTab} isRequesterContext context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={false} />
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            {canOpenSolvesDrilldown ? (
+              <SolvesPanel
+                open={Boolean(prodPanel)}
+                onClose={() => setProdPanel(null)}
+                contextType={prodPanel?.contextType}
+                title={prodPanel?.title || ""}
+                subtitle={prodPanel?.subtitle || ""}
+                rows={prodPanel?.rows || []}
+                users={users}
+                entities={entities}
+                onViewDetails={(solve) => { setSelectedSolve(solve); setDetailsFocus(null); }}
+              />
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -2790,6 +4727,7 @@ export default function CreditsBoard() {
           onEvidenceUpdated={() => setReloadTick((x) => x + 1)}
         />
       ) : null}
+      </div>
     </div>
   );
 }

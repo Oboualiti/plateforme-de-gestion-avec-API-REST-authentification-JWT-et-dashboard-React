@@ -1,4 +1,5 @@
 ﻿import json
+import logging
 import os
 import re
 import hashlib
@@ -482,17 +483,59 @@ class CreditsSolvesListView(APIView):
 
         company_id = request.query_params.get("company_id")
         entity_id = request.query_params.get("entity_id")
+        target_entity_id = request.query_params.get("target_entity_id")
+        source_entity_id = request.query_params.get("source_entity_id")
+        target_team_id = request.query_params.get("target_team_id")
+        source_team_id = request.query_params.get("source_team_id")
+        team_id = request.query_params.get("team_id")
         user_id = request.query_params.get("user_id")
+        solver_user_id = request.query_params.get("solver_user_id")
+        requester_user_id = request.query_params.get("requester_user_id")
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
         priority = (request.query_params.get("priority") or "").strip().upper()
 
+        # Handle "all" string from frontend
+        if company_id == "all": company_id = None
+        if entity_id == "all": entity_id = None
+        if target_entity_id == "all": target_entity_id = None
+        if source_entity_id == "all": source_entity_id = None
+        if target_team_id == "all": target_team_id = None
+        if source_team_id == "all": source_team_id = None
+        if team_id == "all": team_id = None
+        if user_id == "all": user_id = None
+        if solver_user_id == "all": solver_user_id = None
+        if requester_user_id == "all": requester_user_id = None
+        if date_from == "all": date_from = None
+        if date_to == "all": date_to = None
+
         if company_id:
             solves_qs = solves_qs.filter(company_id=company_id)
-        if entity_id:
+        
+        # Solver-side filtering
+        if target_entity_id:
+            solves_qs = solves_qs.filter(target_entity_id=target_entity_id)
+        elif entity_id:
             solves_qs = solves_qs.filter(target_entity_id=entity_id)
-        if user_id:
+
+        if target_team_id:
+            solves_qs = solves_qs.filter(target_team_id=target_team_id)
+        elif not target_team_id and not source_team_id and team_id:
+            # Legacy fallback only when strict params are absent.
+            solves_qs = solves_qs.filter(target_team_id=team_id)
+
+        if solver_user_id:
+            solves_qs = solves_qs.filter(current_assignee_id=solver_user_id)
+        elif user_id:
             solves_qs = solves_qs.filter(current_assignee_id=user_id)
+
+        # Requester-side filters can still narrow the visible solves list when explicitly supplied.
+        if source_entity_id:
+            solves_qs = solves_qs.filter(source_entity_id=source_entity_id)
+        if source_team_id:
+            solves_qs = solves_qs.filter(requester_user__team_leader_id=source_team_id)
+        if requester_user_id:
+            solves_qs = solves_qs.filter(requester_user_id=requester_user_id)
         if date_from:
             solves_qs = solves_qs.filter(completed_at__date__gte=date_from)
         if date_to:
@@ -978,6 +1021,277 @@ class CreditsSolvesListView(APIView):
                 }
             )
 
+        # Compute requester rankings
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Build requester queryset from visible requests.
+        base_qs = get_visible_requests_queryset(request.user, include_related=True)
+        
+        # Apply filters
+        if company_id:
+            base_qs = base_qs.filter(company_id=company_id)
+        
+        if source_entity_id:
+            base_qs = base_qs.filter(source_entity_id=source_entity_id)
+        elif entity_id:
+            base_qs = base_qs.filter(source_entity_id=entity_id)
+
+        if source_team_id:
+            base_qs = base_qs.filter(requester_user__team_leader_id=source_team_id)
+        elif not target_team_id and not source_team_id and team_id:
+            # Legacy fallback only when strict params are absent.
+            base_qs = base_qs.filter(requester_user__team_leader_id=team_id)
+
+        if requester_user_id:
+            base_qs = base_qs.filter(requester_user_id=requester_user_id)
+        elif user_id:
+            base_qs = base_qs.filter(requester_user_id=user_id)
+
+        requester_qs = base_qs.none()
+        if date_from and date_from != "all":
+            # Include requests created in range OR completed in range
+            requester_qs = base_qs.filter(
+                Q(created_at__date__gte=date_from, created_at__date__lte=date_to or "9999-12-31") |
+                Q(completed_at__date__gte=date_from, completed_at__date__lte=date_to or "9999-12-31") |
+                Q(closed_at__date__gte=date_from, closed_at__date__lte=date_to or "9999-12-31")
+            )
+        else:
+            requester_qs = base_qs
+
+        if priority in {ServiceRequest.Priority.LOW, ServiceRequest.Priority.MEDIUM, ServiceRequest.Priority.HIGH, ServiceRequest.Priority.CRITICAL}:
+            requester_qs = requester_qs.filter(priority=priority)
+        
+        requester_qs = requester_qs.select_related(
+            "requester_user", "requester_user__entity", "source_entity", "company"
+        ).prefetch_related("status_history").distinct()
+
+        source_entity_stats = {}
+        source_team_stats = {}
+        requester_stats = {}
+
+        for req in requester_qs:
+            try:
+                # 1. Source Entity logic: source_entity first, fallback to requester_user.entity
+                entity_id_val = req.source_entity_id or (req.requester_user.entity_id if req.requester_user else None)
+                entity_name = (req.source_entity.name if req.source_entity else 
+                              (req.requester_user.entity.name if req.requester_user and req.requester_user.entity else "Unknown"))
+                entity_key = str(entity_id_val or "unknown")
+                
+                # 2. Status and basic metrics
+                status = req.status
+                is_closed = status == ServiceRequest.Status.CLOSED
+                is_pending = status in {ServiceRequest.Status.NEW, ServiceRequest.Status.ACCEPTED, ServiceRequest.Status.IN_PROGRESS, ServiceRequest.Status.COMPLETED}
+                
+                # Check for sent back (COMPLETED -> IN_PROGRESS in history)
+                sent_back = False
+                for hist in req.status_history.all():
+                    if hist.old_status == ServiceRequest.Status.COMPLETED and hist.new_status == ServiceRequest.Status.IN_PROGRESS:
+                        sent_back = True
+                        break
+
+                effective_end = req.closed_at or req.completed_at
+                hours = 0
+                if is_closed and effective_end and req.created_at:
+                    hours = (effective_end - req.created_at).total_seconds() / 3600
+
+                # 3. Update Source Entity Stats
+                ent = source_entity_stats.setdefault(entity_key, {
+                    "entityId": entity_id_val, "name": entity_name, "createdCount": 0, "closedCount": 0,
+                    "pendingCount": 0, "sentBackCount": 0, "hoursTotal": 0.0, "hoursCount": 0,
+                })
+                ent["createdCount"] += 1
+                if is_closed:
+                    ent["closedCount"] += 1
+                    if hours > 0:
+                        ent["hoursTotal"] += hours
+                        ent["hoursCount"] += 1
+                elif is_pending:
+                    ent["pendingCount"] += 1
+                if sent_back:
+                    ent["sentBackCount"] += 1
+
+                # 4. Update Source Team Stats
+                requester_user = req.requester_user
+                team_leader_id = requester_user.team_leader_id if requester_user else None
+                team_leader_name = None
+                if team_leader_id:
+                    leader = User.objects.filter(id=team_leader_id).only("first_name", "last_name", "username").first()
+                    if leader:
+                        team_leader_name = leader.get_full_name() or leader.username
+                
+                if team_leader_id:
+                    team_key = f"tl-{team_leader_id}"
+                    team_label = f"{team_leader_name}'s Team — {entity_name}"
+                else:
+                    team_key = f"legacy-{entity_key}"
+                    team_label = f"{entity_name} Legacy Requester Group"
+                
+                tm = source_team_stats.setdefault(team_key, {
+                    "teamLeaderId": team_leader_id, "teamLabel": team_label, "entityId": entity_id_val, "name": team_label,
+                    "createdCount": 0, "closedCount": 0, "pendingCount": 0, "sentBackCount": 0, "hoursTotal": 0.0, "hoursCount": 0,
+                })
+                tm["createdCount"] += 1
+                if is_closed:
+                    tm["closedCount"] += 1
+                    if hours > 0:
+                        tm["hoursTotal"] += hours
+                        tm["hoursCount"] += 1
+                elif is_pending:
+                    tm["pendingCount"] += 1
+                if sent_back:
+                    tm["sentBackCount"] += 1
+
+                # 5. Update Requester Stats (only if user exists)
+                if req.requester_user_id:
+                    user_key = str(req.requester_user_id)
+                    per = requester_stats.setdefault(user_key, {
+                        "userId": req.requester_user_id,
+                        "name": req.requester_user.get_full_name() or req.requester_user.username,
+                        "entityId": entity_id_val, "entityName": entity_name,
+                        "createdCount": 0, "closedCount": 0, "pendingCount": 0, "sentBackCount": 0,
+                        "hoursTotal": 0.0, "hoursCount": 0,
+                    })
+                    per["createdCount"] += 1
+                    if is_closed:
+                        per["closedCount"] += 1
+                        if hours > 0:
+                            per["hoursTotal"] += hours
+                            per["hoursCount"] += 1
+                    elif is_pending:
+                        per["pendingCount"] += 1
+                    if sent_back:
+                        per["sentBackCount"] += 1
+
+            except Exception as e:
+                logger.error(f"[DEMAND_RANKING_DEBUG] Error processing request {getattr(req, 'id', 'unknown')}: {e}")
+                continue
+
+        def _build_demand_ranking_list(stats_map):
+            results = []
+            for item in stats_map.values():
+                avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+                created_count = item["createdCount"]
+                closed_count = item["closedCount"]
+                completion_rate = int(round((closed_count / created_count) * 100)) if created_count else 0
+                
+                results.append({
+                    **item,
+                    "completionRate": completion_rate,
+                    "avgHours": round(avg_hours, 1) if avg_hours else 0,
+                })
+            # Sort by createdCount DESC, closedCount DESC, avgHours ASC, name/label ASC
+            results.sort(key=lambda x: (-x["createdCount"], -x["closedCount"], x["avgHours"], str(x.get("name") or x.get("teamLabel") or "")))
+            return results
+
+        source_entity_rankings = _build_demand_ranking_list(source_entity_stats)
+        source_team_rankings = _build_demand_ranking_list(source_team_stats)
+        requester_rankings = _build_demand_ranking_list(requester_stats)
+
+        # Fallback: if requester-demand queryset produced no rows, build demand
+        # summaries from visible solved rows so requester rankings are not empty.
+        if not source_entity_rankings and not source_team_rankings and not requester_rankings and solves:
+            fallback_entities = {}
+            fallback_teams = {}
+            fallback_people = {}
+            for row in solves:
+                entity_id_val = row.get("sourceEntityId") or "unknown"
+                entity_name = row.get("sourceEntityName") or "Unknown"
+                entity_key = str(entity_id_val)
+                status_val = str(row.get("requestStatus") or "").upper()
+                is_closed = status_val == ServiceRequest.Status.CLOSED
+                is_pending = status_val in {
+                    ServiceRequest.Status.NEW,
+                    ServiceRequest.Status.ACCEPTED,
+                    ServiceRequest.Status.IN_PROGRESS,
+                    ServiceRequest.Status.COMPLETED,
+                }
+                sent_back = bool(row.get("wasRejected"))
+                hours = float(row.get("timeToResolveHours") or 0)
+
+                ent = fallback_entities.setdefault(
+                    entity_key,
+                    {
+                        "entityId": entity_id_val,
+                        "name": entity_name,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
+                )
+                ent["createdCount"] += 1
+                if is_closed:
+                    ent["closedCount"] += 1
+                    if hours > 0:
+                        ent["hoursTotal"] += hours
+                        ent["hoursCount"] += 1
+                elif is_pending:
+                    ent["pendingCount"] += 1
+                if sent_back:
+                    ent["sentBackCount"] += 1
+
+                team_key = str(row.get("targetTeamLeaderId") or f"legacy-{entity_key}")
+                team_label = row.get("targetTeamLabel") or f"{entity_name} Legacy Requester Group"
+                tm = fallback_teams.setdefault(
+                    team_key,
+                    {
+                        "teamLeaderId": row.get("targetTeamLeaderId"),
+                        "teamLabel": team_label,
+                        "entityId": entity_id_val,
+                        "name": team_label,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
+                )
+                tm["createdCount"] += 1
+                if is_closed:
+                    tm["closedCount"] += 1
+                    if hours > 0:
+                        tm["hoursTotal"] += hours
+                        tm["hoursCount"] += 1
+                elif is_pending:
+                    tm["pendingCount"] += 1
+                if sent_back:
+                    tm["sentBackCount"] += 1
+
+                requester_key = str(row.get("requesterName") or "unknown")
+                per = fallback_people.setdefault(
+                    requester_key,
+                    {
+                        "userId": row.get("requesterId") or None,
+                        "name": row.get("requesterName") or "Unknown",
+                        "entityId": entity_id_val,
+                        "entityName": entity_name,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
+                )
+                per["createdCount"] += 1
+                if is_closed:
+                    per["closedCount"] += 1
+                    if hours > 0:
+                        per["hoursTotal"] += hours
+                        per["hoursCount"] += 1
+                elif is_pending:
+                    per["pendingCount"] += 1
+                if sent_back:
+                    per["sentBackCount"] += 1
+
+            source_entity_rankings = _build_demand_ranking_list(fallback_entities)
+            source_team_rankings = _build_demand_ranking_list(fallback_teams)
+            requester_rankings = _build_demand_ranking_list(fallback_people)
+
         return Response(
             {
                 "solves": solves,
@@ -986,6 +1300,20 @@ class CreditsSolvesListView(APIView):
                 "entityRankings": _sort_rankings(entity_rankings),
                 "teamRankings": _sort_rankings(team_rankings),
                 "peopleRankings": _sort_rankings(people_rankings),
+                "canOpenSolvesDrilldown": bool(
+                    role_key in {"super_admin", "senior"}
+                    or (not is_prod_entity_user and role_key in {"manager", "team_leader", "user"})
+                ),
+                "requestDemandRankings": {
+                    "sourceEntities": source_entity_rankings,
+                    "sourceTeams": source_team_rankings,
+                    "requesters": requester_rankings,
+                },
+                "requesterRankings": {
+                    "sourceEntities": source_entity_rankings,
+                    "sourceTeams": source_team_rankings,
+                    "requesters": requester_rankings,
+                },
             }
         )
 
@@ -1148,6 +1476,129 @@ class CreditsEvidenceDeleteView(APIView):
 
         evidence_message.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TeamQueueView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        role_key = get_primary_role_key(request.user)
+        entity_type = (getattr(getattr(request.user, "entity", None), "entity_type", "") or "").upper()
+        is_prod = entity_type == Entity.EntityType.PROD
+
+        if role_key in {"super_admin", "senior"}:
+            queue_mode = "admin"
+        elif is_prod:
+            queue_mode = "review"
+        else:
+            queue_mode = "work"
+
+        if queue_mode == "work":
+            default_tab = "assigned_to_me"
+            tabs = ["available", "assigned_to_me", "assigned_to_members", "sent_back", "waiting_approval", "closed"]
+        elif queue_mode == "review":
+            default_tab = "waiting_approval"
+            tabs = ["created", "waiting_approval", "sent_back", "closed"]
+        else:
+            default_tab = "assigned_to_me"
+            tabs = ["available", "assigned_to_me", "waiting_approval", "closed"]
+
+        active_tab = request.query_params.get("tab") or default_tab
+        if active_tab not in tabs:
+            active_tab = default_tab
+
+        qs = get_visible_requests_queryset(request.user, include_related=True).prefetch_related("status_history")
+        team_member_ids = set(User.objects.filter(team_leader_id=request.user.id).values_list("id", flat=True))
+
+        def _is_sent_back(req):
+            return req.status_history.filter(
+                old_status=ServiceRequest.Status.COMPLETED,
+                new_status=ServiceRequest.Status.IN_PROGRESS,
+            ).exists()
+
+        def _in_tab(req, tab_key):
+            if tab_key == "available":
+                return req.status in {ServiceRequest.Status.NEW, ServiceRequest.Status.ACCEPTED} and not req.current_assignee_id
+            if tab_key == "assigned_to_me":
+                return req.current_assignee_id == request.user.id and req.status in {
+                    ServiceRequest.Status.NEW,
+                    ServiceRequest.Status.ACCEPTED,
+                    ServiceRequest.Status.IN_PROGRESS,
+                }
+            if tab_key == "assigned_to_members":
+                return bool(req.current_assignee_id and req.current_assignee_id in team_member_ids)
+            if tab_key == "created":
+                return req.requester_user_id == request.user.id
+            if tab_key == "waiting_approval":
+                return req.status == ServiceRequest.Status.COMPLETED
+            if tab_key == "sent_back":
+                return req.status == ServiceRequest.Status.IN_PROGRESS and _is_sent_back(req)
+            if tab_key == "closed":
+                return req.status == ServiceRequest.Status.CLOSED
+            return False
+
+        counts = {tab: 0 for tab in tabs}
+        rows = []
+        for req in qs:
+            for tab_key in tabs:
+                if _in_tab(req, tab_key):
+                    counts[tab_key] += 1
+
+            if not _in_tab(req, active_tab):
+                continue
+
+            allowed = get_allowed_status_transitions(request.user, req)
+            can_assign = can_assign_request(request.user, req)
+            rows.append(
+                {
+                    "id": req.id,
+                    "requestNumber": req.request_number,
+                    "title": req.title,
+                    "status": req.status,
+                    "priority": req.priority,
+                    "createdAt": req.created_at.isoformat() if req.created_at else None,
+                    "completedAt": req.completed_at.isoformat() if req.completed_at else None,
+                    "closedAt": req.closed_at.isoformat() if req.closed_at else None,
+                    "sourceEntityName": req.source_entity.name if req.source_entity_id else "",
+                    "targetEntityName": req.target_entity.name if req.target_entity_id else "",
+                    "requesterName": (req.requester_user.get_full_name() or req.requester_user.username) if req.requester_user_id else "",
+                    "assigneeName": (req.current_assignee.get_full_name() or req.current_assignee.username) if req.current_assignee_id else "",
+                    "canView": True,
+                    "canAssignToMe": bool(can_assign and not req.current_assignee_id),
+                    "canAssignUser": bool(can_assign),
+                    "canComplete": bool(ServiceRequest.Status.COMPLETED in allowed),
+                    "canResultApprove": bool(ServiceRequest.Status.CLOSED in allowed),
+                    "canResultReject": bool(req.status == ServiceRequest.Status.COMPLETED and ServiceRequest.Status.IN_PROGRESS in allowed),
+                }
+            )
+
+        rows.sort(key=lambda item: item.get("createdAt") or "", reverse=True)
+
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = max(1, min(100, int(request.query_params.get("page_size", 20))))
+        except (TypeError, ValueError):
+            page_size = 20
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        return Response(
+            {
+                "queueMode": queue_mode,
+                "activeTab": active_tab,
+                "tabs": tabs,
+                "counts": counts,
+                "rows": rows[start:end],
+                "pagination": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "total": len(rows),
+                },
+            }
+        )
 
 
 class RequestListCreateView(APIView):

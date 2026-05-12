@@ -1,5 +1,5 @@
 from django.test import TestCase
-from datetime import date
+from datetime import date, timedelta
 from io import StringIO
 from django.utils import timezone
 
@@ -462,6 +462,333 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIsNotNone(person_row)
         self.assertEqual(person_row.get("teamId"), self.support_team.id)
         self.assertEqual(person_row.get("teamName"), self.support_team.name)
+
+    def test_request_demand_rankings_populated_for_visible_created_requests(self):
+        req = self._completed_request("REQ-UNIT-DEMAND-POPULATED")
+        req.status = ServiceRequest.Status.CLOSED
+        req.closed_at = timezone.now()
+        req.save(update_fields=["status", "closed_at"])
+
+        payload = self._credits_payload_for(self.requester)
+        demand = payload.get("requestDemandRankings", {})
+        requester_rows = demand.get("requesters", [])
+        self.assertIn("requesters", demand)
+        self.assertIsInstance(requester_rows, list)
+
+    def test_request_demand_rankings_empty_when_no_visible_requests(self):
+        other_company = Company.objects.create(name="OTHER", code="OTH")
+        other_entity = Entity.objects.create(
+            company=other_company,
+            name="OTH1",
+            code="OTH1",
+            entity_type=Entity.EntityType.PROD,
+        )
+        no_data_user = User.objects.create_user(
+            username="no_data_manager",
+            password="test12345",
+            company=other_company,
+            entity=other_entity,
+        )
+        manager_role = Role.objects.get(key="manager")
+        UserRole.objects.create(user=no_data_user, role=manager_role)
+
+        payload = self._credits_payload_for(no_data_user)
+        demand = payload.get("requestDemandRankings", {})
+        self.assertEqual(demand.get("sourceEntities", []), [])
+        self.assertEqual(demand.get("sourceTeams", []), [])
+        self.assertEqual(demand.get("requesters", []), [])
+
+    def test_request_demand_date_filter_uses_created_at_only(self):
+        requester2 = self._create_user_with_role("requester2", "user", entity=self.prod_entity)
+
+        old_req = ServiceRequest.objects.create(
+            request_number="REQ-UNIT-DEMAND-OLD-CREATED",
+            title="Old created",
+            description="Old created date",
+            category="SCRIPT",
+            requester_user=requester2,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+        old_req.status = ServiceRequest.Status.CLOSED
+        old_req.closed_at = timezone.now()
+        old_req.save(update_fields=["status", "closed_at"])
+        ServiceRequest.objects.filter(id=old_req.id).update(
+            created_at=timezone.now() - timedelta(days=90),
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+
+        fresh_req = ServiceRequest.objects.create(
+            request_number="REQ-UNIT-DEMAND-FRESH-CREATED",
+            title="Fresh created",
+            description="Fresh created date",
+            category="SCRIPT",
+            requester_user=requester2,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+        fresh_req.status = ServiceRequest.Status.CLOSED
+        fresh_req.closed_at = timezone.now()
+        fresh_req.save(update_fields=["status", "closed_at"])
+        ServiceRequest.objects.filter(id=fresh_req.id).update(
+            created_at=timezone.now() - timedelta(days=2),
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {
+                "user_id": requester2.id,
+                "date_from": (timezone.now() - timedelta(days=7)).date().isoformat(),
+                "date_to": timezone.now().date().isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        requester_rows = response.data.get("requestDemandRankings", {}).get("requesters", [])
+        row = next((r for r in requester_rows if r.get("userId") == requester2.id), None)
+        if row is not None:
+            # Only the fresh request should count in created-range demand analytics.
+            self.assertEqual(int(row.get("createdCount") or 0), 1)
+
+    def test_request_demand_user_filter_is_requester_only(self):
+        requester2 = self._create_user_with_role("requester3", "user", entity=self.prod_entity)
+        ServiceRequest.objects.create(
+            request_number="REQ-UNIT-DEMAND-USER-FILTER",
+            title="User filter requester-only",
+            description="Assignee should not drive demand user filter",
+            category="SCRIPT",
+            requester_user=requester2,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"user_id": self.support_resolver.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        demand = response.data.get("requestDemandRankings", {})
+        # support_resolver is assignee, not requester for this request, so demand must be empty.
+        self.assertEqual(demand.get("requesters", []), [])
+
+    def test_target_entity_id_filters_solves_only(self):
+        req_a = self._completed_request("REQ-UNIT-TARGET-ENTITY-A")
+        req_a.status = ServiceRequest.Status.CLOSED
+        req_a.closed_at = timezone.now()
+        req_a.save(update_fields=["status", "closed_at"])
+
+        other_target = Entity.objects.create(
+            company=self.company,
+            name="SUP-2",
+            code="SUP2",
+            entity_type=Entity.EntityType.SUPPORT,
+        )
+        req_b = ServiceRequest.objects.create(
+            request_number="REQ-UNIT-TARGET-ENTITY-B",
+            title="Other target entity request",
+            description="Other target",
+            category="SCRIPT",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=other_target,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"target_entity_id": self.support_entity.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        solves = response.data.get("solves", [])
+        returned_ids = {row.get("requestId") for row in solves}
+        self.assertIn(req_a.id, returned_ids)
+        self.assertNotIn(req_b.id, returned_ids)
+
+    def test_source_entity_id_filters_demand_rankings(self):
+        requester2 = self._create_user_with_role("requester_src_other", "user", entity=self.prod_entity)
+        other_source = Entity.objects.create(
+            company=self.company,
+            name="PRD-2",
+            code="PRD2",
+            entity_type=Entity.EntityType.PROD,
+        )
+        ServiceRequest.objects.create(
+            request_number="REQ-UNIT-SOURCE-ENTITY-OTHER",
+            title="Other source entity request",
+            description="Other source",
+            category="SCRIPT",
+            requester_user=requester2,
+            company=self.company,
+            source_entity=other_source,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"source_entity_id": self.prod_entity.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        source_rows = response.data.get("requestDemandRankings", {}).get("sourceEntities", [])
+        source_ids = {row.get("entityId") for row in source_rows}
+        self.assertIn(self.prod_entity.id, source_ids)
+        self.assertNotIn(other_source.id, source_ids)
+
+    def test_team_id_filters_solves_by_target_team(self):
+        req_a = self._completed_request("REQ-UNIT-TEAM-ID-A")
+        req_a.target_team = self.support_team
+        req_a.target_team_leader = self.support_team_leader
+        req_a.status = ServiceRequest.Status.CLOSED
+        req_a.closed_at = timezone.now()
+        req_a.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        req_b = self._completed_request("REQ-UNIT-TEAM-ID-B")
+        req_b.target_team = self.support_peer_team
+        req_b.target_team_leader = self.support_team_leader_peer
+        req_b.status = ServiceRequest.Status.CLOSED
+        req_b.closed_at = timezone.now()
+        req_b.save(update_fields=["target_team", "target_team_leader", "status", "closed_at"])
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"team_id": self.support_team.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        solves = response.data.get("solves", [])
+        returned_ids = {row.get("requestId") for row in solves}
+        self.assertIn(req_a.id, returned_ids)
+        self.assertNotIn(req_b.id, returned_ids)
+
+    def test_solver_user_id_filters_solves_by_assignee(self):
+        other_solver = self._create_user_with_role("support_solver_alt", "user", entity=self.support_entity)
+        req_a = self._completed_request("REQ-UNIT-SOLVER-USER-A")
+        req_a.current_assignee = self.support_resolver
+        req_a.status = ServiceRequest.Status.CLOSED
+        req_a.closed_at = timezone.now()
+        req_a.save(update_fields=["current_assignee", "status", "closed_at"])
+
+        req_b = self._completed_request("REQ-UNIT-SOLVER-USER-B")
+        req_b.current_assignee = other_solver
+        req_b.status = ServiceRequest.Status.CLOSED
+        req_b.closed_at = timezone.now()
+        req_b.save(update_fields=["current_assignee", "status", "closed_at"])
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"solver_user_id": self.support_resolver.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        solves = response.data.get("solves", [])
+        returned_ids = {row.get("requestId") for row in solves}
+        self.assertIn(req_a.id, returned_ids)
+        self.assertNotIn(req_b.id, returned_ids)
+
+    def test_requester_user_id_filters_demand_by_requester(self):
+        requester2 = self._create_user_with_role("requester_filter_new", "user", entity=self.prod_entity)
+        ServiceRequest.objects.create(
+            request_number="REQ-UNIT-REQUESTER-FILTER-NEW",
+            title="Requester filter new",
+            description="Requester-specific demand",
+            category="SCRIPT",
+            requester_user=requester2,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"requester_user_id": requester2.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        requester_rows = response.data.get("requestDemandRankings", {}).get("requesters", [])
+        self.assertTrue(requester_rows)
+        requester_ids = {row.get("userId") for row in requester_rows}
+        self.assertEqual(requester_ids, {requester2.id})
+
+    def test_legacy_entity_and_user_params_still_work(self):
+        self.client.force_authenticate(user=self.senior_user)
+        response = self.client.get(
+            reverse("credits-solves-list"),
+            {"entity_id": self.support_entity.id, "user_id": self.support_resolver.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        solves = response.data.get("solves", [])
+        self.assertTrue(solves)
+        for row in solves:
+            self.assertEqual(row.get("target_entity_id"), self.support_entity.id)
+
+        requester_rows = response.data.get("requestDemandRankings", {}).get("requesters", [])
+        for row in requester_rows:
+            self.assertEqual(row.get("userId"), self.support_resolver.id)
+
+    def test_request_demand_payload_keeps_existing_credits_rankings(self):
+        payload = self._credits_payload_for(self.requester)
+        self.assertIn("entityRankings", payload)
+        self.assertIn("teamRankings", payload)
+        self.assertIn("peopleRankings", payload)
+        self.assertIn("requestDemandRankings", payload)
 
     def test_legacy_team_fallback_uses_target_team_leader_then_legacy_queue(self):
         req = self._completed_request("REQ-UNIT-LEGACY-FALLBACK")

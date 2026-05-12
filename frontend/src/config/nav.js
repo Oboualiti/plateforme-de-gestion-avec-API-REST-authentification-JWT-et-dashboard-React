@@ -99,7 +99,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
             ...(canCreateRequests && !canApproveAsBasicUser
-              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
+              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
               : []),
             ...(has("view_own_requests")
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
@@ -141,7 +141,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
+              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
               : []),
             ...(canManageUsers
               ? [{ label: "Team Members", to: "/team", icon: UsersRound }]
@@ -178,7 +178,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
+              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
               : []),
             { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
@@ -212,7 +212,7 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
+              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
               : []),
             { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
@@ -264,7 +264,7 @@ export function getNavForRole(role, user = null) {
             ...(hasAny(["view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests", "view_own_requests"])
               ? [{ label: "Requests", to: "/requests", icon: Briefcase }]
               : []),
-            ...(canAccessPending ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }] : []),
+            ...(canAccessPending ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }] : []),
             { label: "Credits Board", to: "/credits-board", icon: Trophy },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),

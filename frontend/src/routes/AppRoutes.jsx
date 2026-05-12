@@ -21,6 +21,7 @@ import ProfilePage from '../pages/ProfilePage'
 import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
 import CreditsBoard from '../pages/CreditsBoard'
+import TeamQueuePage from '../pages/TeamQueuePage'
 import ProtectedRoute from './ProtectedRoute'
 
 import wServiceLogo from '../assets/logo.png'
@@ -143,6 +144,7 @@ function AppRoutes() {
           <Route path="/credits-board" element={<CreditsBoard />} />
           <Route path="/team" element={<PermissionManagementPage />} />
           <Route path="/requests" element={<RequestsPage />} />
+          <Route path="/team-queue" element={<TeamQueuePage />} />
           <Route path="/pending-requests" element={<RequestsPage forcedScope="pending" />} />
           <Route path="/requests/:requestId" element={<RequestDetailsPage />} />
         </Route>
