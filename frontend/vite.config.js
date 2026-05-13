@@ -8,6 +8,10 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.js"],
+  },
   server: {
     proxy: {
       '/api': {

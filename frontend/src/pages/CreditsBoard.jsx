@@ -57,6 +57,7 @@ import {
   rankPeople,
   rankTeams,
 } from "../data/credits";
+import { getBoardContext, resolveActiveMode, resolveActiveTab } from "./creditsBoardContext";
 
 const ICON_MAP = {
   solved: CheckCircle2,
@@ -132,11 +133,38 @@ function getSolveTeamLeaderName(solve) {
 }
 
 function buildTeamLabel(solve) {
-  if (solve?.targetTeamLabel) return solve.targetTeamLabel;
   const teamLeaderName = getSolveTeamLeaderName(solve);
   if (teamLeaderName) return `${teamLeaderName}'s Team`;
+  if (solve?.targetTeamLabel) return solve.targetTeamLabel;
   if (solve?.targetEntityName) return `${solve.targetEntityName} Legacy Queue`;
   return "Unassigned Team";
+}
+
+function getTeamLeaderDisplayName(row, userNameById = new Map()) {
+  const directLeaderName = (
+    row?.teamLeaderName
+    || row?.team_leader_name
+    || row?.targetTeamLeaderName
+    || row?.target_team_leader_name
+    || row?.sourceTeamLeaderName
+    || row?.source_team_leader_name
+    || ""
+  ).trim();
+  if (directLeaderName) return `${directLeaderName}'s Team`;
+
+  const leaderId = row?.teamLeaderId
+    ?? row?.team_leader_id
+    ?? row?.targetTeamLeaderId
+    ?? row?.target_team_leader
+    ?? row?.sourceTeamLeaderId
+    ?? row?.source_team_leader
+    ?? null;
+  if (leaderId != null) {
+    const mappedName = (userNameById.get(String(leaderId)) || "").trim();
+    if (mappedName) return `${mappedName}'s Team`;
+  }
+
+  return row?.teamLabel || row?.name || row?.team || row?.entityName || "Unknown Team";
 }
 
 function matchesCreditsFilter(row, filterKey) {
@@ -406,7 +434,9 @@ function buildPeopleRankings(rows, users = [], entities = []) {
     map.set(key, current);
   });
 
-  const rankings = [...map.values()].map((item) => ({
+  const rankings = [...map.values()]
+    .filter((item) => Number(item.closedCount || 0) > 0)
+    .map((item) => ({
     ...item,
     avgHours: item.hoursCount ? item.hoursTotal / item.hoursCount : 0,
   })).sort(sortByEarnedCreditsThenClosedCount);
@@ -595,137 +625,12 @@ function sameFilters(a, b) {
 }
 
 function normalizeRequesterDemandPayload(payload) {
-  const raw = payload?.requestDemandRankings || payload?.requesterRankings || {};
+  const raw = payload?.requestDemandRankings || {};
   return {
     sourceEntities: raw?.sourceEntities || raw?.source_entities || [],
     sourceTeams: raw?.sourceTeams || raw?.source_teams || [],
-    requesters: raw?.requesters || raw?.requesterRankings || raw?.requester_rankings || [],
+    requesters: raw?.requesters || [],
   };
-}
-
-function getBoardContext(user) {
-  const role = getPrimaryRole(user);
-  const entityType = String(user?.entity_type || user?.entity?.entity_type || "").toUpperCase();
-  const isProd = entityType === "PROD";
-  const isSupportDev = entityType === "SUPPORT" || entityType === "TDEV";
-  const canRequesterMode = ["super_admin", "senior", "manager", "team_leader"].includes(role);
-  const variant = role === "super_admin"
-    ? "super_admin"
-    : role === "senior"
-      ? "senior"
-      : role === "manager" && isProd
-        ? "manager_prod"
-        : role === "manager" && isSupportDev
-          ? "manager_support"
-          : role === "team_leader" && isProd
-            ? "leader_prod"
-            : role === "team_leader" && isSupportDev
-              ? "leader_support"
-              : role === "user"
-                ? "user"
-                : "default";
-
-  const base = {
-    role,
-    entityType,
-    variant,
-    isProd,
-    isSupportDev,
-    canRequesterMode,
-    visibleModes: canRequesterMode ? ["solvers", "requesters"] : ["solvers"],
-    visibleSolverTabs: ["entities", "teams", "people"],
-    visibleRequesterTabs: ["sourceEntities", "sourceTeams", "requesters"],
-    defaultMode: isProd && ["manager", "team_leader"].includes(role) ? "requesters" : "solvers",
-    cardPreset: "default",
-    insightPreset: "default",
-    scopeLabel: "My Scope",
-    titleSuffix: "",
-    headerSubtitle: canRequesterMode
-      ? "Track solved work, requester demand, and ranking intelligence."
-      : "Track your performance, contributions, and rankings.",
-  };
-
-  if (role === "super_admin") {
-    return {
-      ...base,
-      visibleSolverTabs: ["companies", "entities", "teams", "people"],
-      cardPreset: "super_admin",
-      scopeLabel: "Global",
-      headerSubtitle: "Track solved work, requester demand, and ranking intelligence across the platform.",
-    };
-  }
-  if (role === "senior") {
-    return {
-      ...base,
-      cardPreset: "senior",
-      scopeLabel: "Company",
-      headerSubtitle: "Track solved work, recognize support/dev work, and analyze performance for your company.",
-    };
-  }
-  if (role === "manager" && isSupportDev) {
-    return {
-      ...base,
-      cardPreset: "manager_support",
-      scopeLabel: "Entity",
-      headerSubtitle: "Track solved work, incoming requests, and ranking intelligence across the platform.",
-    };
-  }
-  if (role === "manager" && isProd) {
-    return {
-      ...base,
-      cardPreset: "manager_prod",
-      scopeLabel: "Entity",
-      headerSubtitle: "Track resolved requests, recognize support/dev work and analyze performance for PROD.",
-    };
-  }
-  if (role === "team_leader" && isSupportDev) {
-    return {
-      ...base,
-      visibleSolverTabs: ["teams", "people"],
-      visibleRequesterTabs: ["sourceTeams", "requesters"],
-      cardPreset: "tl_support",
-      scopeLabel: "Team",
-      headerSubtitle: "Team performance overview. Track solved work, request demand, and rankings for your team.",
-    };
-  }
-  if (role === "team_leader" && isProd) {
-    return {
-      ...base,
-      visibleSolverTabs: ["teams", "people"],
-      visibleRequesterTabs: ["sourceTeams", "requesters"],
-      cardPreset: "tl_prod",
-      scopeLabel: "Team",
-      titleSuffix: "(Team View)",
-      headerSubtitle: "Track team demand, requester performance, and credit consumption.",
-    };
-  }
-  if (role === "user") {
-    if (isProd) {
-      return {
-        ...base,
-        canRequesterMode: true,
-        visibleModes: ["requesters"],
-        visibleSolverTabs: ["teams", "people"],
-        visibleRequesterTabs: ["requesters", "sourceTeams"],
-        defaultMode: "requesters",
-        variant: "user_prod",
-        cardPreset: "user_prod",
-        scopeLabel: "Me",
-        headerSubtitle: "Track your request activity, fulfillment performance, and rankings.",
-      };
-    }
-    return {
-      ...base,
-      canRequesterMode: false,
-      visibleModes: ["solvers"],
-      visibleSolverTabs: ["teams", "people"],
-      visibleRequesterTabs: [],
-      cardPreset: "user",
-      scopeLabel: "Me",
-      headerSubtitle: "Track your performance, contributions, and rankings.",
-    };
-  }
-  return base;
 }
 
 function exportRankingCsv(rows, columns, filenamePrefix = "credits-rankings") {
@@ -761,9 +666,6 @@ function CreditsFiltersToolbar({
 }) {
   const controlShell = "relative h-[46px] min-w-[150px] rounded-lg border border-slate-200 bg-white px-0";
   const selectClass = "absolute inset-0 z-10 w-full [&>button]:h-full [&>button]:w-full [&>button]:justify-start [&>button]:rounded-lg [&>button]:border-0 [&>button]:bg-transparent [&>button]:px-2.5 [&>button]:pb-1 [&>button]:pt-5 [&>button]:text-[13px] [&>button]:font-medium [&>button]:text-slate-900 [&>button]:shadow-none [&>button]:focus:ring-0 [&>button>svg]:hidden";
-  const companyOptions = filters.companyId === "all"
-    ? companies
-    : companies.filter((company) => String(company.id) === String(filters.companyId));
 
   const Field = ({ icon: Icon, label, children }) => (
     <div className={controlShell}>
@@ -790,8 +692,8 @@ function CreditsFiltersToolbar({
       {canFilterCompany ? (
         <Field icon={Building2} label="Company">
           <Select className={selectClass} value={filters.companyId} onChange={(e) => onChange("companyId", e.target.value)}>
-            {filters.companyId === "all" ? <option value="all">All companies</option> : null}
-            {companyOptions.map((company) => <option key={company.id} value={String(company.id)}>{company.name}</option>)}
+            <option value="all">All companies</option>
+            {companies.map((company) => <option key={company.id} value={String(company.id)}>{company.name}</option>)}
           </Select>
         </Field>
       ) : null}
@@ -855,9 +757,6 @@ function CompactCreditsFiltersToolbar({
 }) {
   const toolbarControl = "absolute inset-0 z-10 w-full [&>button]:h-full [&>button]:w-full [&>button]:justify-start [&>button]:rounded-lg [&>button]:border-0 [&>button]:bg-transparent [&>button]:px-2.5 [&>button]:pb-1 [&>button]:pt-5 [&>button]:text-[13px] [&>button]:font-medium [&>button]:text-slate-900 [&>button]:shadow-none [&>button]:focus:ring-0 [&>button>svg]:hidden";
   const wrapClass = "relative h-[46px] min-w-[150px] rounded-lg border border-slate-200 bg-white";
-  const companyOptions = filters.companyId === "all"
-    ? companies
-    : companies.filter((company) => String(company.id) === String(filters.companyId));
   return (
     <div className="mb-5 flex w-full flex-wrap items-end gap-2.5 md:flex-nowrap">
       <div className={`${wrapClass} shrink-0`}>
@@ -876,8 +775,8 @@ function CompactCreditsFiltersToolbar({
           <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5" /> Company</div>
           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <Select className={toolbarControl} value={filters.companyId} onChange={(e) => onChange("companyId", e.target.value)}>
-            {filters.companyId === "all" ? <option value="all">All companies</option> : null}
-            {companyOptions.map((company) => (
+            <option value="all">All companies</option>
+            {companies.map((company) => (
               <option key={company.id} value={String(company.id)}>{company.name}</option>
             ))}
           </Select>
@@ -3019,6 +2918,19 @@ function RankingsTable({ rows = [], tabKey, isRequesterContext, context, current
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * CREDITS_PAGE_SIZE;
   const pageRows = rows.slice(startIndex, startIndex + CREDITS_PAGE_SIZE);
+
+  function getRowKey(row, idx) {
+    if (!row || typeof row !== "object") return `${tabKey}-row-${startIndex + idx}`;
+    if (tabKey === "companies") return `${tabKey}-${row.companyId || row.name || startIndex + idx}`;
+    if (tabKey === "entities" || tabKey === "sourceEntities") return `${tabKey}-${row.entityId || row.name || startIndex + idx}`;
+    if (tabKey === "teams" || tabKey === "sourceTeams") {
+      return `${tabKey}-${row.teamKey || row.teamId || row.teamLeaderId || row.sourceTeamLeaderId || row.name || startIndex + idx}`;
+    }
+    if (tabKey === "people" || tabKey === "requesters") {
+      return `${tabKey}-${row.userId || row.requesterId || row.name || startIndex + idx}`;
+    }
+    return `${tabKey}-${row.id || row.name || startIndex + idx}`;
+  }
   const canShowSolves = !isRequesterContext && canOpenSolvesDrilldown;
   const isProdRequester = context?.isProd && isRequesterContext;
   const showActions = canShowSolves || (isProdRequester && (tabKey === "sourceTeams" || context?.variant === "user_prod"));
@@ -3302,7 +3214,7 @@ function RankingsTable({ rows = [], tabKey, isRequesterContext, context, current
               const rank = startIndex + idx + 1;
               const isCurrentUser = !isRequesterContext && tabKey === "people" && String(row.userId) === String(currentUserId);
               return (
-                <tr key={`${tabKey}-${row.companyId || row.entityId || row.teamKey || row.teamLeaderId || row.userId || row.name || idx}`} className={`border-t border-ink/10 transition-colors hover:bg-muted/30 ${isCurrentUser ? "bg-warning/10" : ""}`}>
+                <tr key={getRowKey(row, idx)} className={`border-t border-ink/10 transition-colors hover:bg-muted/30 ${isCurrentUser ? "bg-warning/10" : ""}`}>
                   {baseColumns.map((col) => (
                     <td key={col.key} className={`px-3 py-3 align-middle ${col.align}`}>{renderCell(row, rank, col.key)}</td>
                   ))}
@@ -3644,19 +3556,26 @@ export default function CreditsBoard() {
   const [reloadTick, setReloadTick] = useState(0);
 
   const role = getPrimaryRole(user);
-  const isSuperAdmin = role === "super_admin";
-  const boardContext = useMemo(() => getBoardContext(user), [user]);
   const entityType = String(user?.entity_type || user?.entity?.entity_type || "").toUpperCase();
+  const baseBoardContext = useMemo(
+    () => getBoardContext({ role, entityType }),
+    [role, entityType],
+  );
+  const [rankingMode, setRankingMode] = useState(baseBoardContext.defaultMode || "solvers");
+  const boardContext = useMemo(
+    () => getBoardContext({ role, entityType, activeMode: rankingMode }),
+    [role, entityType, rankingMode],
+  );
   const isProdEntityUser = entityType === "PROD";
   const isProdRequesterView = false;
   const isBasicUser = role === "user";
   const canExport = true;
   const canFilterCompany = !isBasicUser && role === "super_admin";
-  const canFilterEntity = ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
+  const canFilterEntity = boardContext.activeMode === "requesters" || ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
   const canFilterTeam = ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
-  const canFilterUser = boardContext.cardPreset === "tl_prod";
+  const canFilterUser = role === "team_leader";
 
-  const defaultEntityId = (role === "team_leader" && !isProdEntityUser) || boardContext.cardPreset === "tl_prod"
+  const defaultEntityId = role === "team_leader"
     ? String(user?.entity ?? user?.entity_id ?? "all")
     : "all";
   const defaultCompanyId = role === "super_admin"
@@ -3664,11 +3583,10 @@ export default function CreditsBoard() {
     : String(user?.company_id ?? user?.company ?? "all");
 
   const [appliedFilters, setAppliedFilters] = useState({ date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" });
-  const [canOpenSolvesDrilldown, setCanOpenSolvesDrilldown] = useState(true);
+  const [canOpenSolvesDrilldown, setCanOpenSolvesDrilldown] = useState(boardContext.canDrilldown);
   const canSeeRequesterRankings = boardContext.canRequesterMode;
-  const [rankingMode, setRankingMode] = useState(boardContext.defaultMode || "solvers");
-  const [solverRankingTab, setSolverRankingTab] = useState(boardContext.visibleSolverTabs.includes("entities") ? "entities" : boardContext.visibleSolverTabs[0] || "people");
-  const [requesterRankingTab, setRequesterRankingTab] = useState(boardContext.visibleRequesterTabs[0] || "sourceEntities");
+  const [solverRankingTab, setSolverRankingTab] = useState(boardContext.defaultTabByMode.solvers || "people");
+  const [requesterRankingTab, setRequesterRankingTab] = useState(boardContext.defaultTabByMode.requesters || "requesters");
   const [rankingSearch, setRankingSearch] = useState("");
   const [debouncedRankingSearch, setDebouncedRankingSearch] = useState("");
   const [topN, setTopN] = useState(10);
@@ -3695,8 +3613,12 @@ export default function CreditsBoard() {
   const [statusActionBusyId, setStatusActionBusyId] = useState(null);
   const [prodRequestCounts, setProdRequestCounts] = useState({ inProgress: 0 });
   const isRequesterContext = canSeeRequesterRankings && rankingMode === "requesters";
+  const activeFilterPreset = boardContext.filterPresetByMode[rankingMode] || "solver";
+  const activeTablePreset = boardContext.tablePresetByMode[rankingMode] || "solver";
+  const activeCardPreset = boardContext.cardPresetByMode[rankingMode] || boardContext.cardPreset;
+  const activeHeaderSubtitle = boardContext.headerSubtitleByMode[rankingMode] || boardContext.headerSubtitle;
   const dynamicAllPeopleLabel = isRequesterContext ? "All requesters" : "All solvers";
-  const showRequestTypeFilter = boardContext.cardPreset === "tl_prod" && isRequesterContext;
+  const showRequestTypeFilter = false;
 
   useEffect(() => {
     const nextEntity = role === "team_leader" ? defaultEntityId : "all";
@@ -3704,22 +3626,14 @@ export default function CreditsBoard() {
   }, [role, defaultEntityId, defaultCompanyId]);
 
   useEffect(() => {
-    if (!boardContext.visibleModes.includes(rankingMode)) {
-      setRankingMode(boardContext.visibleModes[0] || "solvers");
-    }
-    if (!boardContext.visibleSolverTabs.includes(solverRankingTab)) {
-      setSolverRankingTab(boardContext.visibleSolverTabs[0] || "people");
-    }
-    if (!boardContext.visibleRequesterTabs.includes(requesterRankingTab)) {
-      setRequesterRankingTab(boardContext.visibleRequesterTabs[0] || "sourceEntities");
-    }
-  }, [boardContext, rankingMode, solverRankingTab, requesterRankingTab]);
+    setRankingMode((prev) => resolveActiveMode(baseBoardContext, prev));
+  }, [baseBoardContext]);
 
   useEffect(() => {
-    if (boardContext.defaultMode && boardContext.visibleModes.includes(boardContext.defaultMode)) {
-      setRankingMode(boardContext.defaultMode);
-    }
-  }, [boardContext.defaultMode, boardContext.visibleModes]);
+    setSolverRankingTab((prev) => resolveActiveTab(boardContext, "solvers", prev) || "people");
+    setRequesterRankingTab((prev) => resolveActiveTab(boardContext, "requesters", prev) || "requesters");
+    setCanOpenSolvesDrilldown(boardContext.canDrilldown);
+  }, [boardContext]);
 
   useEffect(() => {
     if (isProdEntityUser) setActiveTab("requests");
@@ -3769,7 +3683,7 @@ export default function CreditsBoard() {
       try {
         setLoading(true);
         const params = { include_rankings: true };
-        
+
         if (appliedFilters.companyId !== "all") params.company_id = appliedFilters.companyId;
         if (appliedFilters.entityId !== "all") {
           if (isRequesterContext) params.source_entity_id = appliedFilters.entityId;
@@ -3806,8 +3720,7 @@ export default function CreditsBoard() {
         setBackendPeopleRankings(payload.peopleRankings || []);
         setRequestDemandData(normalizeRequesterDemandPayload(payload));
         const backendAllowsDrilldown = Boolean(payload.canOpenSolvesDrilldown ?? true);
-        const roleDisallowsDrilldown = boardContext.isProd && ["manager", "team_leader", "user"].includes(role);
-        setCanOpenSolvesDrilldown(backendAllowsDrilldown && !roleDisallowsDrilldown);
+        setCanOpenSolvesDrilldown(backendAllowsDrilldown && boardContext.canDrilldown);
         setProdRequestCounts({ inProgress: 0 });
       } catch (error) {
         console.error("Failed to load credits board", error);
@@ -3826,13 +3739,17 @@ export default function CreditsBoard() {
     }
 
     if (!authLoading && user) loadData();
-  }, [authLoading, user, reloadTick, appliedFilters, boardContext.isProd, role]);
+  }, [authLoading, user, reloadTick, appliedFilters, boardContext.canDrilldown, isRequesterContext]);
 
   // TODO: Implement server-side pagination when backend supports:
   // GET /credits/solves/?status=COMPLETED&page=2&page_size=5
   // Currently using client-side pagination after fetching all rows.
 
   const roleScopedSolves = useMemo(() => filterSolvesByUserRole(solves, user), [solves, user]);
+  const userNameById = useMemo(
+    () => new Map(users.map((u) => [String(u?.id), (u?.full_name || u?.username || "").trim()])),
+    [users],
+  );
   const companyScopedSolves = useMemo(() => (
     appliedFilters.companyId === "all"
       ? roleScopedSolves
@@ -3869,11 +3786,11 @@ export default function CreditsBoard() {
       if (!solve.targetTeamId) return;
       map.set(String(solve.targetTeamId), {
         id: solve.targetTeamId,
-        name: solve.targetTeamLabel || solve.targetTeamName || `Team ${solve.targetTeamId}`,
+        name: getTeamLeaderDisplayName(solve, userNameById),
       });
     });
     return Array.from(map.values());
-  }, [companyScopedSolves]);
+  }, [companyScopedSolves, userNameById]);
 
   const visiblePeople = useMemo(
     () => visibleUsers.map((row) => ({ id: row.id, name: row.full_name || row.username || `User ${row.id}` })),
@@ -3893,14 +3810,15 @@ export default function CreditsBoard() {
     const rows = Array.isArray(requestDemandData?.sourceTeams) ? requestDemandData.sourceTeams : [];
     const map = new Map();
     rows.forEach((row) => {
-      if (!row?.teamLeaderId) return;
-      map.set(String(row.teamLeaderId), {
-        id: row.teamLeaderId,
-        name: row.teamLabel || row.name || `Team ${row.teamLeaderId}`,
+      const leaderId = row?.teamLeaderId ?? row?.team_leader_id ?? row?.sourceTeamLeaderId ?? row?.source_team_leader;
+      if (!leaderId) return;
+      map.set(String(leaderId), {
+        id: leaderId,
+        name: getTeamLeaderDisplayName(row, userNameById),
       });
     });
     return Array.from(map.values());
-  }, [requestDemandData]);
+  }, [requestDemandData, userNameById]);
 
   const requesterPeople = useMemo(() => {
     const rows = Array.isArray(requestDemandData?.requesters) ? requestDemandData.requesters : [];
@@ -4002,10 +3920,13 @@ export default function CreditsBoard() {
     () => (backendEntityRankings.length > 0 ? backendEntityRankings : buildEntityRankings(rankingFilteredSolves, entities)),
     [backendEntityRankings, rankingFilteredSolves, entities],
   );
-  const solverTeamRows = useMemo(
-    () => (backendTeamRankings.length > 0 ? backendTeamRankings : buildTeamLeaderRankings(rankingFilteredSolves, entities)),
-    [backendTeamRankings, rankingFilteredSolves, entities],
-  );
+  const solverTeamRows = useMemo(() => {
+    const baseRows = backendTeamRankings.length > 0 ? backendTeamRankings : buildTeamLeaderRankings(rankingFilteredSolves, entities);
+    return baseRows.map((row) => {
+      const teamName = getTeamLeaderDisplayName(row, userNameById);
+      return { ...row, name: teamName, teamLabel: teamName };
+    });
+  }, [backendTeamRankings, rankingFilteredSolves, entities, userNameById]);
   const solverPeopleRows = useMemo(
     () => (backendPeopleRankings.length > 0 ? backendPeopleRankings : buildPeopleRankings(rankingFilteredSolves, users, entities)),
     [backendPeopleRankings, rankingFilteredSolves, users, entities],
@@ -4045,13 +3966,22 @@ export default function CreditsBoard() {
       : solverRankingTab === "teams"
       ? solverTeamRows
       : solverPeopleRows;
-    const raw = isRequesterContext ? requesterData : solverData;
+    const rawBase = isRequesterContext ? requesterData : solverData;
+    const raw = (
+      (isRequesterContext && requesterRankingTab === "sourceTeams")
+      || (!isRequesterContext && solverRankingTab === "teams")
+    )
+      ? rawBase.map((row) => {
+          const teamName = getTeamLeaderDisplayName(row, userNameById);
+          return { ...row, name: teamName, teamLabel: teamName };
+        })
+      : rawBase;
     const q = debouncedRankingSearch.trim().toLowerCase();
     const searched = !q || !isRequesterContext
       ? raw
       : raw.filter((row) => [row.name, row.teamLabel, row.entityName].filter(Boolean).join(" ").toLowerCase().includes(q));
     return sortRows(searched, isRequesterContext ? "requesters" : "solvers", rankingSort).slice(0, Number(topN) || 10);
-  }, [isRequesterContext, requesterRankingTab, requestDemandData, solverRankingTab, solverCompanyRows, solverEntityRows, solverTeamRows, solverPeopleRows, rankingSort, topN]);
+  }, [isRequesterContext, requesterRankingTab, requestDemandData, solverRankingTab, solverCompanyRows, solverEntityRows, solverTeamRows, solverPeopleRows, rankingSort, topN, userNameById]);
 
   const requesterRows = useMemo(() => ({
     entities: Array.isArray(requestDemandData?.sourceEntities) ? requestDemandData.sourceEntities : [],
@@ -4134,8 +4064,8 @@ export default function CreditsBoard() {
         { label: "Completion", value: `${requesterCompletion}%`, hint: "requester side", icon: Gauge },
       ],
     };
-    return presets[boardContext.cardPreset] || presets.default;
-  }, [boardContext, requesterRows, solverCompanyRows, solverEntityRows, solverPeopleRows, solverTeamRows, user?.id]);
+    return presets[activeCardPreset] || presets.default;
+  }, [activeCardPreset, requesterRows, solverCompanyRows, solverEntityRows, solverPeopleRows, solverTeamRows, user?.id]);
 
   const rankingInsights = useMemo(() => {
     const getInsightName = (row) => row?.name || row?.teamLabel || "-";
@@ -4153,7 +4083,7 @@ export default function CreditsBoard() {
       ];
     }
     const rows = currentRankingRows;
-    if (["super_admin", "senior"].includes(boardContext.cardPreset)) {
+    if (["super_admin", "senior"].includes(activeCardPreset)) {
       const biggestClimber = [...rows].sort((a, b) => Number(b.closedCount || b.solvedCount || b.completed || 0) - Number(a.closedCount || a.solvedCount || a.completed || 0))[0];
       const biggestDrop = [...rows].sort((a, b) => Number(b.pendingCount || 0) - Number(a.pendingCount || 0))[0];
       const newInTopTen = rows.find((r) => Number(r.pendingCount || 0) <= 1) || rows[0];
@@ -4175,7 +4105,7 @@ export default function CreditsBoard() {
       { label: "Best Evidence", value: `${getInsightName(bestEvidence)} (${Number(bestEvidence?.coverage || 0)}%)`, icon: Shield },
       { label: "Best Avg Time", value: `${getInsightName(bestAvgTime)} (${formatDurationHours(Number(bestAvgTime?.avgHours || 0))})`, icon: Timer },
     ];
-  }, [boardContext.cardPreset, currentRankingRows, isRequesterContext]);
+  }, [activeCardPreset, currentRankingRows, isRequesterContext]);
 
   const rankingSearchPlaceholder = useMemo(() => {
     if (isRequesterContext) {
@@ -4270,9 +4200,9 @@ export default function CreditsBoard() {
         canFilterEntity={canFilterEntity}
         canFilterTeam={canFilterTeam}
         canFilterUser={canFilterUser}
-        showRequestType={showRequestTypeFilter}
+        showRequestType={activeFilterPreset === "requester" && showRequestTypeFilter}
         requestTypeOptions={requestTypeOptions}
-        subtitle={boardContext.headerSubtitle}
+        subtitle={activeHeaderSubtitle}
         titleSuffix={boardContext.titleSuffix}
         exportAction={(
           <div className="flex items-center gap-2">
@@ -4303,7 +4233,7 @@ export default function CreditsBoard() {
                 Export CSV
               </Button>
             ) : null}
-            {boardContext.cardPreset !== "user_prod" ? (
+            {activeCardPreset !== "user_prod" ? (
               <Button
                 type="button"
                 variant="outline"
@@ -4313,7 +4243,7 @@ export default function CreditsBoard() {
                 Reset
               </Button>
             ) : null}
-            {boardContext.cardPreset === "tl_prod" || boardContext.cardPreset === "user_prod" ? (
+            {activeCardPreset === "user_prod" ? (
               <Button
                 type="button"
                 className="h-[46px] rounded-lg border border-warning bg-warning px-4 text-sm font-semibold text-ink shadow-none hover:bg-warning/90"
@@ -4472,7 +4402,7 @@ export default function CreditsBoard() {
             <Card className="overflow-hidden rounded-xl border border-ink/10 bg-card shadow-sm">
               <CardHeader className="border-b border-ink/10 px-5 py-5">
                 <div className="flex items-center gap-3">
-                  <CardTitle className="text-lg font-bold">{boardContext.cardPreset === "user_prod" ? "Requester Rankings" : "Rankings"}</CardTitle>
+                  <CardTitle className="text-lg font-bold">{activeTablePreset === "requester" ? "Requester Rankings" : "Solver Rankings"}</CardTitle>
                   <div className="relative ml-auto w-full max-w-[260px]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -4511,7 +4441,7 @@ export default function CreditsBoard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="px-4 pt-3">
-                  {canSeeRequesterRankings && boardContext.visibleModes.length > 1 ? (
+                  {canSeeRequesterRankings && boardContext.availableModes.length > 1 ? (
                     <div className="inline-flex rounded-xl border border-ink/15 bg-muted/30 p-1 dark:bg-surface-2/60">
                       <Button
                         size="sm"
@@ -4571,7 +4501,7 @@ export default function CreditsBoard() {
                 {rankingMode === "solvers" || !canSeeRequesterRankings ? (
                   <>
                     <div className="mx-4 mt-3 flex gap-7 border-b border-ink/10">
-                      {boardContext.visibleSolverTabs.map((tabKey) => {
+                      {(boardContext.tabsByMode.solvers || []).map((tabKey) => {
                         const labelMap = { companies: "Companies", entities: "Entities", teams: "Teams", people: "Solvers" };
                         return (
                         <button
@@ -4600,7 +4530,7 @@ export default function CreditsBoard() {
                       ))}
                       <button type="button" className="inline-flex items-center px-1 text-xs font-semibold text-primary" onClick={() => setAppliedFilters((prev) => ({ ...prev, date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" }))}>Clear all</button>
                     </div>
-                    {solverRankingTab === "companies" ? <RankingsTable rows={currentRankingRows} tabKey="companies" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(company) => {
+                    {solverRankingTab === "companies" ? <RankingsTable rows={currentRankingRows} tablePreset={activeTablePreset} tabKey="companies" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(company) => {
                       if (!canOpenSolvesDrilldown) return;
                       const rows = rankingFilteredSolves.filter((solve) => String(solve.companyId || "") === String(company.companyId || ""));
                       setProdPanel({
@@ -4610,7 +4540,7 @@ export default function CreditsBoard() {
                         rows,
                       });
                     }} /> : null}
-                    {solverRankingTab === "entities" ? <RankingsTable rows={currentRankingRows} tabKey="entities" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(entity) => {
+                    {solverRankingTab === "entities" ? <RankingsTable rows={currentRankingRows} tablePreset={activeTablePreset} tabKey="entities" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(entity) => {
                       if (!canOpenSolvesDrilldown) return;
                       const rows = rankingFilteredSolves.filter((solve) => closedOnly(solve) && String(solve.entityId) === String(entity.entityId));
                       setProdPanel({
@@ -4620,7 +4550,7 @@ export default function CreditsBoard() {
                         rows,
                       });
                     }} /> : null}
-                    {solverRankingTab === "teams" ? <RankingsTable rows={currentRankingRows} tabKey="teams" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(team) => {
+                    {solverRankingTab === "teams" ? <RankingsTable rows={currentRankingRows} tablePreset={activeTablePreset} tabKey="teams" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(team) => {
                       if (!canOpenSolvesDrilldown) return;
                       const rows = rankingFilteredSolves.filter((solve) => {
                         const solveTeamLeaderId = getSolveTeamLeaderId(solve);
@@ -4634,7 +4564,7 @@ export default function CreditsBoard() {
                         rows,
                       });
                     }} /> : null}
-                    {solverRankingTab === "people" ? <RankingsTable rows={currentRankingRows} tabKey="people" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(person) => {
+                    {solverRankingTab === "people" ? <RankingsTable rows={currentRankingRows} tablePreset={activeTablePreset} tabKey="people" isRequesterContext={false} context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={canOpenSolvesDrilldown} onViewSolves={(person) => {
                       if (!canOpenSolvesDrilldown) return;
                       const rows = rankingFilteredSolves.filter((solve) => closedOnly(solve) && String(solve.solverId) === String(person.userId));
                       setProdPanel({
@@ -4648,8 +4578,8 @@ export default function CreditsBoard() {
                 ) : (
                   <>
                     <div className="mx-4 mt-3 flex gap-7 border-b border-ink/10">
-                      {boardContext.visibleRequesterTabs.map((tabKey) => {
-                        const labelMap = boardContext.cardPreset === "tl_prod"
+                      {(boardContext.tabsByMode.requesters || []).map((tabKey) => {
+                        const labelMap = activeCardPreset === "tl_prod"
                           ? { sourceEntities: "Source Entities", sourceTeams: "Source Teams", requesters: "Requesters" }
                           : { sourceEntities: "Entities", sourceTeams: "Teams", requesters: "Requesters" };
                         return (
@@ -4680,7 +4610,7 @@ export default function CreditsBoard() {
                       ))}
                       <button type="button" className="inline-flex items-center px-1 text-xs font-semibold text-primary" onClick={() => setAppliedFilters((prev) => ({ ...prev, date: "30d", companyId: defaultCompanyId, entityId: defaultEntityId, teamId: "all", personId: "all", requestType: "all" }))}>Clear all</button>
                     </div>
-                    <RankingsTable rows={currentRankingRows} tabKey={requesterRankingTab} isRequesterContext context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={false} />
+                    <RankingsTable rows={currentRankingRows} tablePreset={activeTablePreset} tabKey={requesterRankingTab} isRequesterContext context={boardContext} currentUserId={user?.id} canOpenSolvesDrilldown={false} />
                   </>
                 )}
               </CardContent>

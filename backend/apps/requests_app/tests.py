@@ -234,6 +234,56 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         return response.data
 
+    def _create_ranked_request(
+        self,
+        request_number,
+        requester_user,
+        source_entity,
+        target_entity=None,
+        status_value=ServiceRequest.Status.CLOSED,
+        target_team=None,
+        target_team_leader=None,
+        current_assignee=None,
+    ):
+        target_entity = target_entity or self.support_entity
+        current_assignee = current_assignee or self.support_resolver
+        request_obj = ServiceRequest.objects.create(
+            request_number=request_number,
+            title=f"Ranked {request_number}",
+            description="Ranking fixture",
+            category="INFO",
+            requester_user=requester_user,
+            company=source_entity.company,
+            source_entity=source_entity,
+            target_entity=target_entity,
+            requester_unit=self.prod_unit if source_entity.entity_type == Entity.EntityType.PROD else self.support_unit,
+            target_unit=self.support_unit,
+            current_assignee=current_assignee,
+            status=status_value,
+            is_submitted_to_target=True,
+            accepted_at=timezone.now(),
+            completed_at=timezone.now(),
+            closed_at=timezone.now() if status_value == ServiceRequest.Status.CLOSED else None,
+            target_team=target_team,
+            target_team_leader=target_team_leader,
+        )
+        RequestStatusHistory.objects.create(
+            request=request_obj,
+            old_status=ServiceRequest.Status.IN_PROGRESS,
+            new_status=ServiceRequest.Status.COMPLETED,
+            changed_by=self.support_resolver,
+            note="completed",
+        )
+        if status_value == ServiceRequest.Status.CLOSED:
+            RequestStatusHistory.objects.create(
+                request=request_obj,
+                old_status=ServiceRequest.Status.COMPLETED,
+                new_status=ServiceRequest.Status.CLOSED,
+                changed_by=requester_user,
+                note="closed",
+            )
+        return request_obj
+
     def _run_backfill_target_team(self):
         out = StringIO()
         call_command("backfill_request_target_team", stdout=out)
@@ -249,6 +299,328 @@ class RequestPermissionWorkflowTests(APITestCase):
         role = Role.objects.get(key=role_key)
         UserRole.objects.create(user=user, role=role)
         return user
+
+    def test_credits_payload_keeps_request_demand_canonical_and_alias(self):
+        self._create_ranked_request(
+            "REQ-RANK-ALIAS-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        payload = self._credits_payload_for(self.super_admin)
+        canonical = payload.get("requestDemandRankings")
+        alias = payload.get("requesterRankings")
+        self.assertIsInstance(canonical, dict)
+        self.assertEqual(alias, canonical)
+        self.assertIn("sourceEntities", canonical)
+        self.assertIn("sourceTeams", canonical)
+        self.assertIn("requesters", canonical)
+
+    def test_request_demand_is_empty_when_no_visible_ranked_requests(self):
+        payload = self._credits_payload_for(self.super_admin)
+        demand = payload.get("requestDemandRankings", {})
+        self.assertEqual(demand.get("sourceEntities", []), [])
+        self.assertEqual(demand.get("sourceTeams", []), [])
+        self.assertEqual(demand.get("requesters", []), [])
+
+    def test_request_demand_scope_super_admin_global_senior_company_manager_entity(self):
+        other_company = Company.objects.create(name="ACME", code="ACME")
+        other_prod = Entity.objects.create(
+            company=other_company,
+            name="ACME-PROD",
+            code="ACME-PROD",
+            entity_type=Entity.EntityType.PROD,
+        )
+        other_support = Entity.objects.create(
+            company=other_company,
+            name="ACME-SUP",
+            code="ACME-SUP",
+            entity_type=Entity.EntityType.SUPPORT,
+        )
+        other_branch = MainBranch.objects.create(name="ACME")
+        other_prod_unit = OperationalUnit.objects.create(
+            main_branch=other_branch,
+            code=other_prod.code,
+            name=other_prod.name,
+            team_type=OperationalUnit.TeamType.PROD,
+        )
+        other_support_unit = OperationalUnit.objects.create(
+            main_branch=other_branch,
+            code=other_support.code,
+            name=other_support.name,
+            team_type=OperationalUnit.TeamType.SUPPORT,
+        )
+        other_tl = User.objects.create_user(
+            username="acme_tl",
+            password="test12345",
+            company=other_company,
+            entity=other_prod,
+        )
+        UserRole.objects.create(user=other_tl, role=Role.objects.get(key="team_leader"))
+        other_requester = User.objects.create_user(
+            username="acme_user",
+            password="test12345",
+            company=other_company,
+            entity=other_prod,
+            team_leader=other_tl,
+        )
+        UserRole.objects.create(user=other_requester, role=Role.objects.get(key="user"))
+        ServiceRequest.objects.create(
+            request_number="REQ-RANK-SCOPE-ACME-0001",
+            title="Other company ranked request",
+            description="Scope fixture",
+            category="INFO",
+            requester_user=other_requester,
+            company=other_company,
+            source_entity=other_prod,
+            target_entity=other_support,
+            requester_unit=other_prod_unit,
+            target_unit=other_support_unit,
+            current_assignee=other_tl,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            accepted_at=timezone.now(),
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+        )
+        self._create_ranked_request(
+            "REQ-RANK-SCOPE-WMN-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        super_admin_payload = self._credits_payload_for(self.super_admin)
+        senior_payload = self._credits_payload_for(self.senior_user)
+        manager_payload = self._credits_payload_for(self.requester_manager)
+
+        self.assertGreaterEqual(len(super_admin_payload.get("requestDemandRankings", {}).get("sourceEntities", [])), 2)
+        self.assertEqual(len(senior_payload.get("requestDemandRankings", {}).get("sourceEntities", [])), 1)
+        manager_entities = manager_payload.get("requestDemandRankings", {}).get("sourceEntities", [])
+        self.assertEqual(len(manager_entities), 1)
+        self.assertEqual(str(manager_entities[0].get("entityId")), str(self.prod_entity.id))
+
+    def test_request_demand_scope_team_leader_and_user_prod_team(self):
+        prod_peer_tl = self._create_user_with_role("prod_peer_tl", "team_leader", entity=self.prod_entity)
+        prod_peer_member = self._create_user_with_role("prod_peer_member", "user", entity=self.prod_entity)
+        prod_peer_member.team_leader = prod_peer_tl
+        prod_peer_member.save(update_fields=["team_leader"])
+
+        prod_same_team_member = self._create_user_with_role("prod_same_team_member", "user", entity=self.prod_entity)
+        prod_same_team_member.team_leader = self.team_leader
+        prod_same_team_member.save(update_fields=["team_leader"])
+        self.prod_team.members.add(prod_same_team_member)
+
+        self._create_ranked_request(
+            "REQ-RANK-TL-OWN-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        self._create_ranked_request(
+            "REQ-RANK-TL-OWN-0002",
+            requester_user=prod_same_team_member,
+            source_entity=self.prod_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        self._create_ranked_request(
+            "REQ-RANK-TL-OTHER-0001",
+            requester_user=prod_peer_member,
+            source_entity=self.prod_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+
+        tl_payload = self._credits_payload_for(self.team_leader)
+        tl_requesters = {str(row.get("userId")) for row in tl_payload.get("requestDemandRankings", {}).get("requesters", [])}
+        self.assertIn(str(self.requester.id), tl_requesters)
+        self.assertIn(str(prod_same_team_member.id), tl_requesters)
+        self.assertNotIn(str(prod_peer_member.id), tl_requesters)
+
+        user_payload = self._credits_payload_for(self.requester)
+        user_requesters = {str(row.get("userId")) for row in user_payload.get("requestDemandRankings", {}).get("requesters", [])}
+        self.assertIn(str(self.requester.id), user_requesters)
+        self.assertIn(str(prod_same_team_member.id), user_requesters)
+        self.assertNotIn(str(prod_peer_member.id), user_requesters)
+
+    def test_support_manager_requester_rankings_scoped_to_target_entity(self):
+        source_other_prod_requester = self._create_user_with_role(
+            "source_other_prod_requester",
+            "user",
+            entity=self.other_prod_entity,
+        )
+        excluded_requester = self._create_user_with_role(
+            "excluded_requester",
+            "user",
+            entity=self.prod_entity,
+        )
+
+        self._create_ranked_request(
+            "REQ-SUP-MGR-IN-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        self._create_ranked_request(
+            "REQ-SUP-MGR-IN-0002",
+            requester_user=source_other_prod_requester,
+            source_entity=self.other_prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_peer_team,
+            target_team_leader=self.support_team_leader_peer,
+        )
+        self._create_ranked_request(
+            "REQ-SUP-MGR-OUT-0001",
+            requester_user=excluded_requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity_alt,
+            target_team=self.support_alt_team,
+            target_team_leader=self.support_team_leader_alt,
+        )
+
+        payload = self._credits_payload_for(self.support_manager)
+        demand = payload.get("requestDemandRankings", {})
+        self.assertIn("sourceEntities", demand)
+        self.assertIn("sourceTeams", demand)
+        self.assertIn("requesters", demand)
+
+        requesters = demand.get("requesters", [])
+        requester_ids = {str(row.get("userId")) for row in requesters}
+        self.assertIn(str(self.requester.id), requester_ids)
+        self.assertIn(str(source_other_prod_requester.id), requester_ids)
+        self.assertNotIn(str(excluded_requester.id), requester_ids)
+
+        total_created = sum(int(row.get("createdCount", 0) or 0) for row in requesters)
+        self.assertEqual(total_created, 2)
+
+    def test_support_team_leader_requester_rankings_scoped_to_target_team(self):
+        source_team_member_in_scope = self._create_user_with_role(
+            "source_team_member_in_scope",
+            "user",
+            entity=self.other_prod_entity,
+        )
+        source_team_member_out_scope = self._create_user_with_role(
+            "source_team_member_out_scope",
+            "user",
+            entity=self.other_prod_entity,
+        )
+
+        self._create_ranked_request(
+            "REQ-SUP-TL-IN-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        self._create_ranked_request(
+            "REQ-SUP-TL-IN-0002",
+            requester_user=source_team_member_in_scope,
+            source_entity=self.other_prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        self._create_ranked_request(
+            "REQ-SUP-TL-OUT-0001",
+            requester_user=source_team_member_out_scope,
+            source_entity=self.other_prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_peer_team,
+            target_team_leader=self.support_team_leader_peer,
+        )
+
+        payload = self._credits_payload_for(self.support_team_leader)
+        demand = payload.get("requestDemandRankings", {})
+        self.assertIn("sourceEntities", demand)
+        self.assertIn("sourceTeams", demand)
+        self.assertIn("requesters", demand)
+
+        requesters = demand.get("requesters", [])
+        requester_ids = {str(row.get("userId")) for row in requesters}
+        self.assertIn(str(self.requester.id), requester_ids)
+        self.assertIn(str(source_team_member_in_scope.id), requester_ids)
+        self.assertNotIn(str(source_team_member_out_scope.id), requester_ids)
+
+        total_created = sum(int(row.get("createdCount", 0) or 0) for row in requesters)
+        self.assertEqual(total_created, 2)
+
+    def test_support_user_solver_rankings_include_team_members(self):
+        support_peer_solver = self._create_user_with_role(
+            "support_peer_solver",
+            "user",
+            entity=self.support_entity,
+        )
+        support_peer_solver.team_leader = self.support_team_leader
+        support_peer_solver.save(update_fields=["team_leader"])
+        self.support_team.members.add(support_peer_solver)
+
+        self._create_ranked_request(
+            "REQ-SUP-USER-SOLVER-SELF-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+            current_assignee=self.support_resolver,
+        )
+        self._create_ranked_request(
+            "REQ-SUP-USER-SOLVER-PEER-0001",
+            requester_user=self.requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+            current_assignee=support_peer_solver,
+        )
+
+        payload = self._credits_payload_for(self.support_resolver)
+        people_rows = payload.get("peopleRankings", [])
+        people_ids = {str(row.get("userId")) for row in people_rows}
+        self.assertIn(str(self.support_resolver.id), people_ids)
+        self.assertIn(str(support_peer_solver.id), people_ids)
+        self.assertNotIn(str(self.support_team_leader.id), people_ids)
+
+    def test_support_user_requester_rankings_scoped_to_their_team(self):
+        source_in_scope = self._create_user_with_role(
+            "support_user_source_in_scope",
+            "user",
+            entity=self.other_prod_entity,
+        )
+        source_out_scope = self._create_user_with_role(
+            "support_user_source_out_scope",
+            "user",
+            entity=self.other_prod_entity,
+        )
+
+        self._create_ranked_request(
+            "REQ-SUP-USER-REQ-IN-0001",
+            requester_user=source_in_scope,
+            source_entity=self.other_prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        self._create_ranked_request(
+            "REQ-SUP-USER-REQ-OUT-0001",
+            requester_user=source_out_scope,
+            source_entity=self.other_prod_entity,
+            target_entity=self.support_entity,
+            target_team=self.support_peer_team,
+            target_team_leader=self.support_team_leader_peer,
+        )
+
+        payload = self._credits_payload_for(self.support_resolver)
+        demand = payload.get("requestDemandRankings", {})
+        requesters = demand.get("requesters", [])
+        requester_ids = {str(row.get("userId")) for row in requesters}
+        self.assertIn(str(source_in_scope.id), requester_ids)
+        self.assertNotIn(str(source_out_scope.id), requester_ids)
 
     def test_pending_approval_accept_sets_submitted_and_keeps_new_status(self):
         self.client.force_authenticate(user=self.team_leader)
@@ -462,6 +834,51 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIsNotNone(person_row)
         self.assertEqual(person_row.get("teamId"), self.support_team.id)
         self.assertEqual(person_row.get("teamName"), self.support_team.name)
+
+    def test_support_solver_rankings_credit_current_assignee_when_closed_by_other_actor(self):
+        req = ServiceRequest.objects.create(
+            request_number="REQ-UNIT-ASSIGNEE-CREDIT",
+            title="Assignee should keep solver credit",
+            description="Regression fixture",
+            category="INFO",
+            requester_user=self.requester,
+            company=self.company,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            requester_unit=self.prod_unit,
+            target_unit=self.support_unit,
+            current_assignee=self.support_resolver,
+            status=ServiceRequest.Status.CLOSED,
+            is_submitted_to_target=True,
+            accepted_at=timezone.now(),
+            completed_at=timezone.now(),
+            closed_at=timezone.now(),
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+        )
+        RequestStatusHistory.objects.create(
+            request=req,
+            old_status=ServiceRequest.Status.IN_PROGRESS,
+            new_status=ServiceRequest.Status.COMPLETED,
+            changed_by=self.support_manager,
+            note="manager moved to completed",
+        )
+        RequestStatusHistory.objects.create(
+            request=req,
+            old_status=ServiceRequest.Status.COMPLETED,
+            new_status=ServiceRequest.Status.CLOSED,
+            changed_by=self.requester,
+            note="requester closed",
+        )
+
+        row = self._credits_row_for(self.support_resolver, req)
+        self.assertEqual(row.get("solverId"), self.support_resolver.id)
+
+        payload = self._credits_payload_for(self.support_resolver)
+        people_rows = payload.get("peopleRankings", [])
+        person_row = next((item for item in people_rows if item.get("userId") == self.support_resolver.id), None)
+        self.assertIsNotNone(person_row)
+        self.assertGreaterEqual(int(person_row.get("closedCount", 0) or 0), 1)
 
     def test_legacy_team_fallback_uses_target_team_leader_then_legacy_queue(self):
         req = self._completed_request("REQ-UNIT-LEGACY-FALLBACK")

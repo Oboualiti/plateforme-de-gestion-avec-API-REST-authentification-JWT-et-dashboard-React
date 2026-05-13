@@ -449,6 +449,7 @@ class CreditsSolvesListView(APIView):
         user_entity_type = (getattr(getattr(request.user, "entity", None), "entity_type", "") or "").upper()
         is_prod_entity_user = user_entity_type == Entity.EntityType.PROD
         role_key = get_primary_role_key(request.user)
+        is_prod_requester_scope = is_prod_entity_user and role_key in {"manager", "team_leader", "user"}
         is_prod_team_scope = is_prod_entity_user and role_key in {"manager", "team_leader"}
         is_prod_reviewer = (
             is_prod_entity_user
@@ -456,7 +457,7 @@ class CreditsSolvesListView(APIView):
             and has_permission(request.user, "approve_request")
         )
 
-        if is_prod_team_scope:
+        if is_prod_requester_scope:
             solves_qs = ServiceRequest.objects.filter(
                 credits_status_filter,
             )
@@ -464,6 +465,14 @@ class CreditsSolvesListView(APIView):
                 solves_qs = solves_qs.filter(company_id=request.user.company_id)
             if request.user.entity_id:
                 solves_qs = solves_qs.filter(source_entity_id=request.user.entity_id)
+        elif role_key == "user" and not is_prod_entity_user:
+            solves_qs = ServiceRequest.objects.filter(
+                credits_status_filter,
+            )
+            if request.user.company_id:
+                solves_qs = solves_qs.filter(company_id=request.user.company_id)
+            if request.user.entity_id:
+                solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
         else:
             visible_qs = get_visible_requests_queryset(request.user, include_related=True)
             solves_qs = visible_qs.filter(credits_status_filter)
@@ -484,22 +493,75 @@ class CreditsSolvesListView(APIView):
         )
 
         company_id = request.query_params.get("company_id")
-        entity_id = request.query_params.get("entity_id")
-        user_id = request.query_params.get("user_id")
+        target_entity_id = request.query_params.get("target_entity_id") or request.query_params.get("entity_id")
+        target_team_id = request.query_params.get("target_team_id")
+        solver_user_id = request.query_params.get("solver_user_id") or request.query_params.get("user_id")
+        source_entity_id = request.query_params.get("source_entity_id")
+        source_team_id = request.query_params.get("source_team_id")
+        requester_user_id = request.query_params.get("requester_user_id")
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
         priority = (request.query_params.get("priority") or "").strip().upper()
+        request_type = (request.query_params.get("request_type") or "").strip().upper()
+        support_user_team_leader_ids = set()
+        support_user_team_member_ids = set()
+        support_user_target_team_ids = set()
+
+        if role_key == "user" and not is_prod_entity_user:
+            if request.user.team_leader_id:
+                support_user_team_leader_ids.add(request.user.team_leader_id)
+            support_user_team_leader_ids.update(
+                Team.objects.filter(is_active=True, members__id=request.user.id).values_list("leader_id", flat=True)
+            )
+            support_user_team_leader_ids.discard(None)
+            if support_user_team_leader_ids:
+                support_user_team_member_ids.update(
+                    User.objects.filter(team_leader_id__in=support_user_team_leader_ids).values_list("id", flat=True)
+                )
+                support_user_team_member_ids.update(
+                    Team.objects.filter(is_active=True, leader_id__in=support_user_team_leader_ids).values_list("members__id", flat=True)
+                )
+                support_user_target_team_ids.update(
+                    Team.objects.filter(is_active=True, leader_id__in=support_user_team_leader_ids).values_list("id", flat=True)
+                )
+                team_leader_member_ids = set(
+                    UserRole.objects.filter(
+                        role__key="team_leader",
+                        user_id__in=support_user_team_member_ids,
+                    ).values_list("user_id", flat=True)
+                )
+                support_user_team_member_ids.difference_update(team_leader_member_ids)
+            support_user_team_member_ids.add(request.user.id)
+            support_user_team_member_ids.discard(None)
+            support_user_target_team_ids.discard(None)
 
         if company_id:
             solves_qs = solves_qs.filter(company_id=company_id)
-        if entity_id:
-            solves_qs = solves_qs.filter(target_entity_id=entity_id)
-        if user_id:
-            solves_qs = solves_qs.filter(current_assignee_id=user_id)
+        if target_entity_id:
+            solves_qs = solves_qs.filter(target_entity_id=target_entity_id)
+        if target_team_id:
+            solves_qs = solves_qs.filter(
+                Q(target_team_id=target_team_id)
+                | Q(target_team__leader_id=target_team_id)
+                | Q(target_team_leader_id=target_team_id)
+            )
+        if solver_user_id:
+            solves_qs = solves_qs.filter(current_assignee_id=solver_user_id)
+        if source_entity_id:
+            solves_qs = solves_qs.filter(source_entity_id=source_entity_id)
+        if source_team_id:
+            solves_qs = solves_qs.filter(
+                Q(requester_user__team_leader_id=source_team_id)
+                | Q(requester_user_id=source_team_id)
+            )
+        if requester_user_id:
+            solves_qs = solves_qs.filter(requester_user_id=requester_user_id)
         if date_from:
             solves_qs = solves_qs.filter(completed_at__date__gte=date_from)
         if date_to:
             solves_qs = solves_qs.filter(completed_at__date__lte=date_to)
+        if request_type:
+            solves_qs = solves_qs.filter(category=request_type)
         if priority in {
             ServiceRequest.Priority.LOW,
             ServiceRequest.Priority.MEDIUM,
@@ -514,7 +576,10 @@ class CreditsSolvesListView(APIView):
             elif role_key == "team_leader" and request.user.entity_id:
                 solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
             elif role_key == "user":
-                solves_qs = solves_qs.filter(current_assignee_id=request.user.id)
+                if support_user_team_member_ids:
+                    solves_qs = solves_qs.filter(current_assignee_id__in=support_user_team_member_ids)
+                else:
+                    solves_qs = solves_qs.filter(current_assignee_id=request.user.id)
 
         solves_qs = solves_qs.select_related(
             "company",
@@ -525,8 +590,127 @@ class CreditsSolvesListView(APIView):
             "target_team__leader",
             "target_team__entity",
             "requester_user",
+            "requester_user__team_leader",
+            "requester_user__entity",
             "current_assignee",
         ).order_by("-completed_at", "-closed_at", "-id")
+        solves_list = list(solves_qs)
+        entity_leaders_from_requests = {}
+        for req in solves_list:
+            entity_id = req.target_entity_id
+            if not entity_id:
+                continue
+            leader_id = (
+                req.target_team.leader_id
+                if req.target_team_id and req.target_team and req.target_team.leader_id
+                else req.target_team_leader_id
+            )
+            if not leader_id:
+                continue
+            leader_name = (
+                (req.target_team.leader.get_full_name() or req.target_team.leader.username)
+                if req.target_team_id and req.target_team and req.target_team.leader_id
+                else ((req.target_team_leader.get_full_name() or req.target_team_leader.username) if req.target_team_leader_id else "")
+            )
+            bucket = entity_leaders_from_requests.setdefault(entity_id, {})
+            if leader_id not in bucket:
+                bucket[leader_id] = (leader_name or "").strip()
+
+        solver_ids = set()
+        target_entity_ids = set()
+        for req in solves_list:
+            solver_id = req.current_assignee_id or req.completed_by_id or req.closed_by_id
+            if solver_id:
+                solver_ids.add(solver_id)
+            if req.target_entity_id:
+                target_entity_ids.add(req.target_entity_id)
+
+        solver_team_leader_map = {}
+        if solver_ids:
+            solver_ids_with_tl_role = set(
+                UserRole.objects.filter(role__key="team_leader", user_id__in=solver_ids).values_list("user_id", flat=True)
+            )
+            for solver in User.objects.select_related("team_leader").filter(id__in=solver_ids).only(
+                "id",
+                "entity_id",
+                "username",
+                "first_name",
+                "last_name",
+                "team_leader_id",
+                "team_leader__id",
+                "team_leader__username",
+                "team_leader__first_name",
+                "team_leader__last_name",
+                "team_leader__entity_id",
+            ):
+                leader = solver.team_leader
+                if leader:
+                    solver_team_leader_map[solver.id] = {
+                        "id": leader.id,
+                        "name": (leader.get_full_name() or leader.username or "").strip(),
+                        "entity_id": leader.entity_id,
+                    }
+                    continue
+                if solver.id in solver_ids_with_tl_role:
+                    solver_team_leader_map[solver.id] = {
+                        "id": solver.id,
+                        "name": (solver.get_full_name() or solver.username or "").strip(),
+                        "entity_id": solver.entity_id,
+                    }
+
+        unique_entity_leader_map = {}
+        if target_entity_ids:
+            entity_to_leaders = {}
+            for team in Team.objects.select_related("leader").filter(
+                is_active=True,
+                entity_id__in=target_entity_ids,
+                leader__isnull=False,
+                leader__is_active=True,
+            ).only(
+                "entity_id",
+                "leader_id",
+                "leader__id",
+                "leader__username",
+                "leader__first_name",
+                "leader__last_name",
+            ):
+                if not team.entity_id or not team.leader_id:
+                    continue
+                bucket = entity_to_leaders.setdefault(team.entity_id, {})
+                if team.leader_id not in bucket:
+                    bucket[team.leader_id] = {
+                        "id": team.leader_id,
+                        "name": (team.leader.get_full_name() or team.leader.username or "").strip(),
+                    }
+            role_leader_rows = (
+                UserRole.objects.select_related("user")
+                .filter(
+                    role__key="team_leader",
+                    user__is_active=True,
+                    user__entity_id__in=target_entity_ids,
+                )
+                .only(
+                    "user_id",
+                    "user__id",
+                    "user__username",
+                    "user__first_name",
+                    "user__last_name",
+                    "user__entity_id",
+                )
+            )
+            for link in role_leader_rows:
+                leader = link.user
+                if not leader or not leader.entity_id:
+                    continue
+                bucket = entity_to_leaders.setdefault(leader.entity_id, {})
+                if leader.id not in bucket:
+                    bucket[leader.id] = {
+                        "id": leader.id,
+                        "name": (leader.get_full_name() or leader.username or "").strip(),
+                    }
+            for entity_id, leaders_by_id in entity_to_leaders.items():
+                if len(leaders_by_id) == 1:
+                    unique_entity_leader_map[entity_id] = next(iter(leaders_by_id.values()))
 
         base_credits_by_type = {
             "INFO": 10,
@@ -547,14 +731,14 @@ class CreditsSolvesListView(APIView):
         solves = []
         user_map = {}
         entity_map = {}
-        for req in solves_qs:
+        for req in solves_list:
             can_validate_result = (
                 req.status == ServiceRequest.Status.COMPLETED
                 and can_validate_completed_result(request.user, req)
             )
             can_result_approve = can_validate_result
             can_result_reject = can_validate_result
-            solver_id = req.completed_by_id or req.closed_by_id or req.current_assignee_id
+            solver_id = req.current_assignee_id or req.completed_by_id or req.closed_by_id
             effective_team_id = req.target_team_id
             effective_team_name = (req.target_team.name or "").strip() if req.target_team_id else None
             effective_team_leader_id = (
@@ -563,10 +747,39 @@ class CreditsSolvesListView(APIView):
                 else req.target_team_leader_id
             )
             effective_team_leader_name = (
-                req.target_team.leader.username
+                (req.target_team.leader.get_full_name() or req.target_team.leader.username)
                 if req.target_team_id and req.target_team and req.target_team.leader_id
-                else (req.target_team_leader.username if req.target_team_leader_id else None)
+                else ((req.target_team_leader.get_full_name() or req.target_team_leader.username) if req.target_team_leader_id else None)
             )
+            if not effective_team_leader_id:
+                inferred_from_solver = solver_team_leader_map.get(solver_id)
+                if inferred_from_solver and (
+                    not req.target_entity_id
+                    or not inferred_from_solver.get("entity_id")
+                    or inferred_from_solver.get("entity_id") == req.target_entity_id
+                ):
+                    effective_team_leader_id = inferred_from_solver["id"]
+                    effective_team_leader_name = inferred_from_solver["name"]
+                elif req.target_entity_id and req.target_entity_id in unique_entity_leader_map:
+                    inferred_from_entity = unique_entity_leader_map[req.target_entity_id]
+                    effective_team_leader_id = inferred_from_entity["id"]
+                    effective_team_leader_name = inferred_from_entity["name"]
+                elif req.target_entity_id and req.target_entity_id in entity_leaders_from_requests:
+                    inferred_by_requests = entity_leaders_from_requests[req.target_entity_id]
+                    if len(inferred_by_requests) == 1:
+                        only_leader_id = next(iter(inferred_by_requests.keys()))
+                        effective_team_leader_id = only_leader_id
+                        effective_team_leader_name = inferred_by_requests[only_leader_id]
+                elif (
+                    role_key == "team_leader"
+                    and request.user.id
+                    and req.target_entity_id
+                    and request.user.entity_id == req.target_entity_id
+                ):
+                    effective_team_leader_id = request.user.id
+                    effective_team_leader_name = (
+                        request.user.get_full_name() or request.user.username or ""
+                    ).strip()
 
             evidence_list = []
 
@@ -638,21 +851,17 @@ class CreditsSolvesListView(APIView):
 
             target_entity_id = req.target_entity_id
             target_entity_name = req.target_entity.name if req.target_entity_id else ""
-            is_generic_team_name = (
-                not effective_team_name
-                or effective_team_name.lower() in {"team", "default team", "legacy queue"}
-            )
             display_team_name = (
                 f"{effective_team_leader_name}'s Team"
-                if is_generic_team_name and effective_team_leader_name
+                if effective_team_leader_name
                 else effective_team_name
             )
             team_key = (
-                f"team-{effective_team_id}"
-                if effective_team_id
+                f"tl-{effective_team_leader_id}"
+                if effective_team_leader_id
                 else (
-                    f"tl-{effective_team_leader_id}"
-                    if effective_team_leader_id
+                    f"team-{effective_team_id}"
+                    if effective_team_id
                     else f"legacy-{target_entity_id or 'unknown'}"
                 )
             )
@@ -917,6 +1126,39 @@ class CreditsSolvesListView(APIView):
             elif is_pending:
                 person["pendingCount"] += 1
 
+        # Merge legacy team buckets into TL-owned bucket when the entity has exactly one TL team in current dataset.
+        entity_tl_team_keys = {}
+        for key, item in team_stats.items():
+            entity_id = item.get("entityId")
+            if not entity_id or not item.get("teamLeaderId"):
+                continue
+            entity_tl_team_keys.setdefault(str(entity_id), set()).add(key)
+
+        legacy_keys = [
+            key for key, item in team_stats.items()
+            if not item.get("teamLeaderId") and str(item.get("entityId") or "") in entity_tl_team_keys
+        ]
+        for legacy_key in legacy_keys:
+            legacy_item = team_stats.get(legacy_key)
+            if not legacy_item:
+                continue
+            entity_key = str(legacy_item.get("entityId") or "")
+            tl_keys = entity_tl_team_keys.get(entity_key) or set()
+            if len(tl_keys) != 1:
+                continue
+            target_key = next(iter(tl_keys))
+            target_item = team_stats.get(target_key)
+            if not target_item:
+                continue
+            target_item["totalCredits"] += legacy_item.get("totalCredits", 0)
+            target_item["closedCount"] += legacy_item.get("closedCount", 0)
+            target_item["pendingCount"] += legacy_item.get("pendingCount", 0)
+            target_item["withEvidenceCount"] += legacy_item.get("withEvidenceCount", 0)
+            target_item["hoursTotal"] += legacy_item.get("hoursTotal", 0.0)
+            target_item["hoursCount"] += legacy_item.get("hoursCount", 0)
+            target_item["solverIds"].update(legacy_item.get("solverIds", set()))
+            team_stats.pop(legacy_key, None)
+
         entity_rankings = []
         for item in entity_stats.values():
             avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
@@ -962,15 +1204,24 @@ class CreditsSolvesListView(APIView):
 
         people_rankings = []
         for item in people_stats.values():
+            if int(item.get("closedCount", 0) or 0) <= 0:
+                continue
             avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+            team_label = item["teamLabel"]
+            if (not item.get("teamId")) and item.get("entityId"):
+                tl_keys = entity_tl_team_keys.get(str(item.get("entityId"))) or set()
+                if len(tl_keys) == 1:
+                    tl_item = team_stats.get(next(iter(tl_keys)))
+                    if tl_item and tl_item.get("teamLabel"):
+                        team_label = tl_item["teamLabel"]
             people_rankings.append(
                 {
                     "userId": item["userId"],
                     "name": item["name"],
-                    "team": item["teamLabel"],
+                    "team": team_label,
                     "teamId": item.get("teamId"),
                     "teamName": item.get("teamName"),
-                    "teamLabel": item["teamLabel"],
+                    "teamLabel": team_label,
                     "entityId": item["entityId"],
                     "entityName": item["entityName"],
                     "totalCredits": item["totalCredits"],
@@ -981,6 +1232,234 @@ class CreditsSolvesListView(APIView):
                 }
             )
 
+        prod_tl_member_ids = set()
+        if role_key == "team_leader" and is_prod_entity_user:
+            prod_tl_member_ids.update(
+                User.objects.filter(team_leader_id=request.user.id).values_list("id", flat=True)
+            )
+            prod_tl_member_ids.update(
+                Team.objects.filter(leader_id=request.user.id, is_active=True).values_list("members__id", flat=True)
+            )
+            prod_tl_member_ids.discard(None)
+
+        prod_user_team_member_ids = set()
+        if role_key == "user" and is_prod_entity_user:
+            if request.user.team_leader_id:
+                prod_user_team_member_ids.update(
+                    User.objects.filter(team_leader_id=request.user.team_leader_id).values_list("id", flat=True)
+                )
+                prod_user_team_member_ids.update(
+                    Team.objects.filter(leader_id=request.user.team_leader_id, is_active=True).values_list("members__id", flat=True)
+                )
+                prod_user_team_member_ids.add(request.user.team_leader_id)
+            else:
+                member_team = Team.objects.filter(is_active=True, members__id=request.user.id).first()
+                if member_team:
+                    prod_user_team_member_ids.update(member_team.members.values_list("id", flat=True))
+                    if member_team.leader_id:
+                        prod_user_team_member_ids.add(member_team.leader_id)
+            prod_user_team_member_ids.add(request.user.id)
+            prod_user_team_member_ids.discard(None)
+
+        def _in_requester_scope(req):
+            if role_key == "super_admin":
+                return True
+            if role_key == "senior":
+                if not request.user.company_id:
+                    return False
+                return req.company_id == request.user.company_id
+            if role_key == "manager":
+                if is_prod_entity_user:
+                    if not request.user.entity_id:
+                        return False
+                    return req.source_entity_id == request.user.entity_id
+                if not request.user.entity_id:
+                    return False
+                return req.target_entity_id == request.user.entity_id
+            if role_key == "team_leader":
+                if is_prod_entity_user:
+                    if not request.user.entity_id or req.source_entity_id != request.user.entity_id:
+                        return False
+                    requester = req.requester_user
+                    if not requester:
+                        return False
+                    return (
+                        requester.id == request.user.id
+                        or requester.team_leader_id == request.user.id
+                        or requester.id in prod_tl_member_ids
+                    )
+                if req.target_team_id and req.target_team and req.target_team.leader_id == request.user.id:
+                    return True
+                if not req.target_team_id and req.target_team_leader_id == request.user.id:
+                    return True
+                return False
+            if role_key == "user":
+                requester = req.requester_user
+                if not requester:
+                    return False
+                if is_prod_entity_user:
+                    if not request.user.entity_id or req.source_entity_id != request.user.entity_id:
+                        return False
+                    if prod_user_team_member_ids:
+                        return requester.id in prod_user_team_member_ids
+                    return requester.id == request.user.id
+                if req.target_team_id:
+                    if support_user_target_team_ids:
+                        return req.target_team_id in support_user_target_team_ids
+                    return False
+                if req.target_team_leader_id:
+                    return req.target_team_leader_id in support_user_team_leader_ids
+                return False
+            return False
+
+        def _demand_sort_key(row):
+            avg = row.get("avgHours")
+            avg_key = avg if isinstance(avg, (int, float)) and avg > 0 else float("inf")
+            return (
+                -int(row.get("createdCount", 0) or 0),
+                -int(row.get("closedCount", 0) or 0),
+                int(row.get("pendingCount", 0) or 0),
+                avg_key,
+                str(row.get("name") or row.get("teamLabel") or "").lower(),
+            )
+
+        source_entity_stats = {}
+        source_team_stats = {}
+        requester_stats = {}
+
+        for req in solves_list:
+            if not _in_requester_scope(req):
+                continue
+
+            status_value = str(req.status or "").upper()
+            is_closed = status_value == ServiceRequest.Status.CLOSED
+            is_pending = status_value == ServiceRequest.Status.COMPLETED
+            is_sent_back = status_value in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.IN_PROGRESS}
+
+            resolve_at = req.closed_at or req.completed_at
+            row_hours = None
+            if resolve_at and req.created_at:
+                row_hours = (resolve_at - req.created_at).total_seconds() / 3600
+
+            requester = req.requester_user
+            requester_id = requester.id if requester else None
+            requester_name = (
+                (requester.get_full_name() or requester.username).strip()
+                if requester
+                else "Unknown requester"
+            )
+
+            source_entity_id_value = req.source_entity_id or (requester.entity_id if requester else None) or "unknown"
+            source_entity_name = (
+                req.source_entity.name
+                if req.source_entity_id and req.source_entity
+                else (
+                    requester.entity.name
+                    if requester and requester.entity_id and requester.entity
+                    else "Unknown source entity"
+                )
+            )
+
+            source_team_leader_id = requester.team_leader_id if requester else None
+            source_team_leader_name = (
+                (requester.team_leader.get_full_name() or requester.team_leader.username).strip()
+                if requester and requester.team_leader_id and requester.team_leader
+                else ""
+            )
+            if not source_team_leader_id and requester_id:
+                source_team_leader_id = requester_id
+                source_team_leader_name = requester_name
+            source_team_key = f"tl-{source_team_leader_id}" if source_team_leader_id else f"source-entity-{source_entity_id_value}"
+            source_team_label = (
+                f"{source_team_leader_name}'s Team"
+                if source_team_leader_name
+                else (source_entity_name or "Unknown source team")
+            )
+
+            entity_bucket = source_entity_stats.setdefault(
+                str(source_entity_id_value),
+                {
+                    "entityId": source_entity_id_value,
+                    "name": source_entity_name,
+                    "createdCount": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "sentBackCount": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                },
+            )
+            team_bucket = source_team_stats.setdefault(
+                source_team_key,
+                {
+                    "teamKey": source_team_key,
+                    "teamLeaderId": source_team_leader_id,
+                    "teamLeaderName": source_team_leader_name,
+                    "teamLabel": source_team_label,
+                    "name": source_team_label,
+                    "entityId": source_entity_id_value,
+                    "entityName": source_entity_name,
+                    "createdCount": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "sentBackCount": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                },
+            )
+            requester_bucket = requester_stats.setdefault(
+                str(requester_id or "unknown"),
+                {
+                    "userId": requester_id,
+                    "name": requester_name,
+                    "entityId": source_entity_id_value,
+                    "entityName": source_entity_name,
+                    "sourceTeamLeaderId": source_team_leader_id,
+                    "sourceTeamLeaderName": source_team_leader_name,
+                    "sourceTeamLabel": source_team_label,
+                    "createdCount": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "sentBackCount": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                },
+            )
+
+            for bucket in (entity_bucket, team_bucket, requester_bucket):
+                bucket["createdCount"] += 1
+                if is_closed:
+                    bucket["closedCount"] += 1
+                if is_pending:
+                    bucket["pendingCount"] += 1
+                if is_sent_back:
+                    bucket["sentBackCount"] += 1
+                if isinstance(row_hours, (int, float)) and row_hours > 0:
+                    bucket["hoursTotal"] += float(row_hours)
+                    bucket["hoursCount"] += 1
+
+        def _finalize_request_demand(rows):
+            finalized = []
+            for item in rows:
+                created_count = int(item.get("createdCount", 0) or 0)
+                closed_count = int(item.get("closedCount", 0) or 0)
+                avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+                payload = {
+                    **item,
+                    "completionRate": int(round((closed_count / created_count) * 100)) if created_count else 0,
+                    "avgHours": avg_hours,
+                }
+                payload.pop("hoursTotal", None)
+                payload.pop("hoursCount", None)
+                finalized.append(payload)
+            return sorted(finalized, key=_demand_sort_key)
+
+        request_demand_rankings = {
+            "sourceEntities": _finalize_request_demand(source_entity_stats.values()),
+            "sourceTeams": _finalize_request_demand(source_team_stats.values()),
+            "requesters": _finalize_request_demand(requester_stats.values()),
+        }
+
         return Response(
             {
                 "solves": solves,
@@ -989,6 +1468,8 @@ class CreditsSolvesListView(APIView):
                 "entityRankings": _sort_rankings(entity_rankings),
                 "teamRankings": _sort_rankings(team_rankings),
                 "peopleRankings": _sort_rankings(people_rankings),
+                "requestDemandRankings": request_demand_rankings,
+                "requesterRankings": request_demand_rankings,
             }
         )
 
