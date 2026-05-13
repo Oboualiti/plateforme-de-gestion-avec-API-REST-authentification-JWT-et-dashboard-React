@@ -482,7 +482,7 @@ function canEditEvidence(solve, currentUser, userRole, userEntityId, userCompany
 }
 
 function rankTone(idx) {
-  if (idx === 0) return "border-warning bg-warning text-ink shadow-sm";
+  if (idx === 0) return "border-yellow-400 bg-yellow-300 text-yellow-950 shadow-sm dark:border-yellow-500 dark:bg-yellow-400 dark:text-yellow-950";
   if (idx === 1) return "border-slate-300 bg-slate-200 text-slate-700 shadow-sm";
   if (idx === 2) return "border-amber-300 bg-amber-200 text-amber-900 shadow-sm";
   return "border-ink/15 bg-card text-foreground shadow-sm";
@@ -761,6 +761,9 @@ function CreditsFiltersToolbar({
 }) {
   const controlShell = "relative h-[46px] min-w-[150px] rounded-lg border border-slate-200 bg-white px-0";
   const selectClass = "absolute inset-0 z-10 w-full [&>button]:h-full [&>button]:w-full [&>button]:justify-start [&>button]:rounded-lg [&>button]:border-0 [&>button]:bg-transparent [&>button]:px-2.5 [&>button]:pb-1 [&>button]:pt-5 [&>button]:text-[13px] [&>button]:font-medium [&>button]:text-slate-900 [&>button]:shadow-none [&>button]:focus:ring-0 [&>button>svg]:hidden";
+  const companyOptions = filters.companyId === "all"
+    ? companies
+    : companies.filter((company) => String(company.id) === String(filters.companyId));
 
   const Field = ({ icon: Icon, label, children }) => (
     <div className={controlShell}>
@@ -787,8 +790,8 @@ function CreditsFiltersToolbar({
       {canFilterCompany ? (
         <Field icon={Building2} label="Company">
           <Select className={selectClass} value={filters.companyId} onChange={(e) => onChange("companyId", e.target.value)}>
-            <option value="all">All companies</option>
-            {companies.map((company) => <option key={company.id} value={String(company.id)}>{company.name}</option>)}
+            {filters.companyId === "all" ? <option value="all">All companies</option> : null}
+            {companyOptions.map((company) => <option key={company.id} value={String(company.id)}>{company.name}</option>)}
           </Select>
         </Field>
       ) : null}
@@ -852,6 +855,9 @@ function CompactCreditsFiltersToolbar({
 }) {
   const toolbarControl = "absolute inset-0 z-10 w-full [&>button]:h-full [&>button]:w-full [&>button]:justify-start [&>button]:rounded-lg [&>button]:border-0 [&>button]:bg-transparent [&>button]:px-2.5 [&>button]:pb-1 [&>button]:pt-5 [&>button]:text-[13px] [&>button]:font-medium [&>button]:text-slate-900 [&>button]:shadow-none [&>button]:focus:ring-0 [&>button>svg]:hidden";
   const wrapClass = "relative h-[46px] min-w-[150px] rounded-lg border border-slate-200 bg-white";
+  const companyOptions = filters.companyId === "all"
+    ? companies
+    : companies.filter((company) => String(company.id) === String(filters.companyId));
   return (
     <div className="mb-5 flex w-full flex-wrap items-end gap-2.5 md:flex-nowrap">
       <div className={`${wrapClass} shrink-0`}>
@@ -870,8 +876,8 @@ function CompactCreditsFiltersToolbar({
           <div className="pointer-events-none absolute left-2.5 top-1.5 z-20 flex items-center gap-1 text-[10px] leading-none font-semibold text-slate-500"><Building2 className="h-3.5 w-3.5" /> Company</div>
           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 z-20 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <Select className={toolbarControl} value={filters.companyId} onChange={(e) => onChange("companyId", e.target.value)}>
-            <option value="all">All companies</option>
-            {companies.map((company) => (
+            {filters.companyId === "all" ? <option value="all">All companies</option> : null}
+            {companyOptions.map((company) => (
               <option key={company.id} value={String(company.id)}>{company.name}</option>
             ))}
           </Select>
@@ -3827,16 +3833,21 @@ export default function CreditsBoard() {
   // Currently using client-side pagination after fetching all rows.
 
   const roleScopedSolves = useMemo(() => filterSolvesByUserRole(solves, user), [solves, user]);
+  const companyScopedSolves = useMemo(() => (
+    appliedFilters.companyId === "all"
+      ? roleScopedSolves
+      : roleScopedSolves.filter((solve) => String(solve.companyId || "") === String(appliedFilters.companyId))
+  ), [roleScopedSolves, appliedFilters.companyId]);
 
   const visibleUsers = useMemo(() => {
-    const ids = new Set(roleScopedSolves.map((solve) => solve.solverId));
+    const ids = new Set(companyScopedSolves.map((solve) => solve.solverId));
     return users.filter((row) => ids.has(row.id));
-  }, [users, roleScopedSolves]);
+  }, [users, companyScopedSolves]);
 
   const visibleEntities = useMemo(() => {
-    const ids = new Set(roleScopedSolves.map((solve) => solve.entityId));
+    const ids = new Set(companyScopedSolves.map((solve) => solve.entityId));
     return entities.filter((row) => ids.has(row.id));
-  }, [entities, roleScopedSolves]);
+  }, [entities, companyScopedSolves]);
 
   const visibleCompanies = useMemo(() => {
     const map = new Map();
@@ -3854,7 +3865,7 @@ export default function CreditsBoard() {
 
   const visibleTeams = useMemo(() => {
     const map = new Map();
-    roleScopedSolves.forEach((solve) => {
+    companyScopedSolves.forEach((solve) => {
       if (!solve.targetTeamId) return;
       map.set(String(solve.targetTeamId), {
         id: solve.targetTeamId,
@@ -3862,7 +3873,7 @@ export default function CreditsBoard() {
       });
     });
     return Array.from(map.values());
-  }, [roleScopedSolves]);
+  }, [companyScopedSolves]);
 
   const visiblePeople = useMemo(
     () => visibleUsers.map((row) => ({ id: row.id, name: row.full_name || row.username || `User ${row.id}` })),
@@ -4505,7 +4516,7 @@ export default function CreditsBoard() {
                       <Button
                         size="sm"
                         variant={rankingMode === "solvers" ? "default" : "ghost"}
-                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "solvers" ? "!border !border-warning !bg-warning !text-ink hover:!bg-warning/90 hover:!text-ink" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
+                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "solvers" ? "!border !border-primary !bg-primary !text-primary-foreground hover:!bg-primary/90 hover:!text-primary-foreground" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
                         onClick={() => setRankingMode("solvers")}
                       >
                         <Trophy className="mr-2 h-4 w-4" />
@@ -4514,7 +4525,7 @@ export default function CreditsBoard() {
                       <Button
                         size="sm"
                         variant={rankingMode === "requesters" ? "default" : "ghost"}
-                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "requesters" ? "!border !border-warning !bg-warning !text-ink hover:!bg-warning/90 hover:!text-ink" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
+                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "requesters" ? "!border !border-primary !bg-primary !text-primary-foreground hover:!bg-primary/90 hover:!text-primary-foreground" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
                         onClick={() => setRankingMode("requesters")}
                       >
                         <Users className="mr-2 h-4 w-4" />
@@ -4567,7 +4578,7 @@ export default function CreditsBoard() {
                           key={tabKey}
                           type="button"
                           onClick={() => setSolverRankingTab(tabKey)}
-                          className={`pb-3 text-sm font-semibold ${solverRankingTab === tabKey ? "border-b-2 border-warning text-foreground" : "text-muted-foreground"}`}
+                          className={`pb-3 text-sm font-semibold ${solverRankingTab === tabKey ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"}`}
                         >
                           {labelMap[tabKey] || tabKey}
                         </button>
@@ -4646,7 +4657,7 @@ export default function CreditsBoard() {
                             key={tabKey}
                             type="button"
                             onClick={() => setRequesterRankingTab(tabKey)}
-                            className={`pb-3 text-sm font-semibold ${requesterRankingTab === tabKey ? "border-b-2 border-warning text-foreground" : "text-muted-foreground"}`}
+                            className={`pb-3 text-sm font-semibold ${requesterRankingTab === tabKey ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"}`}
                           >
                             {labelMap[tabKey] || tabKey}
                           </button>
