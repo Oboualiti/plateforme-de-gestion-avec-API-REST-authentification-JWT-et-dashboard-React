@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, PlusCircle, Search, XCircle } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
+import SolveDetailsModal from '../components/credits/SolveDetailsModal'
 import PageHeader from '../components/layout/PageHeader'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -59,35 +60,55 @@ function typePillClass(type) {
   return `inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${baseClass}`
 }
 
+function extractEvidenceFromComments(comments = []) {
+  return comments
+    .filter((item) => {
+      const message = String(item?.message || '').trim().toLowerCase()
+      return message.startsWith('credits evidence') || message.startsWith('credits proof')
+    })
+    .map((item) => {
+      const attachmentUrl = item?.attachment_url || ''
+      const message = String(item?.message || '')
+      const linkMatch = message.match(/https?:\/\/[^\s]+/i)
+      const linkUrl = linkMatch ? linkMatch[0] : ''
+      if (attachmentUrl) {
+        return {
+          id: item.id,
+          type: 'file',
+          name: item.attachment_name || 'Evidence file',
+          url: attachmentUrl,
+          createdAt: item.created_at || null,
+        }
+      }
+      if (linkUrl) {
+        return {
+          id: item.id,
+          type: 'link',
+          name: linkUrl,
+          url: linkUrl,
+          createdAt: item.created_at || null,
+        }
+      }
+      return null
+    })
+    .filter(Boolean)
+}
+
+function isSentBackRequest(item) {
+  if (!item) return false
+  return Boolean(
+    item.was_rejected
+    || item.rejection_reason
+    || item.rejected_by_name
+    || item.rejected_at,
+  )
+}
+
 function formatUpdated(value) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString()
-}
-
-function getFileNameFromUrl(value) {
-  if (!value) return ''
-  try {
-    const withoutQuery = String(value).split('?')[0]
-    const parts = withoutQuery.split('/')
-    return decodeURIComponent(parts[parts.length - 1] || '')
-  } catch {
-    return ''
-  }
-}
-
-function isImageAttachment(url, fallbackName = '') {
-  const value = String(url || fallbackName || '').toLowerCase()
-  return (
-    value.includes('.png')
-    || value.includes('.jpg')
-    || value.includes('.jpeg')
-    || value.includes('.webp')
-    || value.includes('.gif')
-    || value.includes('.bmp')
-    || value.includes('.svg')
-  )
 }
 
 function loadSavedRequestFilters(scopeKey) {
@@ -170,7 +191,7 @@ function RequestsPage({ forcedScope = '' }) {
   const isBasicUser = roleKeys.includes('user')
   const isManagerRequestsBoard = isManager && resolvedScope === 'all'
   const [managerRequestsTab, setManagerRequestsTab] = useState('requests')
-  const [managerTabCounts, setManagerTabCounts] = useState({ requests: 0, waiting: 0 })
+  const [managerTabCounts, setManagerTabCounts] = useState({ requests: 0, waiting: 0, sent_back: 0 })
   const isIncomingQueueTeamLeader = isTeamLeader && resolvedScope === 'team'
   const isPendingScope = resolvedScope === 'pending'
   const shouldRedirectBasicApproverFromPending = isPendingScope
@@ -328,12 +349,19 @@ function RequestsPage({ forcedScope = '' }) {
       await refreshUser()
       const isTeamScope = resolvedScope === 'team'
       const canViewAllRequests = hasPermission('view_all_requests')
+      const isManagerScopedList = isManagerRequestsBoard && resolvedScope === 'all'
       const normalizedStatusFilter = isManagerRequestsBoard
-        ? (managerRequestsTab === 'waiting' ? 'COMPLETED' : (filters.status || undefined))
+        ? (
+          managerRequestsTab === 'waiting'
+            ? 'COMPLETED'
+            : managerRequestsTab === 'sent_back'
+              ? 'IN_PROGRESS'
+              : (filters.status || undefined)
+        )
         : (filters.status || undefined)
       const params = {
-        page: isTeamScope ? 1 : pagination.page,
-        page_size: isTeamScope ? 200 : pagination.pageSize,
+        page: (isTeamScope || isManagerScopedList) ? 1 : pagination.page,
+        page_size: isTeamScope ? 200 : isManagerScopedList ? 500 : pagination.pageSize,
         scope: resolvedScope !== 'all' ? resolvedScope : undefined,
         search: filters.search || undefined,
         // Keep company filtering explicit from UI only.
@@ -347,15 +375,24 @@ function RequestsPage({ forcedScope = '' }) {
       const response = await api.get('/requests/', { params })
       const payload = response.data || {}
       const rawResults = Array.isArray(payload.results) ? payload.results : []
-      const results = applyScopeFilter(rawResults)
+      const scopedResults = applyScopeFilter(rawResults)
+      const filteredResults = isManagerRequestsBoard
+        ? (
+          managerRequestsTab === 'waiting'
+            ? scopedResults.filter((item) => item.status === 'COMPLETED')
+            : managerRequestsTab === 'sent_back'
+              ? scopedResults.filter((item) => item.status === 'IN_PROGRESS' && isSentBackRequest(item))
+              : scopedResults.filter((item) => item.status !== 'COMPLETED' && !isSentBackRequest(item))
+        )
+        : scopedResults
 
       if (isTeamScope) {
-        const totalCount = results.length
+        const totalCount = filteredResults.length
         const totalPages = Math.max(1, Math.ceil(totalCount / pagination.pageSize))
         const safePage = Math.min(Math.max(1, pagination.page), totalPages)
         const startIndex = (safePage - 1) * pagination.pageSize
         const endIndex = startIndex + pagination.pageSize
-        const pagedResults = results.slice(startIndex, endIndex)
+        const pagedResults = filteredResults.slice(startIndex, endIndex)
 
         setState({ loading: false, error: '', requests: pagedResults })
         setPagination((current) => ({
@@ -368,7 +405,26 @@ function RequestsPage({ forcedScope = '' }) {
         return
       }
 
-      setState({ loading: false, error: '', requests: results })
+      if (isManagerScopedList) {
+        const totalCount = filteredResults.length
+        const totalPages = Math.max(1, Math.ceil(totalCount / pagination.pageSize))
+        const safePage = Math.min(Math.max(1, pagination.page), totalPages)
+        const startIndex = (safePage - 1) * pagination.pageSize
+        const endIndex = startIndex + pagination.pageSize
+        const pagedResults = filteredResults.slice(startIndex, endIndex)
+
+        setState({ loading: false, error: '', requests: pagedResults })
+        setPagination((current) => ({
+          ...current,
+          page: safePage,
+          count: totalCount,
+          next: safePage < totalPages ? `local-page-${safePage + 1}` : null,
+          previous: safePage > 1 ? `local-page-${safePage - 1}` : null,
+        }))
+        return
+      }
+
+      setState({ loading: false, error: '', requests: filteredResults })
       setPagination((current) => ({
         ...current,
         count: Number(payload.count || 0),
@@ -390,7 +446,7 @@ function RequestsPage({ forcedScope = '' }) {
     try {
       const baseParams = {
         page: 1,
-        page_size: 1,
+        page_size: 500,
         scope: resolvedScope !== 'all' ? resolvedScope : undefined,
         search: filters.search || undefined,
         company_id: (isGlobalAdmin && !hasPermission('view_all_requests')) ? filters.company_id || undefined : undefined,
@@ -398,18 +454,19 @@ function RequestsPage({ forcedScope = '' }) {
         target_entity_id: filters.target_entity_id || undefined,
         assignee: filters.assignee || undefined,
       }
-      const [allRes, waitingRes] = await Promise.all([
-        api.get('/requests/', { params: baseParams }),
-        api.get('/requests/', { params: { ...baseParams, status: 'COMPLETED' } }),
-      ])
-      const allCount = Number(allRes?.data?.count || 0)
-      const waitingCount = Number(waitingRes?.data?.count || 0)
+      const allRes = await api.get('/requests/', { params: baseParams })
+      const rawResults = Array.isArray(allRes?.data?.results) ? allRes.data.results : []
+      const rows = applyScopeFilter(rawResults)
+      const waitingCount = rows.filter((item) => item.status === 'COMPLETED').length
+      const sentBackCount = rows.filter((item) => item.status === 'IN_PROGRESS' && isSentBackRequest(item)).length
+      const requestsCount = rows.filter((item) => item.status !== 'COMPLETED' && !isSentBackRequest(item)).length
       setManagerTabCounts({
-        requests: Math.max(0, allCount - waitingCount),
+        requests: Math.max(0, requestsCount),
         waiting: waitingCount,
+        sent_back: sentBackCount,
       })
     } catch (_error) {
-      setManagerTabCounts({ requests: 0, waiting: 0 })
+      setManagerTabCounts({ requests: 0, waiting: 0, sent_back: 0 })
     }
   }
 
@@ -682,6 +739,37 @@ function RequestsPage({ forcedScope = '' }) {
     && managerRequestsTab === 'waiting'
     && user?.entity_type === 'PROD'
     && hasPermission('approve_request')
+  const pendingSolve = useMemo(() => {
+    const data = pendingPreview.data
+    if (!data) return null
+    const evidenceList = extractEvidenceFromComments(data.comments || [])
+    return {
+      requestId: data.id,
+      requestTitle: data.title || `Request #${data.id}`,
+      requestReference: data.reference_code || data.request_number || '',
+      requestUrl: `/requests/${data.id}`,
+      requestStatus: data.status || 'COMPLETED',
+      completionNote: data.completion_note || data.resolution_note || data.note || 'No completion note.',
+      completedAt: data.completed_at || data.updated_at || null,
+      requestType: data.type || '-',
+      priority: data.priority_label || data.priority || '-',
+      solverId: data.assignee_id || null,
+      solverName: data.assignee_name || data.assignee_username || 'Unknown',
+      solverRole: data.assignee_role_label || data.assignee_role || 'Support/Dev',
+      solverEntityName: data.target_entity_name || '-',
+      sourceCompanyName: data.source_company_name || data.source_entity_name || '-',
+      sourceEntityName: data.source_entity_name || '-',
+      requesterName: data.requested_by_name || data.requester_name || data.creator_name || '-',
+      evidenceList,
+      wasRejected: Boolean(data.was_rejected || data.rejection_reason || data.rejected_by_name),
+      rejectedByName: data.rejected_by_name || 'Requester reviewer',
+      rejectionReason: data.rejection_reason || 'No reason provided',
+      rejectionNote: data.rejection_note || '',
+      rejectedAt: data.rejected_at || null,
+      canResultApprove: canManagerWaitingReview && data.status === 'COMPLETED',
+      canResultReject: canManagerWaitingReview && data.status === 'COMPLETED',
+    }
+  }, [pendingPreview.data, canManagerWaitingReview])
   const totalPages = Math.max(1, Math.ceil((pagination.count || 0) / pagination.pageSize))
   const fromIndex = pagination.count ? (pagination.page - 1) * pagination.pageSize + 1 : 0
   const toIndex = Math.min(pagination.page * pagination.pageSize, pagination.count || 0)
@@ -711,7 +799,7 @@ function RequestsPage({ forcedScope = '' }) {
         {isManagerRequestsBoard ? (
           <div className="mb-4 border-b border-border">
             <div className="flex flex-wrap items-end gap-6">
-              {[['requests', 'Requests'], ['waiting', 'waiting approval']].map(([key, label]) => (
+              {[['requests', 'Requests'], ['waiting', 'waiting approval'], ['sent_back', 'Sent back']].map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
@@ -720,7 +808,7 @@ function RequestsPage({ forcedScope = '' }) {
                 >
                   {label}
                   <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold text-foreground">
-                    {key === 'waiting' ? managerTabCounts.waiting : managerTabCounts.requests}
+                    {key === 'waiting' ? managerTabCounts.waiting : key === 'sent_back' ? managerTabCounts.sent_back : managerTabCounts.requests}
                   </span>
                 </button>
               ))}
@@ -1003,7 +1091,7 @@ function RequestsPage({ forcedScope = '' }) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-1">
-                        {item.was_rejected && item.status !== 'CLOSED' && !canManagerWaitingReview ? (
+                        {item.status === 'IN_PROGRESS' && isSentBackRequest(item) && !canManagerWaitingReview ? (
                           <span className="inline-flex items-center rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-600">
                             SENT BACK
                           </span>
@@ -1012,7 +1100,7 @@ function RequestsPage({ forcedScope = '' }) {
                             {getStatusLabel(item.status, isPendingScope)}
                           </span>
                         )}
-                        {item.was_rejected && item.rejected_by_name ? (
+                        {item.status === 'IN_PROGRESS' && isSentBackRequest(item) && item.rejected_by_name ? (
                           <div className="text-[11px] text-muted-foreground">
                             by {item.rejected_by_name}
                           </div>
@@ -1153,100 +1241,37 @@ function RequestsPage({ forcedScope = '' }) {
           </div>
         </div>
       )}
-      {pendingPreview.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-md border-2 border-border bg-card p-5 shadow-none">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{canManagerWaitingReview ? 'Waiting approval request' : 'Pending request'}</p>
-                <h3 className="mt-1 text-lg font-semibold text-foreground">
-                  {pendingPreview.data?.title || 'Request details'}
-                </h3>
-              </div>
-              <Button variant="outline" size="sm" onClick={closePendingPreview}>Close</Button>
-            </div>
-
-            {pendingPreview.loading ? (
-              <p className="mt-4 text-sm text-muted-foreground">Loading request details...</p>
-            ) : pendingPreview.error ? (
-              <p className="mt-4 text-sm text-destructive">{pendingPreview.error}</p>
-            ) : (
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <p><span className="text-muted-foreground">Reference:</span> <span className="font-mono">{pendingPreview.data?.reference_code || pendingPreview.data?.request_number || '-'}</span></p>
-                  <p><span className="text-muted-foreground">Status:</span> {pendingPreview.data?.status || '-'}</p>
-                  <p><span className="text-muted-foreground">Priority:</span> {(pendingPreview.data?.priority_label || pendingPreview.data?.priority || '-')}</p>
-                  <p><span className="text-muted-foreground">Type:</span> {pendingPreview.data?.type || '-'}</p>
-                  <p><span className="text-muted-foreground">Source:</span> {pendingPreview.data?.source_entity_name || '-'}</p>
-                  <p><span className="text-muted-foreground">Target:</span> {pendingPreview.data?.target_entity_name || '-'}</p>
-                </div>
-
-                <div className="rounded-md border border-input bg-background p-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Description</p>
-                  <p className="mt-1 whitespace-pre-wrap text-foreground">{pendingPreview.data?.description || 'No description provided.'}</p>
-                </div>
-
-                {pendingPreview.data?.attachment_url ? (
-                  <div className="rounded-md border border-input bg-background p-3">
-                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Attachment</p>
-                    <div className="mt-2 space-y-2">
-                      {isImageAttachment(
-                        pendingPreview.data?.attachment_url,
-                        pendingPreview.data?.attachment,
-                      ) ? (
-                        <img
-                          src={pendingPreview.data.attachment_url}
-                          alt={getFileNameFromUrl(pendingPreview.data.attachment_url) || 'Attachment'}
-                          className="max-h-72 w-auto rounded-md border border-ink/10 object-contain"
-                        />
-                      ) : null}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <a
-                          href={pendingPreview.data.attachment_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center rounded-md border border-ink/10 bg-muted/30 px-3 py-2 text-xs font-semibold hover:bg-muted"
-                        >
-                          Open attachment
-                        </a>
-                        <a
-                          href={pendingPreview.data.attachment_url}
-                          download
-                          className="inline-flex items-center rounded-md border border-ink/10 bg-card px-3 py-2 text-xs font-semibold hover:bg-muted/40"
-                        >
-                          Download
-                        </a>
-                        <span className="text-xs text-muted-foreground">{getFileNameFromUrl(pendingPreview.data.attachment_url)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">No attachment.</p>
-                )}
-
-                {canManagerWaitingReview && pendingPreview.data?.status === 'COMPLETED' ? (
-                  <div className="mt-3 flex justify-end gap-2 border-t border-border pt-3">
-                    <Button
-                      variant="outline"
-                      className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10"
-                      onClick={() => sendBackManagerWaitingRequest(pendingPreview.data?.id)}
-                      disabled={waitingActionLoadingId === pendingPreview.data?.id}
-                    >
-                      Send back
-                    </Button>
-                    <Button
-                      onClick={() => approveManagerWaitingRequest(pendingPreview.data?.id)}
-                      disabled={waitingActionLoadingId === pendingPreview.data?.id}
-                    >
-                      Approve
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
+      {pendingPreview.open && pendingPreview.loading ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+          <section className="w-full max-w-2xl rounded-lg border border-border bg-card p-5 shadow-xl">
+            <Skeleton className="h-40" />
+            <div className="mt-4 flex justify-end"><Button type="button" variant="outline" size="sm" onClick={closePendingPreview}>Close</Button></div>
+          </section>
         </div>
-      )}
+      ) : null}
+
+      {pendingPreview.open && !pendingPreview.loading && pendingPreview.error ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+          <section className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl">
+            <p className="text-sm text-destructive">{pendingPreview.error}</p>
+            <div className="mt-4 flex justify-end"><Button type="button" variant="outline" size="sm" onClick={closePendingPreview}>Close</Button></div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingPreview.open && !pendingPreview.loading && !pendingPreview.error && pendingSolve ? (
+        <SolveDetailsModal
+          solve={pendingSolve}
+          user={{ full_name: pendingSolve.solverName }}
+          entity={{ name: pendingSolve.solverEntityName }}
+          currentRole=""
+          currentUser={null}
+          onClose={closePendingPreview}
+          onApproveResult={(solve) => approveManagerWaitingRequest(solve.requestId)}
+          onRejectResult={(solve) => sendBackManagerWaitingRequest(solve.requestId)}
+          statusActionBusyId={waitingActionLoadingId}
+        />
+      ) : null}
       {rejectedInfo.open && rejectedInfo.payload && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-md border-2 border-border bg-card p-5 shadow-none">

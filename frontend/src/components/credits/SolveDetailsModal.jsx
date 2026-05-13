@@ -2,6 +2,7 @@ import { X, Download, ExternalLink, FileText, FolderOpen, File, Link2, Trash2, C
 import { Avatar } from "../Avatar";
 import { Button } from "../ui/button";
 import { useState, useEffect, useRef } from "react";
+import { api } from "../../lib/api";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -73,6 +74,31 @@ export default function SolveDetailsModal({
   
   const [removingId, setRemovingId] = useState(null);
   const evidenceSectionRef = useRef(null);
+
+  async function downloadEvidenceFile(ev) {
+    if (!ev?.id || !solve?.requestId) return;
+    try {
+      const response = await api.get(
+        `/requests/${solve.requestId}/comments/${ev.id}/download/`,
+        { responseType: "blob" },
+      );
+      const blob = response.data;
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      const disposition = response.headers?.["content-disposition"] || "";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
+      const filename = decodeURIComponent((match?.[1] || match?.[2] || "").trim() || (ev.name || "evidence-file"));
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (_err) {
+      // Fallback to direct URL if API download fails.
+      if (ev.url) window.open(ev.url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   useEffect(() => {
     if (initialFocus === "evidence" && canEdit && evidenceSectionRef.current) {
@@ -319,11 +345,14 @@ export default function SolveDetailsModal({
                           </Button>
                         </a>
                       ) : (
-                        <a href={ev.url} target="_blank" rel="noreferrer">
-                          <Button variant="ghost" size="sm" className="h-7 px-2">
-                            <Download className="h-3 w-3" />
-                          </Button>
-                        </a>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => downloadEvidenceFile(ev)}
+                        >
+                          <Download className="h-3 w-3" />
+                        </Button>
                       )}
                       {canEdit && (
                         <Button 

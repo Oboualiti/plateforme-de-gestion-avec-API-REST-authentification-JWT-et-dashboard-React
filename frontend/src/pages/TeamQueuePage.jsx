@@ -89,8 +89,12 @@ function TeamQueuePage() {
   const { user } = useAuth()
   const roleKeys = user?.role_keys || []
   const isTeamLeader = roleKeys.includes('team_leader')
+  const isBasicUser = roleKeys.includes('user')
   const isProdEntity = String(user?.entity_type || '').toUpperCase() === 'PROD'
   const isProdTL = isTeamLeader && isProdEntity
+  const isProdBasicUser = isBasicUser && isProdEntity
+  const isPersonalQueueUser = isBasicUser
+  const isProdRequesterQueue = isProdTL || isProdBasicUser
 
   const [initialLoading, setInitialLoading] = useState(true)
   const [tableLoading, setTableLoading] = useState(false)
@@ -109,14 +113,14 @@ function TeamQueuePage() {
   async function fetchTeamRequests(currentPage = 1) {
     const teamBucket = activeTab === 'sent_back' ? 'sent_back' : activeTab
     const response = await api.get('/requests/', {
-      params: {
-        scope: 'team',
-        team_queue: 1,
-        team_bucket: teamBucket,
-        actor_scope: assigneeFilter,
-        page: currentPage,
-        page_size: UI_PAGE_SIZE,
-        search: search.trim() || undefined,
+          params: {
+            scope: 'team',
+            team_queue: 1,
+            team_bucket: teamBucket,
+            actor_scope: isPersonalQueueUser ? 'me' : assigneeFilter,
+            page: currentPage,
+            page_size: UI_PAGE_SIZE,
+            search: search.trim() || undefined,
       },
     })
     const payload = response.data || {}
@@ -153,7 +157,7 @@ function TeamQueuePage() {
     return () => {
       active = false
     }
-  }, [page, activeTab, search, assigneeFilter])
+  }, [page, activeTab, search, assigneeFilter, isPersonalQueueUser])
 
   useEffect(() => {
     let active = true
@@ -164,7 +168,7 @@ function TeamQueuePage() {
             scope: 'team',
             team_queue: 1,
             team_queue_counts: 1,
-            actor_scope: assigneeFilter,
+            actor_scope: isPersonalQueueUser ? 'me' : assigneeFilter,
             search: search.trim() || undefined,
           },
         })
@@ -185,7 +189,7 @@ function TeamQueuePage() {
     return () => {
       active = false
     }
-  }, [search, assigneeFilter])
+  }, [search, assigneeFilter, isPersonalQueueUser])
 
   const totalPages = Math.max(1, Math.ceil(pagination.count / UI_PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -210,7 +214,7 @@ function TeamQueuePage() {
   }
 
   async function approveCompletedRequest(requestId) {
-    if (!isProdTL) return
+    if (!isProdRequesterQueue) return
     setActionLoadingId(requestId)
     try {
       await api.post(`/requests/${requestId}/status/`, { status: 'CLOSED', note: 'Approved by requester-side PROD team.' })
@@ -223,7 +227,7 @@ function TeamQueuePage() {
   }
 
   async function rejectCompletedRequest(requestId, extra = null) {
-    if (!isProdTL) return
+    if (!isProdRequesterQueue) return
     let trimmed = ''
     if (extra && (extra.rejectionReason || extra.rejectionNote)) {
       const reason = String(extra.rejectionReason || '').trim()
@@ -310,9 +314,9 @@ function TeamQueuePage() {
       <PageHeader
         eyebrow="Workspace"
         title="Team Queue"
-        description={isProdTL
-          ? 'Created requests, waiting approvals, and sent-back work for your PROD team.'
-          : 'Assigned requests, waiting approvals, and sent-back work for your team.'}
+        description={isProdRequesterQueue
+          ? 'Created requests, waiting approvals, and sent-back work for your PROD queue.'
+          : 'Assigned requests, waiting approvals, and sent-back work for your queue.'}
       />
 
       <section className="rounded-md border border-border bg-card p-4">
@@ -321,24 +325,26 @@ function TeamQueuePage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search requests..." />
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant={assigneeFilter === 'me' ? 'default' : 'outline'}
-              className="h-10"
-              onClick={() => setAssigneeFilter((current) => (current === 'me' ? 'all' : 'me'))}
-            >
-              {isProdTL ? 'Created by me' : 'Assigned to me'}
-            </Button>
-            <Button
-              type="button"
-              variant={assigneeFilter === 'members' ? 'default' : 'outline'}
-              className="h-10"
-              onClick={() => setAssigneeFilter((current) => (current === 'members' ? 'all' : 'members'))}
-            >
-              {isProdTL ? 'Created by my members' : 'Assigned to my members'}
-            </Button>
-          </div>
+          {!isPersonalQueueUser ? (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={assigneeFilter === 'me' ? 'default' : 'outline'}
+                className="h-10"
+                onClick={() => setAssigneeFilter((current) => (current === 'me' ? 'all' : 'me'))}
+              >
+                {isProdRequesterQueue ? 'Created by me' : 'Assigned to me'}
+              </Button>
+              <Button
+                type="button"
+                variant={assigneeFilter === 'members' ? 'default' : 'outline'}
+                className="h-10"
+                onClick={() => setAssigneeFilter((current) => (current === 'members' ? 'all' : 'members'))}
+              >
+                {isProdRequesterQueue ? 'Created by my members' : 'Assigned to my members'}
+              </Button>
+            </div>
+          ) : null}
         </div>
         {error ? <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       </section>
@@ -346,7 +352,7 @@ function TeamQueuePage() {
       <section className="rounded-md border border-border bg-card">
         <div className="border-b border-border px-5 pt-4">
           <div className="flex flex-wrap items-end gap-6">
-            {[['assigned', isProdTL ? 'Created' : 'Assigned'], ['waiting', 'Completed / waiting approval'], ['sent_back', 'Sent back'], ['closed', 'Closed requests']].map(([key, label]) => (
+            {[['assigned', isProdRequesterQueue ? 'Created' : 'Assigned'], ['waiting', 'Completed / waiting approval'], ['sent_back', 'Sent back'], ['closed', 'Closed requests']].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -370,7 +376,7 @@ function TeamQueuePage() {
                 <th className="px-4 py-3 text-left">Type</th>
                 <th className="px-4 py-3 text-left">Priority</th>
                 <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">{isProdTL ? 'Creator' : 'Assignee'}</th>
+                <th className="px-4 py-3 text-left">{isProdRequesterQueue ? 'Creator' : 'Assignee'}</th>
                 <th className="px-4 py-3 text-left">Updated</th>
                 <th className="px-4 py-3 text-left">Actions</th>
               </tr>
@@ -401,10 +407,10 @@ function TeamQueuePage() {
                     <td className="px-4 py-3"><span className={typePillClass(item.type)}>{item.type || '-'}</span></td>
                     <td className="px-4 py-3"><span className={priorityPillClass(item.priority)}>{item.priority || '-'}</span></td>
                     <td className="px-4 py-3"><span className={statusPillClass(item.status)}>{STATUS_LABEL[item.status] || item.status}</span></td>
-                    <td className="px-4 py-3 text-foreground">{isProdTL ? (item.creator_name || '-') : (item.assignee_name || 'Unassigned')}</td>
+                    <td className="px-4 py-3 text-foreground">{isProdRequesterQueue ? (item.creator_name || '-') : (item.assignee_name || 'Unassigned')}</td>
                     <td className="px-4 py-3 text-muted-foreground">{formatDateTime(item.created_at)}</td>
                     <td className="px-4 py-3">
-                      {isProdTL && activeTab === 'waiting' ? (
+                      {isProdRequesterQueue && activeTab === 'waiting' ? (
                         <Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" disabled={actionLoadingId === item.id || detailModal.loading} onClick={() => openDetailsModal(item.id)}>Review</Button>
                       ) : (
                         (() => {

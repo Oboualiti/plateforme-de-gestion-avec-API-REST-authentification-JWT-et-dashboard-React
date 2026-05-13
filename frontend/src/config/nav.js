@@ -82,6 +82,13 @@ export function getNavForRole(role, user = null) {
     role === "user" && (canSolveRequests || isSupportDevEntity);
   const isProdResultApproverUser =
     role === "user" && String(user?.entity_type || "").toUpperCase() === "PROD" && has("approve_completed_result");
+  const canAccessUserTeamQueue =
+    role === "user"
+    && has("view_own_requests")
+    && (
+      String(user?.entity_type || "").toUpperCase() === "PROD"
+      || isSupportDevUser
+    );
 
   const auditLogItems = [
     ...(has("view_user_audit_logs") ? [{ label: "User logs", to: "/admin/audit-logs/users", icon: ScrollText }] : []),
@@ -103,6 +110,9 @@ export function getNavForRole(role, user = null) {
               : []),
             ...(has("view_own_requests")
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
+              : []),
+            ...(canAccessUserTeamQueue
+              ? [{ label: "Team Queue", to: "/team-queue", icon: ListChecks }]
               : []),
             ...((isSupportDevUser || isProdResultApproverUser) ? [{ label: "Ranking", to: "/credits-board", icon: Medal }] : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
@@ -281,4 +291,3 @@ export function getNavForRole(role, user = null) {
       ];
   }
 }
-

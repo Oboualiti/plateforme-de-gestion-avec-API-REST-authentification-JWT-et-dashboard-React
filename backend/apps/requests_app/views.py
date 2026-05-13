@@ -10,6 +10,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Q, OuterRef, Subquery
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.pagination import PageNumberPagination
@@ -1189,14 +1190,22 @@ class RequestListCreateView(APIView):
                             target_team_leader_id=request.user.id,
                         )
                     )
+            elif role_key == "user":
+                # Normal users use personal queue scope only:
+                # - PROD-side users: requests they created (requester-side validation flow)
+                # - Target/support users: requests assigned to them (solver-side flow)
+                if is_prod_entity_user:
+                    queryset = queryset.filter(requester_user_id=request.user.id)
+                else:
+                    queryset = queryset.filter(current_assignee_id=request.user.id)
             actor_scope = (request.query_params.get("actor_scope") or "all").strip().lower()
-            is_prod_tl = (
-                role_key == "team_leader"
+            is_prod_requester_scope = (
+                role_key in {"team_leader", "user"}
                 and bool(request.user.entity_id)
                 and request.user.entity
                 and request.user.entity.entity_type == Entity.EntityType.PROD
             )
-            actor_field = "requester_user__username" if is_prod_tl else "current_assignee__username"
+            actor_field = "requester_user__username" if is_prod_requester_scope else "current_assignee__username"
             actor_exists_q = Q(**{f"{actor_field}__isnull": False})
             actor_me_q = Q(**{f"{actor_field}__iexact": request.user.username})
             if actor_scope == "me":
@@ -1711,6 +1720,47 @@ class RequestCommentPinView(APIView):
                 context=build_request_detail_context(request, service_request),
             ).data
         )
+
+
+class RequestCommentDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def has_access(self, user, service_request):
+        return get_visible_requests_queryset(user).filter(id=service_request.id).exists()
+
+    def get(self, request, request_id, comment_id):
+        service_request = ServiceRequest.objects.filter(id=request_id).first()
+        if service_request is None or not self.has_access(request.user, service_request):
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        can_view_discussion = can_use_request_permission(
+            request.user,
+            service_request,
+            "request.view_discussion",
+            has_permission(request.user, "view_request_discussion"),
+        )
+        if not can_view_discussion:
+            return Response(
+                {"detail": "You do not have permission to view request discussion."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        comment = RequestMessage.objects.filter(id=comment_id, request_id=request_id).first()
+        if comment is None:
+            return Response({"detail": "Comment not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not comment.attachment:
+            return Response({"detail": "No attachment on this comment."}, status=status.HTTP_404_NOT_FOUND)
+
+        message_text = (comment.message or "").strip().lower()
+        is_credit_evidence = message_text.startswith("credits evidence") or message_text.startswith("credits proof")
+        if not is_credit_evidence:
+            return Response({"detail": "Attachment is not evidence."}, status=status.HTTP_400_BAD_REQUEST)
+
+        attachment_name = comment.attachment.name.rsplit("/", 1)[-1] or "evidence-file"
+        try:
+            stream = comment.attachment.open("rb")
+        except OSError:
+            return Response({"detail": "Could not open attachment."}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(stream, as_attachment=True, filename=attachment_name)
 
 
 class RequestStatusUpdateView(APIView):
