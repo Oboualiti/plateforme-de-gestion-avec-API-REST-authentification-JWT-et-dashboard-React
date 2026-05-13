@@ -22,7 +22,6 @@ import RequestDetailsPage from '../pages/RequestDetailsPage'
 import RequestsPage from '../pages/RequestsPage'
 import TeamQueuePage from '../pages/TeamQueuePage'
 import CreditsBoard from '../pages/CreditsBoard'
-import TeamQueuePage from '../pages/TeamQueuePage'
 import ProtectedRoute from './ProtectedRoute'
 
 import wServiceLogo from '../assets/logo.png'

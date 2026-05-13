@@ -140,6 +140,7 @@ function RequestsPage({ forcedScope = '' }) {
     done: 0,
     total: 0,
   })
+  const [waitingActionLoadingId, setWaitingActionLoadingId] = useState(null)
   const [rejectDialog, setRejectDialog] = useState({
     open: false,
     mode: 'single',
@@ -167,6 +168,9 @@ function RequestsPage({ forcedScope = '' }) {
   const isManager = roleKeys.includes('manager')
   const isTeamLeader = roleKeys.includes('team_leader')
   const isBasicUser = roleKeys.includes('user')
+  const isManagerRequestsBoard = isManager && resolvedScope === 'all'
+  const [managerRequestsTab, setManagerRequestsTab] = useState('requests')
+  const [managerTabCounts, setManagerTabCounts] = useState({ requests: 0, waiting: 0 })
   const isIncomingQueueTeamLeader = isTeamLeader && resolvedScope === 'team'
   const isPendingScope = resolvedScope === 'pending'
   const shouldRedirectBasicApproverFromPending = isPendingScope
@@ -324,6 +328,9 @@ function RequestsPage({ forcedScope = '' }) {
       await refreshUser()
       const isTeamScope = resolvedScope === 'team'
       const canViewAllRequests = hasPermission('view_all_requests')
+      const normalizedStatusFilter = isManagerRequestsBoard
+        ? (managerRequestsTab === 'waiting' ? 'COMPLETED' : (filters.status || undefined))
+        : (filters.status || undefined)
       const params = {
         page: isTeamScope ? 1 : pagination.page,
         page_size: isTeamScope ? 200 : pagination.pageSize,
@@ -334,7 +341,7 @@ function RequestsPage({ forcedScope = '' }) {
         company_id: (isGlobalAdmin && !canViewAllRequests) ? filters.company_id || undefined : undefined,
         source_entity_id: filters.source_entity_id || undefined,
         target_entity_id: filters.target_entity_id || undefined,
-        status: filters.status || undefined,
+        status: normalizedStatusFilter,
         assignee: filters.assignee || undefined,
       }
       const response = await api.get('/requests/', { params })
@@ -378,6 +385,34 @@ function RequestsPage({ forcedScope = '' }) {
     }
   }
 
+  async function loadManagerTabCounts() {
+    if (!isManagerRequestsBoard) return
+    try {
+      const baseParams = {
+        page: 1,
+        page_size: 1,
+        scope: resolvedScope !== 'all' ? resolvedScope : undefined,
+        search: filters.search || undefined,
+        company_id: (isGlobalAdmin && !hasPermission('view_all_requests')) ? filters.company_id || undefined : undefined,
+        source_entity_id: filters.source_entity_id || undefined,
+        target_entity_id: filters.target_entity_id || undefined,
+        assignee: filters.assignee || undefined,
+      }
+      const [allRes, waitingRes] = await Promise.all([
+        api.get('/requests/', { params: baseParams }),
+        api.get('/requests/', { params: { ...baseParams, status: 'COMPLETED' } }),
+      ])
+      const allCount = Number(allRes?.data?.count || 0)
+      const waitingCount = Number(waitingRes?.data?.count || 0)
+      setManagerTabCounts({
+        requests: Math.max(0, allCount - waitingCount),
+        waiting: waitingCount,
+      })
+    } catch (_error) {
+      setManagerTabCounts({ requests: 0, waiting: 0 })
+    }
+  }
+
   async function handlePendingDecision(requestId, nextStatus, note = '') {
     try {
       await api.post(`/requests/${requestId}/status/`, { status: nextStatus, note })
@@ -390,7 +425,7 @@ function RequestsPage({ forcedScope = '' }) {
   useEffect(() => {
     setState({ loading: true, error: '', requests: [] })
     loadRequests()
-  }, [filters, pagination.page, resolvedScope, refreshUser])
+  }, [filters, pagination.page, resolvedScope, refreshUser, managerRequestsTab])
 
   useEffect(() => {
     // If navigated from a notification about a rejected request, show a popup with details
@@ -421,7 +456,11 @@ function RequestsPage({ forcedScope = '' }) {
     if (shouldRedirectBasicApproverFromPending) return
     setState((current) => ({ ...current, loading: true, error: '' }))
     loadRequests()
-  }, [filters, pagination.page, resolvedScope, refreshUser, shouldRedirectBasicApproverFromPending])
+  }, [filters, pagination.page, resolvedScope, refreshUser, shouldRedirectBasicApproverFromPending, managerRequestsTab])
+
+  useEffect(() => {
+    loadManagerTabCounts()
+  }, [filters.search, filters.company_id, filters.source_entity_id, filters.target_entity_id, filters.assignee, resolvedScope, isManagerRequestsBoard])
 
   useEffect(() => {
     if (!canDecidePending) {
@@ -597,7 +636,52 @@ function RequestsPage({ forcedScope = '' }) {
     openRejectDialog('selected', selectedPendingIds.slice())
   }
 
+  async function approveManagerWaitingRequest(requestId) {
+    if (!requestId || !canManagerWaitingReview) return
+    setWaitingActionLoadingId(requestId)
+    try {
+      await api.post(`/requests/${requestId}/status/`, {
+        status: 'CLOSED',
+        note: 'Approved by requester-side PROD manager.',
+      })
+      closePendingPreview()
+      await loadRequests()
+    } catch (error) {
+      window.alert(error.response?.data?.detail || 'Could not approve request.')
+    } finally {
+      setWaitingActionLoadingId(null)
+    }
+  }
+
+  async function sendBackManagerWaitingRequest(requestId) {
+    if (!requestId || !canManagerWaitingReview) return
+    const note = window.prompt('Reason for sending back to in progress:')
+    if (note === null) return
+    const trimmed = String(note).trim()
+    if (!trimmed) {
+      window.alert('Reason is required to send back a completed request.')
+      return
+    }
+    setWaitingActionLoadingId(requestId)
+    try {
+      await api.post(`/requests/${requestId}/status/`, {
+        status: 'IN_PROGRESS',
+        note: trimmed,
+      })
+      closePendingPreview()
+      await loadRequests()
+    } catch (error) {
+      window.alert(error.response?.data?.detail || 'Could not send request back.')
+    } finally {
+      setWaitingActionLoadingId(null)
+    }
+  }
+
   const canShowCompanyFilter = hasPermission('view_all_requests') || isIncomingQueueTeamLeader
+  const canManagerWaitingReview = isManagerRequestsBoard
+    && managerRequestsTab === 'waiting'
+    && user?.entity_type === 'PROD'
+    && hasPermission('approve_request')
   const totalPages = Math.max(1, Math.ceil((pagination.count || 0) / pagination.pageSize))
   const fromIndex = pagination.count ? (pagination.page - 1) * pagination.pageSize + 1 : 0
   const toIndex = Math.min(pagination.page * pagination.pageSize, pagination.count || 0)
@@ -624,6 +708,26 @@ function RequestsPage({ forcedScope = '' }) {
       {isIncomingQueueTeamLeader ? <div className="h-0.5 w-full bg-border" /> : null}
 
       <div className="surface-card p-5 lg:p-6 shadow-sm border-border/50">
+        {isManagerRequestsBoard ? (
+          <div className="mb-4 border-b border-border">
+            <div className="flex flex-wrap items-end gap-6">
+              {[['requests', 'Requests'], ['waiting', 'waiting approval']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { setManagerRequestsTab(key); setPagination((current) => ({ ...current, page: 1 })) }}
+                  className={`border-b-2 pb-2 text-sm font-semibold transition-colors ${managerRequestsTab === key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                >
+                  {label}
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold text-foreground">
+                    {key === 'waiting' ? managerTabCounts.waiting : managerTabCounts.requests}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">
           <div className="relative min-w-[260px] flex-1 xl:flex-[2_1_0%]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -685,18 +789,20 @@ function RequestsPage({ forcedScope = '' }) {
             ))}
           </Select>
 
-          <Select
-            className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
-            value={filters.status}
-            onChange={(event) => handleFilterChange('status', event.target.value)}
-          >
-            <option value="">All statuses</option>
-            {Object.entries(statusLabelMap).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </Select>
+          {!isManagerRequestsBoard ? (
+            <Select
+              className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
+              value={filters.status}
+              onChange={(event) => handleFilterChange('status', event.target.value)}
+            >
+              <option value="">All statuses</option>
+              {Object.entries(statusLabelMap).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          ) : null}
 
           <Button
             variant="outline"
@@ -838,7 +944,7 @@ function RequestsPage({ forcedScope = '' }) {
                   <th className="px-4 py-3 text-left font-medium">Status</th>
                   {(!isPendingScope || !canDecidePending) && <th className="px-4 py-3 text-left font-medium">Assignee</th>}
                   <th className="px-4 py-3 text-left font-medium">Updated</th>
-                  {canDecidePending && <th className="px-4 py-3 text-right font-medium">Decision</th>}
+                  {(canDecidePending || canManagerWaitingReview) && <th className="px-4 py-3 text-right font-medium">{canManagerWaitingReview ? 'Actions' : 'Decision'}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -897,7 +1003,7 @@ function RequestsPage({ forcedScope = '' }) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-1">
-                        {item.was_rejected && item.status !== 'CLOSED' ? (
+                        {item.was_rejected && item.status !== 'CLOSED' && !canManagerWaitingReview ? (
                           <span className="inline-flex items-center rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-600">
                             SENT BACK
                           </span>
@@ -928,36 +1034,52 @@ function RequestsPage({ forcedScope = '' }) {
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {formatUpdated(item.updated_at || item.created_at)}
                     </td>
-                    {canDecidePending && (
+                    {(canDecidePending || canManagerWaitingReview) && (
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-8 border border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
+                        {canManagerWaitingReview ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-[10px] font-bold uppercase tracking-widest"
                             onClick={(event) => {
                               event.stopPropagation()
-                              handlePendingDecision(item.id, 'ACCEPTED')
+                              openPendingPreview(item.id)
                             }}
-                            disabled={item.status !== 'NEW' || bulkActionLoading}
+                            disabled={waitingActionLoadingId === item.id}
                           >
-                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                            Accept
+                            Review
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-8 border border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openRejectDialog('single', [item.id])
-                            }}
-                            disabled={item.status !== 'NEW' || bulkActionLoading}
-                          >
-                            <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                            Reject
-                          </Button>
-                        </div>
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 border border-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handlePendingDecision(item.id, 'ACCEPTED')
+                              }}
+                              disabled={item.status !== 'NEW' || bulkActionLoading}
+                            >
+                              <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                              Accept
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 border border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 shadow-none font-bold text-[10px] uppercase tracking-widest px-3"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openRejectDialog('single', [item.id])
+                              }}
+                              disabled={item.status !== 'NEW' || bulkActionLoading}
+                            >
+                              <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                              Reject
+                            </Button>
+                          </div>
+                        )}
                       </td>
                     )}
                   </tr>
@@ -1036,7 +1158,7 @@ function RequestsPage({ forcedScope = '' }) {
           <div className="w-full max-w-2xl rounded-md border-2 border-border bg-card p-5 shadow-none">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Pending request</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{canManagerWaitingReview ? 'Waiting approval request' : 'Pending request'}</p>
                 <h3 className="mt-1 text-lg font-semibold text-foreground">
                   {pendingPreview.data?.title || 'Request details'}
                 </h3>
@@ -1101,6 +1223,25 @@ function RequestsPage({ forcedScope = '' }) {
                 ) : (
                   <p className="text-xs text-muted-foreground">No attachment.</p>
                 )}
+
+                {canManagerWaitingReview && pendingPreview.data?.status === 'COMPLETED' ? (
+                  <div className="mt-3 flex justify-end gap-2 border-t border-border pt-3">
+                    <Button
+                      variant="outline"
+                      className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10"
+                      onClick={() => sendBackManagerWaitingRequest(pendingPreview.data?.id)}
+                      disabled={waitingActionLoadingId === pendingPreview.data?.id}
+                    >
+                      Send back
+                    </Button>
+                    <Button
+                      onClick={() => approveManagerWaitingRequest(pendingPreview.data?.id)}
+                      disabled={waitingActionLoadingId === pendingPreview.data?.id}
+                    >
+                      Approve
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
