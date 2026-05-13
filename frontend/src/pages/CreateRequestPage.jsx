@@ -133,7 +133,15 @@ function CreateRequestPage() {
 
   function getTargetLabel(team) {
     const baseLabel = team.label || team.name || `Team ${team.id}`
-    return team.entity_type ? ` ${baseLabel} (${team.entity_type}) ` : baseLabel
+    if (!team.entity_type) return baseLabel
+    const normalizedBase = String(baseLabel).toUpperCase()
+    const normalizedType = String(team.entity_type).toUpperCase()
+    if (normalizedBase.includes(`(${normalizedType})`)) return baseLabel
+    if (normalizedType === 'SUPPORT' && normalizedBase.includes('(SUPPORT)')) return baseLabel
+    if (normalizedType === 'SUPPORT' && normalizedBase.includes('SUPPORT')) return baseLabel
+    if (normalizedType === 'TDEV' && normalizedBase.includes('(TDEV)')) return baseLabel
+    if (normalizedType === 'TDEV' && (normalizedBase.includes('TECHNICAL DEVELOPMENT') || normalizedBase.includes('(DEV)'))) return baseLabel
+    return `${baseLabel} (${team.entity_type})`
   }
 
   async function handleImproveWithAi() {

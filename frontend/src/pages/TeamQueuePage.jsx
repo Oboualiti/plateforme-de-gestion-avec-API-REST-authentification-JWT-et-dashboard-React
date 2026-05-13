@@ -283,7 +283,7 @@ function TeamQueuePage() {
       priority: data.priority || '-',
       solverId: data.assignee_id || null,
       solverName: data.assignee_name || 'Unknown',
-      solverRole: 'Support/Dev',
+      solverRole: data.target_entity_type || '-',
       solverEntityName: data.target_entity_name || '-',
       sourceCompanyName: data.source_company_name || '-',
       sourceEntityName: data.source_entity_name || '-',

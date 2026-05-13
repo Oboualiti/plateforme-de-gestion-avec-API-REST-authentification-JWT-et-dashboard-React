@@ -1,4 +1,4 @@
-import { X, Download, ExternalLink, FileText, FolderOpen, File, Link2, Trash2, CheckCircle2 } from "lucide-react";
+import { X, Download, ExternalLink, FileText, FolderOpen, File, Link2, Trash2, CheckCircle2, Calendar, Flag, Circle } from "lucide-react";
 import { Avatar } from "../Avatar";
 import { Button } from "../ui/button";
 import { useState, useEffect, useRef } from "react";
@@ -245,34 +245,39 @@ export default function SolveDetailsModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-1">Solved by</div>
-              <div className="flex items-center gap-2">
-                <Avatar user={user} />
-                <div>
-                  <div className="text-sm font-medium">{user?.full_name || "Unknown"}</div>
-                  <div className="text-xs text-muted-foreground">{solve.solverRole || "Support/Dev"}</div>
+              <div className="rounded-lg border border-ink/15 bg-surface-1 p-3">
+                <div className="flex items-center gap-2">
+                  <Avatar user={user} />
+                  <div>
+                    <div className="text-sm font-medium">{user?.full_name || "Unknown"}</div>
+                    <div className="text-xs text-muted-foreground">{solve.solverRole || "Support/Dev"}</div>
+                  </div>
                 </div>
-              </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                <span className="font-medium">{entity?.name || solve.solverEntityName || "Unknown"}</span>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  <span className="font-medium">{entity?.name || solve.solverEntityName || "Unknown"}</span>
+                </div>
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">Solved for</div>
-              <div className="text-sm">{solve.sourceCompanyName || "Unknown"}</div>
-              <div className="text-xs text-muted-foreground">{solve.sourceEntityName || "-"}</div>
-              <div className="text-xs text-muted-foreground mt-1">Requester: {solve.requesterName || "-"}</div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-muted-foreground">Solved: </span>
-                  <span>{formatDateTime(solve.completedAt)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Priority: </span>
-                  <span>{solve.priority || "-"}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Type: </span>
-                  <span>{solve.requestType || "-"}</span>
+              <div className="text-xs font-medium text-muted-foreground mb-2">Solved for</div>
+              <div className="rounded-lg border border-ink/15 bg-surface-1 p-3">
+                <div className="text-sm font-semibold leading-tight">{solve.sourceCompanyName || "Unknown"}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{solve.sourceEntityName || "-"}</div>
+                <div className="mt-2 text-xs text-muted-foreground">Requester: {solve.requesterName || "-"}</div>
+
+                <div className="mt-3 space-y-1.5 text-xs">
+                  <div className="flex items-center gap-2 text-foreground">
+                    <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>Solved: {formatDateTime(solve.completedAt)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-foreground">
+                    <Flag className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Priority: {solve.priority || "-"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-foreground">
+                    <Circle className="h-3.5 w-3.5 text-violet-400" />
+                    <span>Type: {solve.requestType || "-"}</span>
+                  </div>
                 </div>
               </div>
             </div>

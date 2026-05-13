@@ -9,6 +9,8 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from django.db.models import Q, OuterRef, Subquery
 from django.http import FileResponse
 from django.utils import timezone
@@ -2270,6 +2272,54 @@ class RequestStatusUpdateView(APIView):
         deadline_date = serializer.validated_data.get("deadline_date")
         evidence_link = (serializer.validated_data.get("evidence_link") or "").strip()
         evidence_attachment = serializer.validated_data.get("evidence_attachment")
+        evidence_links = []
+        if evidence_link:
+            evidence_links.append(evidence_link)
+        raw_evidence_links = []
+        if hasattr(request.data, "getlist"):
+            raw_evidence_links.extend(request.data.getlist("evidence_links"))
+            raw_evidence_links.extend(request.data.getlist("evidence_links[]"))
+        elif request.data.get("evidence_links"):
+            raw_evidence_links.append(request.data.get("evidence_links"))
+        elif request.data.get("evidence_links[]"):
+            raw_evidence_links.append(request.data.get("evidence_links[]"))
+        for raw_item in raw_evidence_links:
+            for item in re.split(r"[\r\n,]+", str(raw_item or "")):
+                clean = item.strip()
+                if clean:
+                    evidence_links.append(clean)
+        # Preserve order while deduplicating.
+        deduped_evidence_links = []
+        seen_links = set()
+        for link in evidence_links:
+            if link not in seen_links:
+                deduped_evidence_links.append(link)
+                seen_links.add(link)
+        evidence_links = deduped_evidence_links
+        url_validator = URLValidator()
+        for link in evidence_links:
+            try:
+                url_validator(link)
+            except DjangoValidationError:
+                return Response(
+                    {"detail": f"Invalid evidence URL: {link}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        evidence_attachments = []
+        if evidence_attachment is not None:
+            evidence_attachments.append(evidence_attachment)
+        if hasattr(request.FILES, "getlist"):
+            evidence_attachments.extend(request.FILES.getlist("evidence_attachments"))
+        # Preserve order while deduplicating file objects by identity.
+        deduped_attachments = []
+        seen_file_ids = set()
+        for file_obj in evidence_attachments:
+            marker = id(file_obj)
+            if marker not in seen_file_ids:
+                deduped_attachments.append(file_obj)
+                seen_file_ids.add(marker)
+        evidence_attachments = deduped_attachments
         if (
             old_status == ServiceRequest.Status.COMPLETED
             and requested_status == ServiceRequest.Status.IN_PROGRESS
@@ -2281,7 +2331,7 @@ class RequestStatusUpdateView(APIView):
                 note = "\n".join(note_lines)
             elif not note.strip():
                 note = "Result rejected"
-        if evidence_link or evidence_attachment:
+        if evidence_links or evidence_attachments:
             actor_role = get_primary_role_key(request.user)
             target_entity_id = get_request_target_entity_id(service_request)
             if actor_role not in {"user", "team_leader", "manager"}:
@@ -2342,19 +2392,8 @@ class RequestStatusUpdateView(APIView):
             if service_request.current_assignee_id is not None:
                 service_request.current_assignee = None
                 update_fields.append("current_assignee")
-        elif (
-            service_request.current_assignee_id is None
-            and effective_new_status not in {
-                ServiceRequest.Status.REJECTED,
-                ServiceRequest.Status.COMPLETED,
-                ServiceRequest.Status.CLOSED,
-            }
-        ):
-            # Seniors and super admins should not be auto-assigned on status updates.
-            # They can explicitly assign via assignment actions.
-            if get_primary_role_key(request.user) not in {"senior", "super_admin"}:
-                service_request.current_assignee = request.user
-                update_fields.append("current_assignee")
+        # Status decisions (accept/reject/progress/close) must not implicitly assign
+        # ownership. Assignment is handled only through explicit assignment actions.
         if (
             effective_new_status == ServiceRequest.Status.ACCEPTED
             and service_request.accepted_at is None
@@ -2411,18 +2450,30 @@ class RequestStatusUpdateView(APIView):
             sender=request.user,
             message=progress_message,
         )
+        evidence_request_messages = []
         if effective_new_status == ServiceRequest.Status.COMPLETED and (
-            evidence_link or evidence_attachment
+            evidence_links or evidence_attachments
         ):
-            evidence_message = "Credits evidence"
-            if evidence_link:
-                evidence_message = f"{evidence_message}\n{evidence_link}"
-            RequestMessage.objects.create(
-                request=service_request,
-                sender=request.user,
-                message=evidence_message,
-                attachment=evidence_attachment if evidence_attachment else None,
-            )
+            if evidence_links:
+                link_lines = ["Credits evidence"]
+                for index, link in enumerate(evidence_links, start=1):
+                    link_lines.append(f"Link {index}: {link}")
+                evidence_request_messages.append(
+                    RequestMessage.objects.create(
+                        request=service_request,
+                        sender=request.user,
+                        message="\n".join(link_lines),
+                    )
+                )
+            for file_obj in evidence_attachments:
+                evidence_request_messages.append(
+                    RequestMessage.objects.create(
+                        request=service_request,
+                        sender=request.user,
+                        message="Credits evidence",
+                        attachment=file_obj,
+                    )
+                )
         decision_recipient_exclude = None
         if was_pending_request and requested_status in {
             ServiceRequest.Status.ACCEPTED,
@@ -2501,6 +2552,8 @@ class RequestStatusUpdateView(APIView):
                 },
             )
         mirror_request_message_to_telegram(service_request, request_message)
+        for evidence_request_message in evidence_request_messages:
+            mirror_request_message_to_telegram(service_request, evidence_request_message)
         service_request = load_request(request_id)
         mark_request_stuck(service_request)
         return Response(
