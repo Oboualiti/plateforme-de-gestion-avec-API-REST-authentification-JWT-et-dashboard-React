@@ -14,7 +14,7 @@ import {
   UserCircle,
   Briefcase,
   UsersRound,
-  Trophy,
+  Medal,
   KeyRound,
 } from "lucide-react";
 
@@ -99,12 +99,12 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
             ...(canCreateRequests && !canApproveAsBasicUser
-              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
             ...(has("view_own_requests")
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
-            ...((isSupportDevUser || isProdResultApproverUser) ? [{ label: "Credits Board", to: "/credits-board", icon: Trophy }] : []),
+            ...((isSupportDevUser || isProdResultApproverUser) ? [{ label: "Ranking", to: "/credits-board", icon: Medal }] : []),
             { label: "Notifications", to: "/notifications", icon: Bell },
           ],
         },
@@ -144,12 +144,12 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Create Request", to: "/requests/create", icon: PlusCircle }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
             ...(canManageUsers
               ? [{ label: "Team Members", to: "/team", icon: UsersRound }]
               : []),
-            { label: "Credits Board", to: "/credits-board", icon: Trophy },
+            { label: "Ranking", to: "/credits-board", icon: Medal },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -181,9 +181,9 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
-            { label: "Credits Board", to: "/credits-board", icon: Trophy },
+            { label: "Ranking", to: "/credits-board", icon: Medal },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -215,9 +215,9 @@ export function getNavForRole(role, user = null) {
               ? [{ label: "Requests", to: "/requests?scope=all", icon: ListChecks }]
               : []),
             ...(canAccessPending
-              ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }]
+              ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }]
               : []),
-            { label: "Credits Board", to: "/credits-board", icon: Trophy },
+            { label: "Ranking", to: "/credits-board", icon: Medal },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -267,8 +267,8 @@ export function getNavForRole(role, user = null) {
             ...(hasAny(["view_all_requests", "view_company_requests", "view_entity_requests", "view_team_requests", "view_own_requests"])
               ? [{ label: "Requests", to: "/requests", icon: Briefcase }]
               : []),
-            ...(canAccessPending ? [{ label: "Work Queue", to: "/team-queue", icon: Inbox }] : []),
-            { label: "Credits Board", to: "/credits-board", icon: Trophy },
+            ...(canAccessPending ? [{ label: "Pending Requests", to: "/pending-requests", icon: Inbox }] : []),
+            { label: "Ranking", to: "/credits-board", icon: Medal },
             { label: "Notifications", to: "/notifications", icon: Bell },
             ...(canAccessReports ? [{ label: "Reports", to: "/admin/reports", icon: BarChart3 }] : []),
           ],
@@ -281,3 +281,4 @@ export function getNavForRole(role, user = null) {
       ];
   }
 }
+

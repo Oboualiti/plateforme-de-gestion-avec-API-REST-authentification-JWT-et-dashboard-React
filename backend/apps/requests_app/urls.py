@@ -21,7 +21,6 @@ from .views import (
     RequestTargetReassignView,
     RequestStatusUpdateView,
     RequestStatusHistoryViewSet,
-    TeamQueueView,
     ServiceRequestViewSet,
     UnitMembershipViewSet,
 )
@@ -45,7 +44,6 @@ urlpatterns = [
     path("requests/ai/improve/", RequestAiImproveView.as_view(), name="requests-ai-improve"),
     path("requests/<int:request_id>/ai-summary/", RequestAiSummaryView.as_view(), name="requests-ai-summary"),
     path("requests/", RequestListCreateView.as_view(), name="requests-list-create"),
-    path("requests/team-queue/", TeamQueueView.as_view(), name="requests-team-queue"),
     path("requests/<int:request_id>/", RequestDetailView.as_view(), name="requests-detail"),
     path(
         "requests/<int:request_id>/comments/",
