@@ -12,6 +12,7 @@ from django.core.cache import cache
 from django.db.models import Q, OuterRef, Subquery
 from django.http import FileResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
@@ -447,6 +448,10 @@ class CreditsSolvesListView(APIView):
             )
         )
         user_entity_type = (getattr(getattr(request.user, "entity", None), "entity_type", "") or "").upper()
+        effective_user_company_id = (
+            request.user.company_id
+            or getattr(getattr(request.user, "entity", None), "company_id", None)
+        )
         is_prod_entity_user = user_entity_type == Entity.EntityType.PROD
         role_key = get_primary_role_key(request.user)
         is_prod_requester_scope = is_prod_entity_user and role_key in {"manager", "team_leader", "user"}
@@ -461,16 +466,16 @@ class CreditsSolvesListView(APIView):
             solves_qs = ServiceRequest.objects.filter(
                 credits_status_filter,
             )
-            if request.user.company_id:
-                solves_qs = solves_qs.filter(company_id=request.user.company_id)
+            if effective_user_company_id:
+                solves_qs = solves_qs.filter(company_id=effective_user_company_id)
             if request.user.entity_id:
                 solves_qs = solves_qs.filter(source_entity_id=request.user.entity_id)
         elif role_key == "user" and not is_prod_entity_user:
             solves_qs = ServiceRequest.objects.filter(
                 credits_status_filter,
             )
-            if request.user.company_id:
-                solves_qs = solves_qs.filter(company_id=request.user.company_id)
+            if effective_user_company_id:
+                solves_qs = solves_qs.filter(company_id=effective_user_company_id)
             if request.user.entity_id:
                 solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
         else:
@@ -571,8 +576,8 @@ class CreditsSolvesListView(APIView):
             solves_qs = solves_qs.filter(priority=priority)
 
         if not is_prod_entity_user and not is_prod_team_scope:
-            if role_key in {"senior", "manager" } and request.user.company_id:
-                solves_qs = solves_qs.filter(company_id=request.user.company_id)
+            if role_key in {"senior", "manager" } and effective_user_company_id:
+                solves_qs = solves_qs.filter(company_id=effective_user_company_id)
             elif role_key == "team_leader" and request.user.entity_id:
                 solves_qs = solves_qs.filter(target_entity_id=request.user.entity_id)
             elif role_key == "user":
@@ -584,6 +589,7 @@ class CreditsSolvesListView(APIView):
         solves_qs = solves_qs.select_related(
             "company",
             "source_entity",
+            "source_entity__company",
             "target_entity",
             "target_team_leader",
             "target_team",
@@ -592,6 +598,7 @@ class CreditsSolvesListView(APIView):
             "requester_user",
             "requester_user__team_leader",
             "requester_user__entity",
+            "requester_user__entity__company",
             "current_assignee",
         ).order_by("-completed_at", "-closed_at", "-id")
         solves_list = list(solves_qs)
@@ -849,7 +856,7 @@ class CreditsSolvesListView(APIView):
                     "name": req.target_entity.name,
                 }
 
-            target_entity_id = req.target_entity_id
+            row_target_entity_id = req.target_entity_id
             target_entity_name = req.target_entity.name if req.target_entity_id else ""
             display_team_name = (
                 f"{effective_team_leader_name}'s Team"
@@ -862,7 +869,7 @@ class CreditsSolvesListView(APIView):
                 else (
                     f"team-{effective_team_id}"
                     if effective_team_id
-                    else f"legacy-{target_entity_id or 'unknown'}"
+                    else f"legacy-{row_target_entity_id or 'unknown'}"
                 )
             )
             target_team_label = (
@@ -884,7 +891,7 @@ class CreditsSolvesListView(APIView):
                     "requestReference": req.request_number,
                     "solverId": solver_id,
                     "solverRole": "",
-                    "entityId": target_entity_id,
+                    "entityId": row_target_entity_id,
                     "companyId": req.company_id,
                     "solverEntityName": target_entity_name,
                     "solverCompanyName": req.company.name if req.company_id else "",
@@ -894,9 +901,9 @@ class CreditsSolvesListView(APIView):
                     "requesterName": (
                         req.requester_user.get_full_name() or req.requester_user.username
                     ) if req.requester_user_id else "",
-                    "target_entity_id": target_entity_id,
+                    "target_entity_id": row_target_entity_id,
                     "target_entity_name": target_entity_name,
-                    "targetEntityId": target_entity_id,
+                    "targetEntityId": row_target_entity_id,
                     "targetEntityName": target_entity_name,
                     "target_team_leader_id": effective_team_leader_id,
                     "target_team_leader_name": effective_team_leader_name,
@@ -1163,6 +1170,8 @@ class CreditsSolvesListView(APIView):
         for item in entity_stats.values():
             avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
             closed_count = item["closedCount"]
+            if int(closed_count or 0) <= 0:
+                continue
             entity_rankings.append(
                 {
                     "entityId": item["entityId"],
@@ -1181,6 +1190,8 @@ class CreditsSolvesListView(APIView):
         for item in team_stats.values():
             avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
             closed_count = item["closedCount"]
+            if int(closed_count or 0) <= 0:
+                continue
             team_rankings.append(
                 {
                     "teamKey": item["teamKey"],
@@ -1242,6 +1253,13 @@ class CreditsSolvesListView(APIView):
             )
             prod_tl_member_ids.discard(None)
 
+        support_tl_team_ids = set()
+        if role_key == "team_leader" and not is_prod_entity_user:
+            support_tl_team_ids.update(
+                Team.objects.filter(leader_id=request.user.id, is_active=True).values_list("id", flat=True)
+            )
+            support_tl_team_ids.discard(None)
+
         prod_user_team_member_ids = set()
         if role_key == "user" and is_prod_entity_user:
             if request.user.team_leader_id:
@@ -1265,9 +1283,9 @@ class CreditsSolvesListView(APIView):
             if role_key == "super_admin":
                 return True
             if role_key == "senior":
-                if not request.user.company_id:
+                if not effective_user_company_id:
                     return False
-                return req.company_id == request.user.company_id
+                return req.company_id == effective_user_company_id
             if role_key == "manager":
                 if is_prod_entity_user:
                     if not request.user.entity_id:
@@ -1288,7 +1306,7 @@ class CreditsSolvesListView(APIView):
                         or requester.team_leader_id == request.user.id
                         or requester.id in prod_tl_member_ids
                     )
-                if req.target_team_id and req.target_team and req.target_team.leader_id == request.user.id:
+                if req.target_team_id and req.target_team_id in support_tl_team_ids:
                     return True
                 if not req.target_team_id and req.target_team_leader_id == request.user.id:
                     return True
@@ -1323,20 +1341,95 @@ class CreditsSolvesListView(APIView):
                 str(row.get("name") or row.get("teamLabel") or "").lower(),
             )
 
+        demand_qs = ServiceRequest.objects.all()
+        if company_id:
+            demand_qs = demand_qs.filter(company_id=company_id)
+        if target_entity_id:
+            demand_qs = demand_qs.filter(target_entity_id=target_entity_id)
+        if target_team_id:
+            demand_qs = demand_qs.filter(
+                Q(target_team_id=target_team_id)
+                | Q(target_team__leader_id=target_team_id)
+                | Q(target_team_leader_id=target_team_id)
+            )
+        if source_entity_id:
+            demand_qs = demand_qs.filter(source_entity_id=source_entity_id)
+        if source_team_id:
+            demand_qs = demand_qs.filter(
+                Q(requester_user__team_leader_id=source_team_id)
+                | Q(requester_user_id=source_team_id)
+            )
+        if requester_user_id:
+            demand_qs = demand_qs.filter(requester_user_id=requester_user_id)
+        if request_type:
+            demand_qs = demand_qs.filter(category=request_type)
+        if priority in {
+            ServiceRequest.Priority.LOW,
+            ServiceRequest.Priority.MEDIUM,
+            ServiceRequest.Priority.HIGH,
+            ServiceRequest.Priority.CRITICAL,
+        }:
+            demand_qs = demand_qs.filter(priority=priority)
+
+        demand_qs = demand_qs.select_related(
+            "company",
+            "source_entity",
+            "source_entity__company",
+            "target_entity",
+            "target_team",
+            "target_team__leader",
+            "target_team_leader",
+            "requester_user",
+            "requester_user__team_leader",
+            "requester_user__entity",
+            "requester_user__entity__company",
+            "current_assignee",
+        ).distinct()
+        demand_list = list(demand_qs)
+        range_start = parse_date(date_from) if date_from else None
+        range_end = parse_date(date_to) if date_to else None
+
+        def _in_selected_range(dt_value):
+            if range_start is None and range_end is None:
+                return True
+            if not dt_value:
+                return False
+            day_value = dt_value.date() if hasattr(dt_value, "date") else dt_value
+            if range_start and day_value < range_start:
+                return False
+            if range_end and day_value > range_end:
+                return False
+            return True
+
+        source_company_stats = {}
         source_entity_stats = {}
         source_team_stats = {}
         requester_stats = {}
+        requester_ids = {req.requester_user_id for req in demand_list if req.requester_user_id}
+        requester_role_map = {}
+        if requester_ids:
+            role_priority = {
+                "user": 1,
+                "team_leader": 2,
+                "manager": 3,
+                "senior": 4,
+                "super_admin": 5,
+            }
+            for user_id, requester_role in UserRole.objects.filter(user_id__in=requester_ids).values_list("user_id", "role__key"):
+                if role_priority.get(requester_role, 0) >= role_priority.get(requester_role_map.get(user_id, ""), 0):
+                    requester_role_map[user_id] = requester_role
 
-        for req in solves_list:
+        for req in demand_list:
             if not _in_requester_scope(req):
                 continue
 
             status_value = str(req.status or "").upper()
-            is_closed = status_value == ServiceRequest.Status.CLOSED
-            is_pending = status_value == ServiceRequest.Status.COMPLETED
-            is_sent_back = status_value in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.IN_PROGRESS}
-
             resolve_at = req.closed_at or req.completed_at
+            created_in_range = _in_selected_range(req.created_at)
+            closed_in_range = _in_selected_range(resolve_at)
+            is_closed = status_value == ServiceRequest.Status.CLOSED and closed_in_range
+            is_pending = status_value == ServiceRequest.Status.COMPLETED and (created_in_range or closed_in_range)
+            is_sent_back = status_value in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.IN_PROGRESS} and created_in_range
             row_hours = None
             if resolve_at and req.created_at:
                 row_hours = (resolve_at - req.created_at).total_seconds() / 3600
@@ -1359,23 +1452,73 @@ class CreditsSolvesListView(APIView):
                     else "Unknown source entity"
                 )
             )
-
-            source_team_leader_id = requester.team_leader_id if requester else None
-            source_team_leader_name = (
-                (requester.team_leader.get_full_name() or requester.team_leader.username).strip()
-                if requester and requester.team_leader_id and requester.team_leader
-                else ""
+            source_company_id_value = (
+                (req.source_entity.company_id if req.source_entity_id and req.source_entity else None)
+                or (
+                    requester.entity.company_id
+                    if requester and requester.entity_id and requester.entity
+                    else None
+                )
+                or req.company_id
+                or "unknown"
             )
-            if not source_team_leader_id and requester_id:
+            source_company_name = (
+                req.source_entity.company.name
+                if req.source_entity_id and req.source_entity and req.source_entity.company_id and req.source_entity.company
+                else (
+                    requester.entity.company.name
+                    if requester and requester.entity_id and requester.entity and requester.entity.company_id and requester.entity.company
+                    else (req.company.name if req.company_id and req.company else "Unknown source company")
+                )
+            )
+
+            requester_role_key = requester_role_map.get(requester_id, "")
+            if requester_role_key == "team_leader" and requester_id:
                 source_team_leader_id = requester_id
-                source_team_leader_name = requester_name
-            source_team_key = f"tl-{source_team_leader_id}" if source_team_leader_id else f"source-entity-{source_entity_id_value}"
+            elif requester_role_key in {"manager", "senior", "super_admin"}:
+                source_team_leader_id = None
+            else:
+                source_team_leader_id = requester.team_leader_id if requester else None
+            source_team_leader_name = (
+                (requester.get_full_name() or requester.username).strip()
+                if requester and requester_role_key == "team_leader" and requester_id
+                else (
+                    (requester.team_leader.get_full_name() or requester.team_leader.username).strip()
+                    if requester and requester.team_leader_id and requester.team_leader
+                    else ""
+                )
+            )
+            has_real_source_team = bool(source_team_leader_id and source_team_leader_name)
+            source_team_key = (
+                f"tl-{source_team_leader_id}"
+                if has_real_source_team
+                else (f"direct-requester-{requester_id}" if requester_id else f"source-entity-{source_entity_id_value}")
+            )
             source_team_label = (
                 f"{source_team_leader_name}'s Team"
-                if source_team_leader_name
-                else (source_entity_name or "Unknown source team")
+                if has_real_source_team
+                else ""
             )
+            if not source_team_label:
+                source_team_label = (
+                    f"Direct requester: {requester_name}"
+                    if requester_name
+                    else (source_entity_name or "Unknown source requester")
+                )
 
+            company_bucket = source_company_stats.setdefault(
+                str(source_company_id_value),
+                {
+                    "companyId": source_company_id_value,
+                    "name": source_company_name,
+                    "createdCount": 0,
+                    "closedCount": 0,
+                    "pendingCount": 0,
+                    "sentBackCount": 0,
+                    "hoursTotal": 0.0,
+                    "hoursCount": 0,
+                },
+            )
             entity_bucket = source_entity_stats.setdefault(
                 str(source_entity_id_value),
                 {
@@ -1426,15 +1569,16 @@ class CreditsSolvesListView(APIView):
                 },
             )
 
-            for bucket in (entity_bucket, team_bucket, requester_bucket):
-                bucket["createdCount"] += 1
+            for bucket in (company_bucket, entity_bucket, team_bucket, requester_bucket):
+                if created_in_range:
+                    bucket["createdCount"] += 1
                 if is_closed:
                     bucket["closedCount"] += 1
                 if is_pending:
                     bucket["pendingCount"] += 1
                 if is_sent_back:
                     bucket["sentBackCount"] += 1
-                if isinstance(row_hours, (int, float)) and row_hours > 0:
+                if is_closed and isinstance(row_hours, (int, float)) and row_hours > 0:
                     bucket["hoursTotal"] += float(row_hours)
                     bucket["hoursCount"] += 1
 
@@ -1443,11 +1587,21 @@ class CreditsSolvesListView(APIView):
             for item in rows:
                 created_count = int(item.get("createdCount", 0) or 0)
                 closed_count = int(item.get("closedCount", 0) or 0)
+                pending_count = int(item.get("pendingCount", 0) or 0)
+                sent_back_count = int(item.get("sentBackCount", 0) or 0)
+                if created_count <= 0 and closed_count <= 0 and pending_count <= 0 and sent_back_count <= 0:
+                    continue
                 avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
                 payload = {
                     **item,
                     "completionRate": int(round((closed_count / created_count) * 100)) if created_count else 0,
                     "avgHours": avg_hours,
+                    "created_count": created_count,
+                    "closed_count": closed_count,
+                    "pending_count": pending_count,
+                    "sent_back_count": sent_back_count,
+                    "completion_rate": int(round((closed_count / created_count) * 100)) if created_count else 0,
+                    "avg_hours": avg_hours,
                 }
                 payload.pop("hoursTotal", None)
                 payload.pop("hoursCount", None)
@@ -1455,6 +1609,7 @@ class CreditsSolvesListView(APIView):
             return sorted(finalized, key=_demand_sort_key)
 
         request_demand_rankings = {
+            "sourceCompanies": _finalize_request_demand(source_company_stats.values()),
             "sourceEntities": _finalize_request_demand(source_entity_stats.values()),
             "sourceTeams": _finalize_request_demand(source_team_stats.values()),
             "requesters": _finalize_request_demand(requester_stats.values()),

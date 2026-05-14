@@ -16,7 +16,7 @@ function getModeTabs(role, mode, entityType) {
 
   if (role === "super_admin") {
     return isRequester
-      ? ["sourceEntities", "sourceTeams", "requesters"]
+      ? ["sourceCompanies", "sourceEntities", "sourceTeams", "requesters"]
       : ["companies", "entities", "teams", "people"];
   }
   if (role === "senior") {

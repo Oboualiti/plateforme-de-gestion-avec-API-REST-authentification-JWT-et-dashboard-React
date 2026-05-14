@@ -475,12 +475,32 @@ export function AppShell({ children }) {
             <button
               type="button"
               onClick={handleThemeToggle}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input px-2.5 text-xs font-bold uppercase tracking-wider text-foreground transition-colors hover:bg-muted"
+              className="inline-flex h-9 items-center gap-0.5 rounded-md border border-ink/15 bg-card/70 p-1 text-foreground shadow-sm transition-all duration-200 hover:bg-card dark:border-ink/25 dark:bg-surface-2/80 dark:hover:bg-surface-2"
               title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              {isDarkMode ? "Light" : "Dark"}
+              <span
+                className={cn(
+                  "inline-flex h-6.5 w-8 items-center justify-center rounded-sm transition-all duration-200",
+                  !isDarkMode
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                aria-hidden="true"
+              >
+                <Sun className="h-3.5 w-3.5" />
+              </span>
+              <span
+                className={cn(
+                  "inline-flex h-6.5 w-8 items-center justify-center rounded-sm transition-all duration-200",
+                  isDarkMode
+                    ? "bg-secondary text-secondary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                aria-hidden="true"
+              >
+                <Moon className="h-3.5 w-3.5" />
+              </span>
             </button>
             <NotificationsBell />
             <UserMenu />

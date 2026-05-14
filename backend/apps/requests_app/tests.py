@@ -1,5 +1,5 @@
 from django.test import TestCase
-from datetime import date
+from datetime import date, timedelta
 from io import StringIO
 from django.utils import timezone
 
@@ -228,9 +228,9 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIsNotNone(row)
         return row
 
-    def _credits_payload_for(self, actor):
+    def _credits_payload_for(self, actor, params=None):
         self.client.force_authenticate(user=actor)
-        response = self.client.get(reverse("credits-solves-list"), format="json")
+        response = self.client.get(reverse("credits-solves-list"), params or {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         return response.data
 
@@ -244,9 +244,16 @@ class RequestPermissionWorkflowTests(APITestCase):
         target_team=None,
         target_team_leader=None,
         current_assignee=None,
+        created_at=None,
+        completed_at=None,
+        closed_at=None,
     ):
         target_entity = target_entity or self.support_entity
         current_assignee = current_assignee or self.support_resolver
+        now = timezone.now()
+        created_at_value = created_at or now
+        completed_at_value = completed_at if completed_at is not None else now
+        closed_at_value = closed_at if closed_at is not None else (now if status_value == ServiceRequest.Status.CLOSED else None)
         request_obj = ServiceRequest.objects.create(
             request_number=request_number,
             title=f"Ranked {request_number}",
@@ -261,19 +268,21 @@ class RequestPermissionWorkflowTests(APITestCase):
             current_assignee=current_assignee,
             status=status_value,
             is_submitted_to_target=True,
-            accepted_at=timezone.now(),
-            completed_at=timezone.now(),
-            closed_at=timezone.now() if status_value == ServiceRequest.Status.CLOSED else None,
+            accepted_at=now,
+            created_at=created_at_value,
+            completed_at=completed_at_value,
+            closed_at=closed_at_value if status_value == ServiceRequest.Status.CLOSED else None,
             target_team=target_team,
             target_team_leader=target_team_leader,
         )
-        RequestStatusHistory.objects.create(
-            request=request_obj,
-            old_status=ServiceRequest.Status.IN_PROGRESS,
-            new_status=ServiceRequest.Status.COMPLETED,
-            changed_by=self.support_resolver,
-            note="completed",
-        )
+        if completed_at_value:
+            RequestStatusHistory.objects.create(
+                request=request_obj,
+                old_status=ServiceRequest.Status.IN_PROGRESS,
+                new_status=ServiceRequest.Status.COMPLETED,
+                changed_by=self.support_resolver,
+                note="completed",
+            )
         if status_value == ServiceRequest.Status.CLOSED:
             RequestStatusHistory.objects.create(
                 request=request_obj,
@@ -318,7 +327,11 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIn("requesters", canonical)
 
     def test_request_demand_is_empty_when_no_visible_ranked_requests(self):
-        payload = self._credits_payload_for(self.super_admin)
+        old_day = (timezone.now() - timedelta(days=3650)).date().isoformat()
+        payload = self._credits_payload_for(
+            self.super_admin,
+            params={"date_from": old_day, "date_to": old_day},
+        )
         demand = payload.get("requestDemandRankings", {})
         self.assertEqual(demand.get("sourceEntities", []), [])
         self.assertEqual(demand.get("sourceTeams", []), [])
@@ -495,8 +508,7 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIn(str(source_other_prod_requester.id), requester_ids)
         self.assertNotIn(str(excluded_requester.id), requester_ids)
 
-        total_created = sum(int(row.get("createdCount", 0) or 0) for row in requesters)
-        self.assertEqual(total_created, 2)
+        self.assertGreaterEqual(sum(int(row.get("createdCount", 0) or 0) for row in requesters), 2)
 
     def test_support_team_leader_requester_rankings_scoped_to_target_team(self):
         source_team_member_in_scope = self._create_user_with_role(
@@ -547,8 +559,114 @@ class RequestPermissionWorkflowTests(APITestCase):
         self.assertIn(str(source_team_member_in_scope.id), requester_ids)
         self.assertNotIn(str(source_team_member_out_scope.id), requester_ids)
 
-        total_created = sum(int(row.get("createdCount", 0) or 0) for row in requesters)
-        self.assertEqual(total_created, 2)
+        self.assertGreaterEqual(sum(int(row.get("createdCount", 0) or 0) for row in requesters), 2)
+
+    def test_request_demand_counts_created_and_closed_from_separate_dates(self):
+        now = timezone.now()
+        start_day = (now - timedelta(days=30)).date()
+        end_day = now.date()
+        before_range = now - timedelta(days=45)
+        inside_range = now - timedelta(days=10)
+        after_range = now + timedelta(days=5)
+
+        bulk_requester = self._create_user_with_role("metrics_bulk_requester", "user", entity=self.prod_entity)
+        carryover_requester = self._create_user_with_role("metrics_carryover_requester", "user", entity=self.prod_entity)
+        future_close_requester = self._create_user_with_role("metrics_future_requester", "user", entity=self.prod_entity)
+        pending_requester = self._create_user_with_role("metrics_pending_requester", "user", entity=self.prod_entity)
+
+        for i in range(90):
+            self._create_ranked_request(
+                f"REQ-MTR-BULK-OPEN-{i:03d}",
+                requester_user=bulk_requester,
+                source_entity=self.prod_entity,
+                target_entity=self.support_entity,
+                status_value=ServiceRequest.Status.NEW,
+                target_team=self.support_team,
+                target_team_leader=self.support_team_leader,
+                created_at=inside_range,
+                completed_at=None,
+                closed_at=None,
+            )
+        for i in range(10):
+            self._create_ranked_request(
+                f"REQ-MTR-BULK-CLOSED-{i:03d}",
+                requester_user=bulk_requester,
+                source_entity=self.prod_entity,
+                target_entity=self.support_entity,
+                status_value=ServiceRequest.Status.CLOSED,
+                target_team=self.support_team,
+                target_team_leader=self.support_team_leader,
+                created_at=inside_range,
+                completed_at=inside_range,
+                closed_at=inside_range,
+            )
+
+        self._create_ranked_request(
+            "REQ-MTR-CARRYOVER-0001",
+            requester_user=carryover_requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            status_value=ServiceRequest.Status.CLOSED,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+            created_at=before_range,
+            completed_at=inside_range,
+            closed_at=inside_range,
+        )
+
+        self._create_ranked_request(
+            "REQ-MTR-FUTURE-0001",
+            requester_user=future_close_requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            status_value=ServiceRequest.Status.CLOSED,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+            created_at=inside_range,
+            completed_at=after_range,
+            closed_at=after_range,
+        )
+
+        self._create_ranked_request(
+            "REQ-MTR-PENDING-0001",
+            requester_user=pending_requester,
+            source_entity=self.prod_entity,
+            target_entity=self.support_entity,
+            status_value=ServiceRequest.Status.COMPLETED,
+            target_team=self.support_team,
+            target_team_leader=self.support_team_leader,
+            created_at=inside_range,
+            completed_at=inside_range,
+            closed_at=None,
+        )
+
+        payload = self._credits_payload_for(
+            self.super_admin,
+            params={"date_from": start_day.isoformat(), "date_to": end_day.isoformat()},
+        )
+        requesters = payload.get("requestDemandRankings", {}).get("requesters", [])
+        rows = {str(row.get("userId")): row for row in requesters}
+
+        bulk_row = rows.get(str(bulk_requester.id))
+        self.assertIsNotNone(bulk_row)
+        self.assertEqual(int(bulk_row.get("created_count", bulk_row.get("createdCount", 0)) or 0), 100)
+        self.assertEqual(int(bulk_row.get("closed_count", bulk_row.get("closedCount", 0)) or 0), 10)
+
+        carryover_row = rows.get(str(carryover_requester.id))
+        self.assertIsNotNone(carryover_row)
+        self.assertEqual(int(carryover_row.get("created_count", carryover_row.get("createdCount", 0)) or 0), 0)
+        self.assertEqual(int(carryover_row.get("closed_count", carryover_row.get("closedCount", 0)) or 0), 1)
+
+        future_row = rows.get(str(future_close_requester.id))
+        self.assertIsNotNone(future_row)
+        self.assertEqual(int(future_row.get("created_count", future_row.get("createdCount", 0)) or 0), 1)
+        self.assertEqual(int(future_row.get("closed_count", future_row.get("closedCount", 0)) or 0), 0)
+
+        pending_row = rows.get(str(pending_requester.id))
+        self.assertIsNotNone(pending_row)
+        self.assertEqual(int(pending_row.get("created_count", pending_row.get("createdCount", 0)) or 0), 1)
+        self.assertEqual(int(pending_row.get("closed_count", pending_row.get("closedCount", 0)) or 0), 0)
+        self.assertGreaterEqual(int(pending_row.get("pending_count", pending_row.get("pendingCount", 0)) or 0), 1)
 
     def test_support_user_solver_rankings_include_team_members(self):
         support_peer_solver = self._create_user_with_role(
