@@ -21,6 +21,12 @@ import {
   ExternalLink,
   Clock,
   Loader2,
+  Search,
+  X,
+  CircleAlert,
+  Filter,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -485,6 +491,33 @@ function RequestDetailsPage() {
   const [assignTlDialogOpen, setAssignTlDialogOpen] = useState(false)
   const [reassignTeamDialogOpen, setReassignTeamDialogOpen] = useState(false)
   const [reassignTeamForm, setReassignTeamForm] = useState({ targetTeamId: '', note: '' })
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
+  const [inviteDetailsDialogOpen, setInviteDetailsDialogOpen] = useState(false)
+  const [inviteTargets, setInviteTargets] = useState({ entities: [], teams: [], users: [] })
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteError, setInviteError] = useState('')
+  const [inviteTeamSearch, setInviteTeamSearch] = useState('')
+  const [inviteTeamEntityFilter, setInviteTeamEntityFilter] = useState('all')
+  const [inviteTeamFilterOpen, setInviteTeamFilterOpen] = useState(false)
+  const [inviteEntitySearch, setInviteEntitySearch] = useState('')
+  const [inviteEntityFilterOpen, setInviteEntityFilterOpen] = useState(false)
+  const [inviteEntityTypeFilter, setInviteEntityTypeFilter] = useState('all')
+  const [inviteUserSearch, setInviteUserSearch] = useState('')
+  const [inviteUserRoleFilter, setInviteUserRoleFilter] = useState('all')
+  const [inviteUserEntityFilter, setInviteUserEntityFilter] = useState('all')
+  const [inviteForm, setInviteForm] = useState({
+    inviteType: 'users',
+    entityIds: [],
+    teamIds: [],
+    userIds: [],
+    permissions: ['request.comment', 'request.view_discussion'],
+  })
+  const [entityPermissionsById, setEntityPermissionsById] = useState({})
+  const [teamPermissionsById, setTeamPermissionsById] = useState({})
+  const [userPermissionsById, setUserPermissionsById] = useState({})
+  const [collapsedEntityPermissionCards, setCollapsedEntityPermissionCards] = useState({})
+  const [collapsedTeamPermissionCards, setCollapsedTeamPermissionCards] = useState({})
+  const [collapsedUserPermissionCards, setCollapsedUserPermissionCards] = useState({})
   const [lifecycleMenuOpen, setLifecycleMenuOpen] = useState(false)
   const [editCommentId, setEditCommentId] = useState(null)
   const [editCommentText, setEditCommentText] = useState('')
@@ -590,6 +623,7 @@ function RequestDetailsPage() {
   const canAssignToMe = Boolean(request?.can_assign_to_me) && isTeamLeader && isSupportOrDevEntity
   const canAssignToMember = isTeamLeader && isSupportOrDevEntity && !request?.current_assignee && request?.can_assign_to_me
   const canReassignTargetTeam = Boolean(request?.can_reassign_target_team) && isSupportOrDevEntity
+  const canInviteMembers = Boolean(request?.can_invite_members)
   const hasReassignmentTargets = (request?.available_reassignment_targets || []).length > 0
   const hasTargetTeamLeader = Boolean(
     request?.target_team_leader?.id || request?.target_team_leader || request?.target_team_leader_name
@@ -599,7 +633,87 @@ function RequestDetailsPage() {
     request?.target_team_id || request?.target_team_leader?.id || request?.target_team_leader || 0
   )
   const potentialAssignees = request?.potential_assignees || []
-  const assignmentActions = (canAssignToMe || canAssignToMember || canReassignTargetTeam) ? (
+  const invitePermissionOptions = [
+    { key: 'request.update_status', label: 'Update status' },
+    { key: 'request.comment', label: 'Comment' },
+    { key: 'request.view_discussion', label: 'View discussion' },
+    { key: 'request.edit_deadline', label: 'Edit deadline' },
+  ]
+  const defaultInvitePermissions = ['request.comment', 'request.view_discussion']
+  const inviteTeamsForSelectedEntities = useMemo(() => {
+    if (!inviteForm.entityIds.length) return inviteTargets.teams || []
+    return (inviteTargets.teams || []).filter((item) => inviteForm.entityIds.includes(item.entity_id))
+  }, [inviteForm.entityIds, inviteTargets.teams])
+  const inviteFilteredTeams = useMemo(() => {
+    const base = inviteForm.inviteType === 'team' ? (inviteTargets.teams || []) : inviteTeamsForSelectedEntities
+    const byEntity = inviteTeamEntityFilter === 'all'
+      ? base
+      : base.filter((team) => String(team.entity_id || '') === String(inviteTeamEntityFilter))
+    const q = inviteTeamSearch.trim().toLowerCase()
+    if (!q) return byEntity
+    return byEntity.filter((team) => {
+      const label = `${team.name || ''} ${team.leader_name || ''}`.toLowerCase()
+      return label.includes(q)
+    })
+  }, [inviteForm.inviteType, inviteTargets.teams, inviteTeamsForSelectedEntities, inviteTeamEntityFilter, inviteTeamSearch])
+  const inviteSupportEntityOptions = useMemo(() => {
+    return (inviteTargets.entities || []).filter((entity) => {
+      const type = String(entity.entity_type || '').toUpperCase()
+      return type === 'SUPPORT' || type === 'TDEV'
+    })
+  }, [inviteTargets.entities])
+  const inviteFilteredEntities = useMemo(() => {
+    const q = inviteEntitySearch.trim().toLowerCase()
+    const base = (inviteTargets.entities || []).filter((entity) => (
+      inviteEntityTypeFilter === 'all'
+        ? true
+        : String(entity.entity_type || '').toUpperCase() === inviteEntityTypeFilter
+    ))
+    if (!q) return base
+    return base.filter((entity) => String(entity.name || '').toLowerCase().includes(q))
+  }, [inviteEntitySearch, inviteEntityTypeFilter, inviteTargets.entities])
+  const inviteUsersForFilters = useMemo(() => {
+    const users = inviteTargets.users || []
+    const byEntity = inviteUserEntityFilter === 'all'
+      ? users
+      : users.filter((item) => String(item.entity_id || '') === String(inviteUserEntityFilter))
+    const byTeam = byEntity
+    const byRole = inviteUserRoleFilter === 'all'
+      ? byTeam
+      : byTeam.filter((item) => (item.role_keys || []).includes(inviteUserRoleFilter))
+    const q = inviteUserSearch.trim().toLowerCase()
+    if (!q) return byRole
+    return byRole.filter((item) => {
+      const label = `${item.username || ''} ${(item.role_keys || []).join(' ')}`.toLowerCase()
+      return label.includes(q)
+    })
+  }, [inviteTargets.users, inviteUserEntityFilter, inviteUserRoleFilter, inviteUserSearch])
+  const inviteUserRoleOptions = useMemo(() => {
+    const roleSet = new Set()
+    ;(inviteTargets.users || []).forEach((item) => {
+      ;(item.role_keys || []).forEach((role) => roleSet.add(role))
+    })
+    return Array.from(roleSet).sort()
+  }, [inviteTargets.users])
+  const inviteTeamMemberCountMap = useMemo(() => {
+    const map = {}
+    ;(inviteTargets.teams || []).forEach((team) => { map[team.id] = 0 })
+    ;(inviteTargets.users || []).forEach((userItem) => {
+      ;(userItem.team_ids || []).forEach((teamId) => {
+        map[teamId] = (map[teamId] || 0) + 1
+      })
+    })
+    return map
+  }, [inviteTargets.teams, inviteTargets.users])
+  const inviteEntityUserCountMap = useMemo(() => {
+    const map = {}
+    ;(inviteTargets.entities || []).forEach((entity) => { map[entity.id] = 0 })
+    ;(inviteTargets.users || []).forEach((userItem) => {
+      if (userItem.entity_id) map[userItem.entity_id] = (map[userItem.entity_id] || 0) + 1
+    })
+    return map
+  }, [inviteTargets.entities, inviteTargets.users])
+  const assignmentActions = (canAssignToMe || canAssignToMember || canReassignTargetTeam || canInviteMembers) ? (
     <div className="flex items-center gap-2">
       {canAssignToMe ? (
         <Button
@@ -635,6 +749,18 @@ function RequestDetailsPage() {
         >
           <Building2 className="h-3.5 w-3.5 mr-1.5" />
           {reassignTeamActionLabel}
+        </Button>
+      ) : null}
+      {canInviteMembers ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 px-3 text-[10px] uppercase tracking-wider font-extrabold border border-ink/10"
+          onClick={openInviteDialog}
+          disabled={actionState.busy}
+        >
+          <Users className="h-3.5 w-3.5 mr-1.5" />
+          Invite Members
         </Button>
       ) : null}
     </div>
@@ -1158,6 +1284,211 @@ function RequestDetailsPage() {
     }))
     setReassignTeamDialogOpen(false)
     setReassignTeamForm({ targetTeamId: '', note: '' })
+  }
+
+  async function openInviteDialog() {
+    setInviteDialogOpen(true)
+    setInviteDetailsDialogOpen(false)
+    setInviteError('')
+  }
+
+  async function openInviteDetailsDialog(type) {
+    setInviteForm((curr) => ({
+      ...curr,
+      inviteType: type,
+      entityIds: [],
+      teamIds: [],
+      userIds: [],
+    }))
+    setInviteLoading(true)
+    setInviteError('')
+    setInviteEntitySearch('')
+    setInviteEntityFilterOpen(false)
+    setInviteEntityTypeFilter('all')
+    setInviteTeamSearch('')
+    setInviteTeamEntityFilter('all')
+    setInviteTeamFilterOpen(false)
+    setInviteUserSearch('')
+    setInviteUserEntityFilter('all')
+    setInviteUserRoleFilter('all')
+    setEntityPermissionsById({})
+    setTeamPermissionsById({})
+    setUserPermissionsById({})
+    setCollapsedEntityPermissionCards({})
+    setCollapsedTeamPermissionCards({})
+    setCollapsedUserPermissionCards({})
+    try {
+      const response = await api.get(`/requests/${requestId}/invite-members/`)
+      setInviteTargets(response.data || { entities: [], teams: [], users: [] })
+      setInviteDetailsDialogOpen(true)
+      setInviteDialogOpen(false)
+    } catch (error) {
+      setInviteError(error.response?.data?.detail || 'Could not load invitation targets.')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  function toggleIdInArray(values, id, checked) {
+    if (checked) return values.includes(id) ? values : [...values, id]
+    return values.filter((item) => item !== id)
+  }
+
+  async function handleInviteMembers() {
+    setInviteError('')
+    if (inviteForm.inviteType === 'entity') {
+      for (const entityId of inviteForm.entityIds) {
+        const perms = entityPermissionsById[entityId] || []
+        if (!perms.length) {
+          setInviteError('Choose at least one permission for each selected entity.')
+          return
+        }
+      }
+
+      for (const entityId of inviteForm.entityIds) {
+        const result = await handleAction(api.post(`/requests/${requestId}/invite-members/`, {
+          invite_type: 'entity',
+          entity_ids: [Number(entityId)],
+          permissions: entityPermissionsById[entityId] || [],
+        }))
+        if (!result?.ok) {
+          setInviteError(
+            result?.error?.response?.data?.detail
+            || 'Could not invite one of the selected entities.',
+          )
+          return
+        }
+      }
+
+      setInviteDialogOpen(false)
+      setInviteDetailsDialogOpen(false)
+      setInviteForm({
+        inviteType: 'users',
+        entityIds: [],
+        teamIds: [],
+        userIds: [],
+        permissions: defaultInvitePermissions,
+      })
+      setEntityPermissionsById({})
+      setTeamPermissionsById({})
+      setUserPermissionsById({})
+      setCollapsedEntityPermissionCards({})
+      setCollapsedTeamPermissionCards({})
+      setCollapsedUserPermissionCards({})
+      return
+    }
+
+    if (inviteForm.inviteType === 'team') {
+      for (const teamId of inviteForm.teamIds) {
+        const perms = teamPermissionsById[teamId] || []
+        if (!perms.length) {
+          setInviteError('Choose at least one permission for each selected team.')
+          return
+        }
+      }
+      for (const teamId of inviteForm.teamIds) {
+        const result = await handleAction(api.post(`/requests/${requestId}/invite-members/`, {
+          invite_type: 'team',
+          team_ids: [Number(teamId)],
+          permissions: teamPermissionsById[teamId] || [],
+        }))
+        if (!result?.ok) {
+          setInviteError(
+            result?.error?.response?.data?.detail
+            || 'Could not invite one of the selected teams.',
+          )
+          return
+        }
+      }
+      setInviteDialogOpen(false)
+      setInviteDetailsDialogOpen(false)
+      setInviteForm({
+        inviteType: 'users',
+        entityIds: [],
+        teamIds: [],
+        userIds: [],
+        permissions: defaultInvitePermissions,
+      })
+      setEntityPermissionsById({})
+      setTeamPermissionsById({})
+      setUserPermissionsById({})
+      setCollapsedEntityPermissionCards({})
+      setCollapsedTeamPermissionCards({})
+      setCollapsedUserPermissionCards({})
+      return
+    }
+
+    if (inviteForm.inviteType === 'users') {
+      for (const userId of inviteForm.userIds) {
+        const perms = userPermissionsById[userId] || []
+        if (!perms.length) {
+          setInviteError('Choose at least one permission for each selected user.')
+          return
+        }
+      }
+      for (const userId of inviteForm.userIds) {
+        const result = await handleAction(api.post(`/requests/${requestId}/invite-members/`, {
+          invite_type: 'users',
+          user_ids: [Number(userId)],
+          permissions: userPermissionsById[userId] || [],
+        }))
+        if (!result?.ok) {
+          setInviteError(
+            result?.error?.response?.data?.detail
+            || 'Could not invite one of the selected users.',
+          )
+          return
+        }
+      }
+      setInviteDialogOpen(false)
+      setInviteDetailsDialogOpen(false)
+      setInviteForm({
+        inviteType: 'users',
+        entityIds: [],
+        teamIds: [],
+        userIds: [],
+        permissions: defaultInvitePermissions,
+      })
+      setEntityPermissionsById({})
+      setTeamPermissionsById({})
+      setUserPermissionsById({})
+      setCollapsedEntityPermissionCards({})
+      setCollapsedTeamPermissionCards({})
+      setCollapsedUserPermissionCards({})
+      return
+    }
+
+    const payload = {
+      invite_type: inviteForm.inviteType,
+      permissions: inviteForm.permissions,
+    }
+    if (inviteForm.inviteType === 'entity') payload.entity_ids = inviteForm.entityIds.map((id) => Number(id))
+    if (inviteForm.inviteType === 'team') payload.team_ids = inviteForm.teamIds.map((id) => Number(id))
+    if (inviteForm.inviteType === 'users') payload.user_ids = inviteForm.userIds.map((id) => Number(id))
+
+    const result = await handleAction(api.post(`/requests/${requestId}/invite-members/`, payload))
+    if (!result?.ok) {
+      setInviteError(
+        result?.error?.response?.data?.detail
+        || 'Could not invite members with selected permissions.',
+      )
+      return
+    }
+    setInviteDialogOpen(false)
+    setInviteDetailsDialogOpen(false)
+    setInviteForm({
+      inviteType: 'users',
+      entityIds: [],
+      teamIds: [],
+      userIds: [],
+      permissions: defaultInvitePermissions,
+    })
+    setEntityPermissionsById({})
+    setTeamPermissionsById({})
+    setUserPermissionsById({})
+    setCollapsedEntityPermissionCards({})
+    setCollapsedTeamPermissionCards({})
+    setCollapsedUserPermissionCards({})
   }
 
   async function saveDeadline() {
@@ -2033,6 +2364,640 @@ function RequestDetailsPage() {
               >
                 Save
               </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {inviteDialogOpen ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4">
+          <section className="w-full max-w-2xl rounded-xl border border-ink/10 bg-card shadow-xl">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Access Invitation
+              </p>
+              <h3 className="mt-1 text-base font-extrabold text-foreground">Invite Members</h3>
+            </div>
+            <div className="grid gap-4 px-5 py-5 sm:grid-cols-3">
+              {[
+                { key: 'entity', title: 'Entity', text: 'Invite one or more support/dev entities.' },
+                { key: 'team', title: 'Team', text: 'Invite one or more teams with selected permissions.' },
+                { key: 'users', title: 'Users', text: 'Invite specific users with entity/team filters.' },
+              ].map((card) => (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => openInviteDetailsDialog(card.key)}
+                  className="rounded-xl border border-ink/10 bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-foreground">{card.title}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{card.text}</p>
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button type="button" variant="ghost" onClick={() => setInviteDialogOpen(false)} disabled={actionState.busy}>Cancel</Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {inviteDetailsDialogOpen ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 p-4">
+          <section className={cn(
+            "w-full rounded-xl border border-ink/10 bg-card shadow-xl",
+            inviteForm.inviteType === 'team' ? "max-w-xl" : "max-w-2xl",
+          )}>
+            <div className="border-b border-border px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-warning/15 text-warning">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Access Invitation</p>
+                    <h3 className="mt-1 text-2xl font-extrabold text-foreground">
+                      {inviteForm.inviteType === 'entity' ? 'Invite Entities' : inviteForm.inviteType === 'team' ? 'Invite Teams' : 'Invite Users'}
+                    </h3>
+                    {inviteForm.inviteType === 'team' ? (
+                      <p className="mt-1 text-sm text-muted-foreground">Share this request with one or more teams.</p>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInviteDetailsDialogOpen(false)}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              {inviteLoading ? <p className="text-sm text-muted-foreground">Loading available targets...</p> : null}
+              {inviteError ? <p className="text-xs font-bold text-destructive uppercase">{inviteError}</p> : null}
+
+              {inviteForm.inviteType === 'team' ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={inviteTeamSearch}
+                        onChange={(e) => setInviteTeamSearch(e.target.value)}
+                        placeholder="Search teams..."
+                        className="h-10 pl-9"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10 px-3 gap-1.5"
+                      onClick={() => setInviteTeamFilterOpen((curr) => !curr)}
+                    >
+                      <Filter className="h-4 w-4" />
+                      <span className="text-xs font-bold">Filter</span>
+                    </Button>
+                  </div>
+                  {inviteTeamFilterOpen ? (
+                    <div className="rounded-md border border-ink/10 bg-muted/20 p-3">
+                      <label className="mb-1 block text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                        Entity (Support / Dev)
+                      </label>
+                      <Select
+                        value={inviteTeamEntityFilter}
+                        onChange={(e) => {
+                          const nextEntity = e.target.value
+                          setInviteTeamEntityFilter(nextEntity)
+                          setInviteForm((curr) => ({
+                            ...curr,
+                            teamIds: nextEntity === 'all'
+                              ? curr.teamIds
+                              : curr.teamIds.filter((teamId) => {
+                                const team = (inviteTargets.teams || []).find((item) => item.id === teamId)
+                                return team && String(team.entity_id || '') === String(nextEntity)
+                              }),
+                          }))
+                        }}
+                        className="h-9 w-full"
+                      >
+                        <option value="all">All support/dev entities</option>
+                        {inviteSupportEntityOptions.map((entity) => (
+                          <option key={entity.id} value={entity.id}>{entity.name}</option>
+                        ))}
+                      </Select>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Teams</p>
+                    <div className="max-h-[320px] overflow-y-auto rounded-lg border border-ink/10 bg-card">
+                      {inviteFilteredTeams.map((team) => (
+                        <label key={team.id} className="flex items-center gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
+                          <input
+                            type="checkbox"
+                            checked={inviteForm.teamIds.includes(team.id)}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setInviteForm((curr) => ({
+                                ...curr,
+                                teamIds: toggleIdInArray(curr.teamIds, team.id, checked),
+                                userIds: [],
+                              }))
+                              setTeamPermissionsById((curr) => {
+                                if (checked) {
+                                  if (curr[team.id]) return curr
+                                  return { ...curr, [team.id]: [...defaultInvitePermissions] }
+                                }
+                                const { [team.id]: _removed, ...rest } = curr
+                                return rest
+                              })
+                              setCollapsedTeamPermissionCards((curr) => {
+                                if (checked) return { ...curr, [team.id]: true }
+                                const { [team.id]: _removed, ...rest } = curr
+                                return rest
+                              })
+                            }}
+                          />
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning/15 text-warning">
+                            <Users className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-foreground">{team.name}</p>
+                            <p className="text-xs text-muted-foreground">{inviteTeamMemberCountMap[team.id] || 0} members</p>
+                          </div>
+                          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-ink/10 px-2 text-xs font-extrabold text-muted-foreground">
+                            {inviteTeamMemberCountMap[team.id] || 0}
+                          </span>
+                        </label>
+                      ))}
+                      {inviteFilteredTeams.length === 0 ? (
+                        <p className="py-3 text-center text-xs font-semibold text-muted-foreground">No teams match your search.</p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {inviteForm.teamIds.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Permission Per Team</p>
+                      {inviteForm.teamIds.map((teamId) => {
+                        const team = (inviteTargets.teams || []).find((item) => item.id === teamId)
+                        const selectedPermissions = teamPermissionsById[teamId] || []
+                        return (
+                          <div key={teamId} className="rounded-md border border-ink/10 p-3">
+                            <p className="mb-2 text-xs font-extrabold text-foreground">{team?.name || `Team ${teamId}`}</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {invitePermissionOptions.map((item) => (
+                                <label key={`${teamId}-${item.key}`} className="flex items-center gap-2 text-xs font-semibold">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedPermissions.includes(item.key)}
+                                    onChange={(e) => {
+                                      setTeamPermissionsById((curr) => {
+                                        const current = curr[teamId] || []
+                                        return {
+                                          ...curr,
+                                          [teamId]: e.target.checked
+                                            ? (current.includes(item.key) ? current : [...current, item.key])
+                                            : current.filter((perm) => perm !== item.key),
+                                        }
+                                      })
+                                    }}
+                                  />
+                                  <span>{item.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-md border border-warning/20 bg-warning/10 px-3 py-2">
+                    <p className="flex items-start gap-2 text-xs text-foreground">
+                      <CircleAlert className="mt-0.5 h-4 w-4 text-warning" />
+                      <span><span className="font-bold">Who can view this request?</span> Only users in invited teams with selected permissions can access this request.</span>
+                    </p>
+                  </div>
+                </>
+              ) : null}
+
+              {inviteForm.inviteType !== 'team' ? (
+                <>
+
+              {inviteForm.inviteType === 'entity' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={inviteEntitySearch}
+                        onChange={(e) => setInviteEntitySearch(e.target.value)}
+                        placeholder="Search entities..."
+                        className="h-10 pl-9"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10 px-3 gap-1.5"
+                      onClick={() => setInviteEntityFilterOpen((curr) => !curr)}
+                    >
+                      <Filter className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {inviteEntityFilterOpen ? (
+                    <div className="rounded-md border border-ink/10 bg-muted/20 p-3">
+                      <label className="mb-1 block text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                        Entity type
+                      </label>
+                      <Select
+                        value={inviteEntityTypeFilter}
+                        onChange={(e) => setInviteEntityTypeFilter(e.target.value)}
+                        className="h-9 w-full"
+                      >
+                        <option value="all">All allowed</option>
+                        <option value="SUPPORT">Support</option>
+                        <option value="TDEV">Dev</option>
+                      </Select>
+                    </div>
+                  ) : null}
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                    Entities
+                  </p>
+                  <div className="max-h-[320px] overflow-y-auto rounded-lg border border-ink/10 bg-card">
+                    {inviteFilteredEntities.map((entity) => (
+                      <label key={entity.id} className="flex items-center gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
+                        <input
+                          type="checkbox"
+                          checked={inviteForm.entityIds.includes(entity.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setInviteForm((curr) => ({
+                              ...curr,
+                              entityIds: toggleIdInArray(curr.entityIds, entity.id, checked),
+                              teamIds: checked ? curr.teamIds : curr.teamIds.filter((teamId) => {
+                                const team = (inviteTargets.teams || []).find((item) => item.id === teamId)
+                                return team && team.entity_id !== entity.id
+                              }),
+                              userIds: [],
+                            }))
+                            setEntityPermissionsById((curr) => {
+                              if (checked) {
+                                if (curr[entity.id]) return curr
+                                return { ...curr, [entity.id]: [...defaultInvitePermissions] }
+                              }
+                              const { [entity.id]: _removed, ...rest } = curr
+                              return rest
+                            })
+                          }}
+                        />
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning/15 text-warning">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-foreground">{entity.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {String(entity.entity_type || '').toUpperCase() === 'SUPPORT'
+                              ? 'Support entity'
+                              : String(entity.entity_type || '').toUpperCase() === 'TDEV'
+                                ? 'Dev entity'
+                                : 'Entity'}
+                          </p>
+                        </div>
+                        <span className="inline-flex h-7 items-center justify-center rounded-md border border-ink/10 px-2 text-[10px] font-extrabold text-muted-foreground">
+                          {inviteEntityUserCountMap[entity.id] || 0} users
+                        </span>
+                      </label>
+                    ))}
+                    {inviteFilteredEntities.length === 0 ? (
+                      <p className="py-3 text-center text-xs font-semibold text-muted-foreground">No entities match your search.</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {inviteForm.inviteType === 'entity' && inviteForm.entityIds.length > 0 ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                    Permission Per Entity
+                  </label>
+                  {inviteForm.entityIds.map((entityId) => {
+                    const entity = (inviteTargets.entities || []).find((item) => item.id === entityId)
+                    const selectedPermissions = entityPermissionsById[entityId] || []
+                    const isCollapsed = Boolean(collapsedEntityPermissionCards[entityId])
+                    return (
+                      <div key={entityId} className="rounded-md border border-ink/10 p-3">
+                        <button
+                          type="button"
+                          className="mb-2 flex w-full items-center justify-between text-left"
+                          onClick={() => setCollapsedEntityPermissionCards((curr) => ({ ...curr, [entityId]: !curr[entityId] }))}
+                        >
+                          <p className="text-xs font-extrabold text-foreground">{entity?.name || `Entity ${entityId}`}</p>
+                          {isCollapsed ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
+                        </button>
+                        {!isCollapsed ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            {invitePermissionOptions.map((item) => (
+                              <label key={`${entityId}-${item.key}`} className="flex items-center gap-2 text-xs font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPermissions.includes(item.key)}
+                                  onChange={(e) => {
+                                    setEntityPermissionsById((curr) => {
+                                      const current = curr[entityId] || []
+                                      return {
+                                        ...curr,
+                                        [entityId]: e.target.checked
+                                          ? (current.includes(item.key) ? current : [...current, item.key])
+                                          : current.filter((perm) => perm !== item.key),
+                                      }
+                                    })
+                                  }}
+                                />
+                                <span>{item.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+              {inviteForm.inviteType === 'entity' ? (
+                <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+                  <p className="flex items-start gap-2 text-xs text-foreground">
+                    <CircleAlert className="mt-0.5 h-4 w-4 text-primary" />
+                    <span><span className="font-bold">Who can view this request?</span> Only users within selected entities (with selected permissions) can access this request.</span>
+                  </p>
+                </div>
+              ) : null}
+
+              {inviteForm.inviteType === 'team' ? (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Teams</label>
+                  <Input
+                    value={inviteTeamSearch}
+                    onChange={(e) => setInviteTeamSearch(e.target.value)}
+                    placeholder="Filter teams by name or leader..."
+                    className="h-8"
+                  />
+                  <div className="max-h-36 overflow-y-auto rounded-md border border-ink/10 p-2">
+                    {inviteFilteredTeams.map((team) => (
+                      <label key={team.id} className="flex items-center gap-2 py-1 text-xs font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={inviteForm.teamIds.includes(team.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setInviteForm((curr) => ({
+                              ...curr,
+                              teamIds: toggleIdInArray(curr.teamIds, team.id, checked),
+                              userIds: [],
+                            }))
+                            setTeamPermissionsById((curr) => {
+                              if (checked) {
+                                if (curr[team.id]) return curr
+                                return { ...curr, [team.id]: [...defaultInvitePermissions] }
+                              }
+                              const { [team.id]: _removed, ...rest } = curr
+                              return rest
+                            })
+                            setCollapsedTeamPermissionCards((curr) => {
+                              if (checked) return { ...curr, [team.id]: true }
+                              const { [team.id]: _removed, ...rest } = curr
+                              return rest
+                            })
+                          }}
+                        />
+                        <span>{team.name}</span>
+                        <span className="text-muted-foreground">({team.leader_name || 'No leader'})</span>
+                      </label>
+                    ))}
+                    {inviteFilteredTeams.length === 0 ? (
+                      <p className="py-2 text-xs font-semibold text-muted-foreground">No teams match the current filters.</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {inviteForm.inviteType === 'team' && inviteForm.teamIds.length > 0 ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                    Permission Per Team
+                  </label>
+                  {inviteForm.teamIds.map((teamId) => {
+                    const team = (inviteTargets.teams || []).find((item) => item.id === teamId)
+                    const selectedPermissions = teamPermissionsById[teamId] || []
+                    const isCollapsed = Boolean(collapsedTeamPermissionCards[teamId])
+                    return (
+                      <div key={teamId} className="rounded-md border border-ink/10 p-3">
+                        <button
+                          type="button"
+                          className="mb-2 flex w-full items-center justify-between text-left"
+                          onClick={() => setCollapsedTeamPermissionCards((curr) => ({ ...curr, [teamId]: !curr[teamId] }))}
+                        >
+                          <p className="text-xs font-extrabold text-foreground">{team?.name || `Team ${teamId}`}</p>
+                          {isCollapsed ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
+                        </button>
+                        {!isCollapsed ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            {invitePermissionOptions.map((item) => (
+                              <label key={`${teamId}-${item.key}`} className="flex items-center gap-2 text-xs font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPermissions.includes(item.key)}
+                                  onChange={(e) => {
+                                    setTeamPermissionsById((curr) => {
+                                      const current = curr[teamId] || []
+                                      return {
+                                        ...curr,
+                                        [teamId]: e.target.checked
+                                          ? (current.includes(item.key) ? current : [...current, item.key])
+                                          : current.filter((perm) => perm !== item.key),
+                                      }
+                                    })
+                                  }}
+                                />
+                                <span>{item.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+
+              {inviteForm.inviteType === 'users' ? (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Users</label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(140px,1fr)]">
+                    <Input
+                      value={inviteUserSearch}
+                      onChange={(e) => setInviteUserSearch(e.target.value)}
+                      placeholder="Search users..."
+                      className="h-10"
+                    />
+                    <Select
+                      value={inviteUserEntityFilter}
+                      onChange={(e) => setInviteUserEntityFilter(e.target.value)}
+                      className="h-10 w-full"
+                    >
+                      <option value="all">All entities</option>
+                      {(inviteTargets.entities || []).map((entity) => (
+                        <option key={entity.id} value={entity.id}>{entity.name}</option>
+                      ))}
+                    </Select>
+                    <Select
+                      value={inviteUserRoleFilter}
+                      onChange={(e) => setInviteUserRoleFilter(e.target.value)}
+                      className="h-10 w-full"
+                    >
+                      <option value="all">All roles</option>
+                      {inviteUserRoleOptions.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="max-h-[320px] overflow-y-auto rounded-lg border border-ink/10 bg-card">
+                    {inviteUsersForFilters.map((candidate) => {
+                      const entityName = (inviteTargets.entities || []).find((item) => item.id === candidate.entity_id)?.name || 'Unknown entity'
+                      return (
+                        <label key={candidate.id} className="flex items-center gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
+                          <input
+                            type="checkbox"
+                            checked={inviteForm.userIds.includes(candidate.id)}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setInviteForm((curr) => ({
+                                ...curr,
+                                userIds: toggleIdInArray(curr.userIds, candidate.id, checked),
+                              }))
+                              setUserPermissionsById((curr) => {
+                                if (checked) {
+                                  if (curr[candidate.id]) return curr
+                                  return { ...curr, [candidate.id]: [...defaultInvitePermissions] }
+                                }
+                                const { [candidate.id]: _removed, ...rest } = curr
+                                return rest
+                              })
+                            }}
+                          />
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning/15 text-warning">
+                            <Users className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-foreground">{candidate.username}</p>
+                            <p className="text-xs text-muted-foreground">{entityName} • {(candidate.role_keys || []).join(', ') || 'user'}</p>
+                          </div>
+                          <span className="inline-flex h-7 items-center justify-center rounded-md border border-ink/10 px-2 text-[10px] font-extrabold uppercase text-muted-foreground">
+                            {(candidate.role_keys || [])[0] || 'user'}
+                          </span>
+                        </label>
+                      )
+                    })}
+                    {inviteUsersForFilters.length === 0 ? (
+                      <p className="py-3 text-center text-xs font-semibold text-muted-foreground">No users match your filters.</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {inviteForm.inviteType === 'users' && inviteForm.userIds.length > 0 ? (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                    Permission Per User
+                  </label>
+                  {inviteForm.userIds.map((userId) => {
+                    const userItem = (inviteTargets.users || []).find((item) => item.id === userId)
+                    const selectedPermissions = userPermissionsById[userId] || []
+                    const isCollapsed = Boolean(collapsedUserPermissionCards[userId])
+                    return (
+                      <div key={userId} className="rounded-md border border-ink/10 p-3">
+                        <button
+                          type="button"
+                          className="mb-2 flex w-full items-center justify-between text-left"
+                          onClick={() => setCollapsedUserPermissionCards((curr) => ({ ...curr, [userId]: !curr[userId] }))}
+                        >
+                          <p className="text-xs font-extrabold text-foreground">{userItem?.username || `User ${userId}`}</p>
+                          {isCollapsed ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
+                        </button>
+                        {!isCollapsed ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            {invitePermissionOptions.map((item) => (
+                              <label key={`${userId}-${item.key}`} className="flex items-center gap-2 text-xs font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPermissions.includes(item.key)}
+                                  onChange={(e) => {
+                                    setUserPermissionsById((curr) => {
+                                      const current = curr[userId] || []
+                                      return {
+                                        ...curr,
+                                        [userId]: e.target.checked
+                                          ? (current.includes(item.key) ? current : [...current, item.key])
+                                          : current.filter((perm) => perm !== item.key),
+                                      }
+                                    })
+                                  }}
+                                />
+                                <span>{item.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+                </>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setInviteDetailsDialogOpen(false)}
+                disabled={actionState.busy}
+              >
+                Cancel
+              </Button>
+              <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setInviteDetailsDialogOpen(false)
+                  setInviteDialogOpen(true)
+                }}
+                disabled={actionState.busy}
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleInviteMembers}
+                disabled={
+                  actionState.busy
+                  || inviteLoading
+                  || (inviteForm.inviteType === 'entity' && inviteForm.entityIds.length === 0)
+                  || (inviteForm.inviteType === 'team' && inviteForm.teamIds.length === 0)
+                  || (inviteForm.inviteType === 'users' && inviteForm.userIds.length === 0)
+                }
+              >
+                {inviteForm.inviteType === 'team'
+                  ? `Invite (${inviteForm.teamIds.length})`
+                  : inviteForm.inviteType === 'entity'
+                    ? `Invite (${inviteForm.entityIds.length})`
+                    : 'Invite'}
+              </Button>
+              </div>
             </div>
           </section>
         </div>

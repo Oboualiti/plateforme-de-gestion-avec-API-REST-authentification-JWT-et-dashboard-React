@@ -436,6 +436,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     is_submitted_to_target = serializers.BooleanField(read_only=True)
     is_pending_approval = serializers.SerializerMethodField()
     can_edit_deadline = serializers.SerializerMethodField()
+    can_invite_members = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
     priority_label = serializers.SerializerMethodField()
     was_rejected = serializers.SerializerMethodField()
@@ -507,6 +508,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "is_submitted_to_target",
             "is_pending_approval",
             "can_edit_deadline",
+            "can_invite_members",
         ]
 
     def get_role_keys(self, obj):
@@ -663,6 +665,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_edit_deadline(self, obj):
         return bool(self.context.get("can_edit_deadline"))
+
+    def get_can_invite_members(self, obj):
+        return bool(self.context.get("can_invite_members"))
 
     def get_attachment_url(self, obj):
         if not obj.attachment:
@@ -859,3 +864,43 @@ class RequestDeadlineUpdateSerializer(serializers.Serializer):
 class RequestAssignUserSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     note = serializers.CharField(required=False, allow_blank=True)
+
+
+class RequestInviteMembersSerializer(serializers.Serializer):
+    invite_type = serializers.ChoiceField(choices=["entity", "team", "users"])
+    entity_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_empty=False,
+    )
+    team_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_empty=False,
+    )
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_empty=False,
+    )
+    permissions = serializers.ListField(
+        child=serializers.ChoiceField(
+            choices=[
+                "request.update_status",
+                "request.comment",
+                "request.view_discussion",
+                "request.edit_deadline",
+            ]
+        ),
+        allow_empty=False,
+    )
+
+    def validate(self, attrs):
+        invite_type = attrs.get("invite_type")
+        if invite_type == "entity" and not attrs.get("entity_ids"):
+            raise serializers.ValidationError({"entity_ids": "At least one entity is required."})
+        if invite_type == "team" and not attrs.get("team_ids"):
+            raise serializers.ValidationError({"team_ids": "At least one team is required."})
+        if invite_type == "users" and not attrs.get("user_ids"):
+            raise serializers.ValidationError({"user_ids": "At least one user is required."})
+        return attrs

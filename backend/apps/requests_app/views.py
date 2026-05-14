@@ -65,6 +65,7 @@ from .serializers import (
     RequestSummarySerializer,
     REQUEST_TYPE_CHOICES,
     RequestAssignUserSerializer,
+    RequestInviteMembersSerializer,
     RequestTargetReassignSerializer,
     RequestCreateSerializer,
     ServiceRequestSerializer,
@@ -3156,6 +3157,103 @@ class RequestTargetReassignView(APIView):
         )
 
 
+class RequestInviteMembersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not get_visible_requests_queryset(request.user).filter(id=service_request.id).exists():
+            return Response({"detail": "You cannot access this request."}, status=status.HTTP_403_FORBIDDEN)
+        if not can_invite_request_members(request.user, service_request):
+            return Response(
+                {"detail": "You do not have permission to invite members for this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return Response(get_request_invite_targets(service_request))
+
+    def post(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None:
+            return Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not get_visible_requests_queryset(request.user).filter(id=service_request.id).exists():
+            return Response({"detail": "You cannot access this request."}, status=status.HTTP_403_FORBIDDEN)
+        if not can_invite_request_members(request.user, service_request):
+            return Response(
+                {"detail": "You do not have permission to invite members for this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = RequestInviteMembersSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        invite_targets = get_request_invite_targets(service_request)
+
+        entity_ids = set(payload.get("entity_ids") or [])
+        team_ids = set(payload.get("team_ids") or [])
+        user_ids = set(payload.get("user_ids") or [])
+
+        allowed_permissions = set(payload.get("permissions") or [])
+        allowed_permissions.add("request.view")
+
+        selected_user_ids = set()
+        if payload["invite_type"] == "entity":
+            available_entity_ids = {item["id"] for item in invite_targets["entities"]}
+            if not entity_ids.issubset(available_entity_ids):
+                return Response({"detail": "Only support/dev entities can be invited."}, status=status.HTTP_400_BAD_REQUEST)
+            selected_user_ids = {
+                item["id"]
+                for item in invite_targets["users"]
+                if item.get("entity_id") in entity_ids
+            }
+        elif payload["invite_type"] == "team":
+            available_team_ids = {item["id"] for item in invite_targets["teams"]}
+            if not team_ids.issubset(available_team_ids):
+                return Response({"detail": "Only teams from allowed support/dev entities can be invited."}, status=status.HTTP_400_BAD_REQUEST)
+            selected_user_ids = {
+                item["id"]
+                for item in invite_targets["users"]
+                if set(item.get("team_ids") or []).intersection(team_ids)
+            }
+        else:
+            available_user_ids = {item["id"] for item in invite_targets["users"]}
+            if not user_ids.issubset(available_user_ids):
+                return Response({"detail": "Some selected users are outside the allowed target team scope."}, status=status.HTTP_400_BAD_REQUEST)
+            selected_user_ids = set(user_ids)
+
+        if not selected_user_ids:
+            return Response({"detail": "No eligible users were found for the selected target."}, status=status.HTTP_400_BAD_REQUEST)
+
+        UserRequestPermissionOverride.objects.filter(
+            user_id__in=selected_user_ids,
+            request=service_request,
+            permission_key__in=list(allowed_permissions),
+        ).delete()
+        for permission_key in sorted(allowed_permissions):
+            UserRequestPermissionOverride.objects.bulk_create(
+                [
+                    UserRequestPermissionOverride(
+                        user_id=user_id,
+                        request=service_request,
+                        permission_key=permission_key,
+                        allowed=True,
+                        created_by=request.user,
+                    )
+                    for user_id in sorted(selected_user_ids)
+                ],
+                ignore_conflicts=True,
+            )
+
+        service_request = load_request(request_id)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+
 
 def get_pending_approval_team_leaders(service_request, exclude_user_id=None):
     requester = service_request.requester_user
@@ -3680,6 +3778,7 @@ def build_request_detail_context(request, service_request):
         "request": request,
         "can_manage_incoming_request": bool(allowed_status_transitions),
         "can_edit_deadline": can_edit_request_deadline(request.user, service_request),
+        "can_invite_members": can_invite_request_members(request.user, service_request),
         "allowed_status_transitions": allowed_status_transitions,
         "can_assign_request": can_assign_request(request.user, service_request),
         "can_reassign_target_team": can_reassign_target_team(request.user, service_request),
@@ -3838,6 +3937,113 @@ def get_available_reassignment_targets(user, service_request):
         for team in queryset
         if team.leader_id in team_leader_ids
     ]
+
+
+def can_invite_request_members(user, service_request):
+    actor_role = get_primary_role_key(user)
+    target_entity_id = get_request_target_entity_id(service_request)
+    if not target_entity_id:
+        return False
+    if actor_role == "manager":
+        return bool(user.entity_id and user.entity_id == target_entity_id)
+    if service_request.target_team_id:
+        is_member = Team.objects.filter(
+            id=service_request.target_team_id,
+            is_active=True,
+        ).filter(Q(leader_id=user.id) | Q(members__id=user.id)).exists()
+        return bool(is_member)
+    if service_request.target_team_leader_id:
+        if service_request.target_team_leader_id == user.id:
+            return True
+        return Team.objects.filter(
+            leader_id=service_request.target_team_leader_id,
+            is_active=True,
+            members__id=user.id,
+        ).exists()
+    return False
+
+
+def get_request_invite_targets(service_request):
+    request_company_id = get_request_company_id(service_request)
+    if not request_company_id:
+        return {"entities": [], "teams": [], "users": []}
+    request_target_entity_id = get_request_target_entity_id(service_request)
+
+    allowed_entities = list(
+        Entity.objects.filter(
+            company_id=request_company_id,
+            is_active=True,
+            entity_type__in=[Entity.EntityType.SUPPORT, Entity.EntityType.TDEV],
+        ).order_by("name")
+    )
+    if request_target_entity_id:
+        allowed_entities = [
+            entity for entity in allowed_entities if entity.id != request_target_entity_id
+        ]
+    if not allowed_entities:
+        return {"entities": [], "teams": [], "users": []}
+    allowed_entity_ids = [entity.id for entity in allowed_entities]
+
+    teams = list(
+        Team.objects.select_related("leader")
+        .filter(entity_id__in=allowed_entity_ids, is_active=True)
+        .order_by("name")
+    )
+    team_member_map = {}
+    for team in teams:
+        member_ids = list(team.members.values_list("id", flat=True))
+        if team.leader_id and team.leader_id not in member_ids:
+            member_ids.append(team.leader_id)
+        team_member_map[team.id] = set(member_ids)
+
+    users = (
+        User.objects.filter(
+            is_active=True,
+            entity_id__in=allowed_entity_ids,
+            id__in=sorted({uid for values in team_member_map.values() for uid in values}),
+        )
+        .order_by("username")
+    )
+    role_map = {}
+    for item in UserRole.objects.filter(user_id__in=users.values_list("id", flat=True)).select_related("role"):
+        role_map.setdefault(item.user_id, set()).add(item.role.key)
+
+    users_payload = []
+    for usr in users:
+        user_team_ids = [team_id for team_id, member_ids in team_member_map.items() if usr.id in member_ids]
+        users_payload.append(
+            {
+                "id": usr.id,
+                "username": usr.username,
+                "entity_id": usr.entity_id,
+                "team_id": user_team_ids[0] if user_team_ids else None,
+                "team_ids": user_team_ids,
+                "role_keys": sorted(list(role_map.get(usr.id, set()))),
+            }
+        )
+
+    return {
+        "entities": [
+            {
+                "id": entity.id,
+                "name": entity.name,
+                "entity_type": entity.entity_type,
+            }
+            for entity in allowed_entities
+        ],
+        "teams": [
+            {
+                "id": team.id,
+                "name": team.name,
+                "entity_id": team.entity_id,
+                "entity_type": team.entity.entity_type if team.entity_id and team.entity else "",
+                "leader_id": team.leader_id,
+                "leader_name": team.leader.username if team.leader_id and team.leader else "",
+            }
+            for team in teams
+        ],
+        "users": users_payload,
+    }
 
 
 def apply_request_filters(queryset, params):
