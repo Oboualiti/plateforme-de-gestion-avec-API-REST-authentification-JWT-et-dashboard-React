@@ -4,14 +4,14 @@ import re
 import hashlib
 from urllib import error as urllib_error
 from urllib import request as urllib_request
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
-from django.db.models import Q, OuterRef, Subquery
+from django.db.models import Q, OuterRef, Prefetch, Subquery
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -507,6 +507,7 @@ class CreditsSolvesListView(APIView):
         source_entity_id = request.query_params.get("source_entity_id")
         source_team_id = request.query_params.get("source_team_id")
         requester_user_id = request.query_params.get("requester_user_id")
+        include_requester_rankings = str(request.query_params.get("include_requester_rankings", "1")).strip().lower() not in {"0", "false", "no"}
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
         priority = (request.query_params.get("priority") or "").strip().upper()
@@ -565,9 +566,21 @@ class CreditsSolvesListView(APIView):
         if requester_user_id:
             solves_qs = solves_qs.filter(requester_user_id=requester_user_id)
         if date_from:
-            solves_qs = solves_qs.filter(completed_at__date__gte=date_from)
+            from_day = parse_date(date_from)
+            if from_day:
+                from_dt = timezone.make_aware(
+                    datetime.combine(from_day, time.min),
+                    timezone.get_current_timezone(),
+                )
+                solves_qs = solves_qs.filter(completed_at__gte=from_dt)
         if date_to:
-            solves_qs = solves_qs.filter(completed_at__date__lte=date_to)
+            to_day = parse_date(date_to)
+            if to_day:
+                to_dt = timezone.make_aware(
+                    datetime.combine(to_day + timedelta(days=1), time.min),
+                    timezone.get_current_timezone(),
+                )
+                solves_qs = solves_qs.filter(completed_at__lt=to_dt)
         if request_type:
             solves_qs = solves_qs.filter(category=request_type)
         if priority in {
@@ -603,6 +616,19 @@ class CreditsSolvesListView(APIView):
             "requester_user__entity",
             "requester_user__entity__company",
             "current_assignee",
+        ).prefetch_related(
+            Prefetch(
+                "messages",
+                queryset=RequestMessage.objects.only(
+                    "id",
+                    "request_id",
+                    "sender_id",
+                    "message",
+                    "attachment",
+                    "created_at",
+                ).order_by("created_at"),
+                to_attr="prefetched_messages",
+            )
         ).order_by("-completed_at", "-closed_at", "-id")
         solves_list = list(solves_qs)
         entity_leaders_from_requests = {}
@@ -793,7 +819,7 @@ class CreditsSolvesListView(APIView):
 
             evidence_list = []
 
-            for message in req.messages.all():
+            for message in getattr(req, "prefetched_messages", []):
                 message_text = message.message or ""
                 is_credit_evidence = (
                     message_text.strip().lower().startswith("credits evidence") or
@@ -1344,279 +1370,287 @@ class CreditsSolvesListView(APIView):
                 str(row.get("name") or row.get("teamLabel") or "").lower(),
             )
 
-        demand_qs = ServiceRequest.objects.all()
-        if company_id:
-            demand_qs = demand_qs.filter(company_id=company_id)
-        if target_entity_id:
-            demand_qs = demand_qs.filter(target_entity_id=target_entity_id)
-        if target_team_id:
-            demand_qs = demand_qs.filter(
-                Q(target_team_id=target_team_id)
-                | Q(target_team__leader_id=target_team_id)
-                | Q(target_team_leader_id=target_team_id)
-            )
-        if source_entity_id:
-            demand_qs = demand_qs.filter(source_entity_id=source_entity_id)
-        if source_team_id:
-            demand_qs = demand_qs.filter(
-                Q(requester_user__team_leader_id=source_team_id)
-                | Q(requester_user_id=source_team_id)
-            )
-        if requester_user_id:
-            demand_qs = demand_qs.filter(requester_user_id=requester_user_id)
-        if request_type:
-            demand_qs = demand_qs.filter(category=request_type)
-        if priority in {
-            ServiceRequest.Priority.LOW,
-            ServiceRequest.Priority.MEDIUM,
-            ServiceRequest.Priority.HIGH,
-            ServiceRequest.Priority.CRITICAL,
-        }:
-            demand_qs = demand_qs.filter(priority=priority)
+        request_demand_rankings = {
+            "sourceCompanies": [],
+            "sourceEntities": [],
+            "sourceTeams": [],
+            "requesters": [],
+        }
+        if include_requester_rankings:
+            demand_qs = ServiceRequest.objects.all()
+            if company_id:
+                demand_qs = demand_qs.filter(company_id=company_id)
+            if target_entity_id:
+                demand_qs = demand_qs.filter(target_entity_id=target_entity_id)
+            if target_team_id:
+                demand_qs = demand_qs.filter(
+                    Q(target_team_id=target_team_id)
+                    | Q(target_team__leader_id=target_team_id)
+                    | Q(target_team_leader_id=target_team_id)
+                )
+            if source_entity_id:
+                demand_qs = demand_qs.filter(source_entity_id=source_entity_id)
+            if source_team_id:
+                demand_qs = demand_qs.filter(
+                    Q(requester_user__team_leader_id=source_team_id)
+                    | Q(requester_user_id=source_team_id)
+                )
+            if requester_user_id:
+                demand_qs = demand_qs.filter(requester_user_id=requester_user_id)
+            if request_type:
+                demand_qs = demand_qs.filter(category=request_type)
+            if priority in {
+                ServiceRequest.Priority.LOW,
+                ServiceRequest.Priority.MEDIUM,
+                ServiceRequest.Priority.HIGH,
+                ServiceRequest.Priority.CRITICAL,
+            }:
+                demand_qs = demand_qs.filter(priority=priority)
 
-        demand_qs = demand_qs.select_related(
-            "company",
-            "source_entity",
-            "source_entity__company",
-            "target_entity",
-            "target_team",
-            "target_team__leader",
-            "target_team_leader",
-            "requester_user",
-            "requester_user__team_leader",
-            "requester_user__entity",
-            "requester_user__entity__company",
-            "current_assignee",
-        ).distinct()
-        demand_list = list(demand_qs)
-        range_start = parse_date(date_from) if date_from else None
-        range_end = parse_date(date_to) if date_to else None
+            demand_qs = demand_qs.select_related(
+                "company",
+                "source_entity",
+                "source_entity__company",
+                "target_entity",
+                "target_team",
+                "target_team__leader",
+                "target_team_leader",
+                "requester_user",
+                "requester_user__team_leader",
+                "requester_user__entity",
+                "requester_user__entity__company",
+                "current_assignee",
+            ).distinct()
+            demand_list = list(demand_qs)
+            range_start = parse_date(date_from) if date_from else None
+            range_end = parse_date(date_to) if date_to else None
 
-        def _in_selected_range(dt_value):
-            if range_start is None and range_end is None:
+        if include_requester_rankings:
+            def _in_selected_range(dt_value):
+                if range_start is None and range_end is None:
+                    return True
+                if not dt_value:
+                    return False
+                day_value = dt_value.date() if hasattr(dt_value, "date") else dt_value
+                if range_start and day_value < range_start:
+                    return False
+                if range_end and day_value > range_end:
+                    return False
                 return True
-            if not dt_value:
-                return False
-            day_value = dt_value.date() if hasattr(dt_value, "date") else dt_value
-            if range_start and day_value < range_start:
-                return False
-            if range_end and day_value > range_end:
-                return False
-            return True
 
-        source_company_stats = {}
-        source_entity_stats = {}
-        source_team_stats = {}
-        requester_stats = {}
-        requester_ids = {req.requester_user_id for req in demand_list if req.requester_user_id}
-        requester_role_map = {}
-        if requester_ids:
-            role_priority = {
-                "user": 1,
-                "team_leader": 2,
-                "manager": 3,
-                "senior": 4,
-                "super_admin": 5,
-            }
-            for user_id, requester_role in UserRole.objects.filter(user_id__in=requester_ids).values_list("user_id", "role__key"):
-                if role_priority.get(requester_role, 0) >= role_priority.get(requester_role_map.get(user_id, ""), 0):
-                    requester_role_map[user_id] = requester_role
+            source_company_stats = {}
+            source_entity_stats = {}
+            source_team_stats = {}
+            requester_stats = {}
+            requester_ids = {req.requester_user_id for req in demand_list if req.requester_user_id}
+            requester_role_map = {}
+            if requester_ids:
+                role_priority = {
+                    "user": 1,
+                    "team_leader": 2,
+                    "manager": 3,
+                    "senior": 4,
+                    "super_admin": 5,
+                }
+                for user_id, requester_role in UserRole.objects.filter(user_id__in=requester_ids).values_list("user_id", "role__key"):
+                    if role_priority.get(requester_role, 0) >= role_priority.get(requester_role_map.get(user_id, ""), 0):
+                        requester_role_map[user_id] = requester_role
 
-        for req in demand_list:
-            if not _in_requester_scope(req):
-                continue
+            for req in demand_list:
+                if not _in_requester_scope(req):
+                    continue
 
-            status_value = str(req.status or "").upper()
-            resolve_at = req.closed_at or req.completed_at
-            created_in_range = _in_selected_range(req.created_at)
-            closed_in_range = _in_selected_range(resolve_at)
-            is_closed = status_value == ServiceRequest.Status.CLOSED and closed_in_range
-            is_pending = status_value == ServiceRequest.Status.COMPLETED and (created_in_range or closed_in_range)
-            is_sent_back = status_value in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.IN_PROGRESS} and created_in_range
-            row_hours = None
-            if resolve_at and req.created_at:
-                row_hours = (resolve_at - req.created_at).total_seconds() / 3600
+                status_value = str(req.status or "").upper()
+                resolve_at = req.closed_at or req.completed_at
+                created_in_range = _in_selected_range(req.created_at)
+                closed_in_range = _in_selected_range(resolve_at)
+                is_closed = status_value == ServiceRequest.Status.CLOSED and closed_in_range
+                is_pending = status_value == ServiceRequest.Status.COMPLETED and (created_in_range or closed_in_range)
+                is_sent_back = status_value in {ServiceRequest.Status.REJECTED, ServiceRequest.Status.IN_PROGRESS} and created_in_range
+                row_hours = None
+                if resolve_at and req.created_at:
+                    row_hours = (resolve_at - req.created_at).total_seconds() / 3600
 
-            requester = req.requester_user
-            requester_id = requester.id if requester else None
-            requester_name = (
-                (requester.get_full_name() or requester.username).strip()
-                if requester
-                else "Unknown requester"
-            )
-
-            source_entity_id_value = req.source_entity_id or (requester.entity_id if requester else None) or "unknown"
-            source_entity_name = (
-                req.source_entity.name
-                if req.source_entity_id and req.source_entity
-                else (
-                    requester.entity.name
-                    if requester and requester.entity_id and requester.entity
-                    else "Unknown source entity"
+                requester = req.requester_user
+                requester_id = requester.id if requester else None
+                requester_name = (
+                    (requester.get_full_name() or requester.username).strip()
+                    if requester
+                    else "Unknown requester"
                 )
-            )
-            source_company_id_value = (
-                (req.source_entity.company_id if req.source_entity_id and req.source_entity else None)
-                or (
-                    requester.entity.company_id
-                    if requester and requester.entity_id and requester.entity
-                    else None
-                )
-                or req.company_id
-                or "unknown"
-            )
-            source_company_name = (
-                req.source_entity.company.name
-                if req.source_entity_id and req.source_entity and req.source_entity.company_id and req.source_entity.company
-                else (
-                    requester.entity.company.name
-                    if requester and requester.entity_id and requester.entity and requester.entity.company_id and requester.entity.company
-                    else (req.company.name if req.company_id and req.company else "Unknown source company")
-                )
-            )
 
-            requester_role_key = requester_role_map.get(requester_id, "")
-            if requester_role_key == "team_leader" and requester_id:
-                source_team_leader_id = requester_id
-            elif requester_role_key in {"manager", "senior", "super_admin"}:
-                source_team_leader_id = None
-            else:
-                source_team_leader_id = requester.team_leader_id if requester else None
-            source_team_leader_name = (
-                (requester.get_full_name() or requester.username).strip()
-                if requester and requester_role_key == "team_leader" and requester_id
-                else (
-                    (requester.team_leader.get_full_name() or requester.team_leader.username).strip()
-                    if requester and requester.team_leader_id and requester.team_leader
+                source_entity_id_value = req.source_entity_id or (requester.entity_id if requester else None) or "unknown"
+                source_entity_name = (
+                    req.source_entity.name
+                    if req.source_entity_id and req.source_entity
+                    else (
+                        requester.entity.name
+                        if requester and requester.entity_id and requester.entity
+                        else "Unknown source entity"
+                    )
+                )
+                source_company_id_value = (
+                    (req.source_entity.company_id if req.source_entity_id and req.source_entity else None)
+                    or (
+                        requester.entity.company_id
+                        if requester and requester.entity_id and requester.entity
+                        else None
+                    )
+                    or req.company_id
+                    or "unknown"
+                )
+                source_company_name = (
+                    req.source_entity.company.name
+                    if req.source_entity_id and req.source_entity and req.source_entity.company_id and req.source_entity.company
+                    else (
+                        requester.entity.company.name
+                        if requester and requester.entity_id and requester.entity and requester.entity.company_id and requester.entity.company
+                        else (req.company.name if req.company_id and req.company else "Unknown source company")
+                    )
+                )
+
+                requester_role_key = requester_role_map.get(requester_id, "")
+                if requester_role_key == "team_leader" and requester_id:
+                    source_team_leader_id = requester_id
+                elif requester_role_key in {"manager", "senior", "super_admin"}:
+                    source_team_leader_id = None
+                else:
+                    source_team_leader_id = requester.team_leader_id if requester else None
+                source_team_leader_name = (
+                    (requester.get_full_name() or requester.username).strip()
+                    if requester and requester_role_key == "team_leader" and requester_id
+                    else (
+                        (requester.team_leader.get_full_name() or requester.team_leader.username).strip()
+                        if requester and requester.team_leader_id and requester.team_leader
+                        else ""
+                    )
+                )
+                has_real_source_team = bool(source_team_leader_id and source_team_leader_name)
+                source_team_key = (
+                    f"tl-{source_team_leader_id}"
+                    if has_real_source_team
+                    else (f"direct-requester-{requester_id}" if requester_id else f"source-entity-{source_entity_id_value}")
+                )
+                source_team_label = (
+                    f"{source_team_leader_name}'s Team"
+                    if has_real_source_team
                     else ""
                 )
-            )
-            has_real_source_team = bool(source_team_leader_id and source_team_leader_name)
-            source_team_key = (
-                f"tl-{source_team_leader_id}"
-                if has_real_source_team
-                else (f"direct-requester-{requester_id}" if requester_id else f"source-entity-{source_entity_id_value}")
-            )
-            source_team_label = (
-                f"{source_team_leader_name}'s Team"
-                if has_real_source_team
-                else ""
-            )
-            if not source_team_label:
-                source_team_label = (
-                    f"Direct requester: {requester_name}"
-                    if requester_name
-                    else (source_entity_name or "Unknown source requester")
+                if not source_team_label:
+                    source_team_label = (
+                        f"Direct requester: {requester_name}"
+                        if requester_name
+                        else (source_entity_name or "Unknown source requester")
+                    )
+
+                company_bucket = source_company_stats.setdefault(
+                    str(source_company_id_value),
+                    {
+                        "companyId": source_company_id_value,
+                        "name": source_company_name,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
+                )
+                entity_bucket = source_entity_stats.setdefault(
+                    str(source_entity_id_value),
+                    {
+                        "entityId": source_entity_id_value,
+                        "name": source_entity_name,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
+                )
+                team_bucket = source_team_stats.setdefault(
+                    source_team_key,
+                    {
+                        "teamKey": source_team_key,
+                        "teamLeaderId": source_team_leader_id,
+                        "teamLeaderName": source_team_leader_name,
+                        "teamLabel": source_team_label,
+                        "name": source_team_label,
+                        "entityId": source_entity_id_value,
+                        "entityName": source_entity_name,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
+                )
+                requester_bucket = requester_stats.setdefault(
+                    str(requester_id or "unknown"),
+                    {
+                        "userId": requester_id,
+                        "name": requester_name,
+                        "entityId": source_entity_id_value,
+                        "entityName": source_entity_name,
+                        "sourceTeamLeaderId": source_team_leader_id,
+                        "sourceTeamLeaderName": source_team_leader_name,
+                        "sourceTeamLabel": source_team_label,
+                        "createdCount": 0,
+                        "closedCount": 0,
+                        "pendingCount": 0,
+                        "sentBackCount": 0,
+                        "hoursTotal": 0.0,
+                        "hoursCount": 0,
+                    },
                 )
 
-            company_bucket = source_company_stats.setdefault(
-                str(source_company_id_value),
-                {
-                    "companyId": source_company_id_value,
-                    "name": source_company_name,
-                    "createdCount": 0,
-                    "closedCount": 0,
-                    "pendingCount": 0,
-                    "sentBackCount": 0,
-                    "hoursTotal": 0.0,
-                    "hoursCount": 0,
-                },
-            )
-            entity_bucket = source_entity_stats.setdefault(
-                str(source_entity_id_value),
-                {
-                    "entityId": source_entity_id_value,
-                    "name": source_entity_name,
-                    "createdCount": 0,
-                    "closedCount": 0,
-                    "pendingCount": 0,
-                    "sentBackCount": 0,
-                    "hoursTotal": 0.0,
-                    "hoursCount": 0,
-                },
-            )
-            team_bucket = source_team_stats.setdefault(
-                source_team_key,
-                {
-                    "teamKey": source_team_key,
-                    "teamLeaderId": source_team_leader_id,
-                    "teamLeaderName": source_team_leader_name,
-                    "teamLabel": source_team_label,
-                    "name": source_team_label,
-                    "entityId": source_entity_id_value,
-                    "entityName": source_entity_name,
-                    "createdCount": 0,
-                    "closedCount": 0,
-                    "pendingCount": 0,
-                    "sentBackCount": 0,
-                    "hoursTotal": 0.0,
-                    "hoursCount": 0,
-                },
-            )
-            requester_bucket = requester_stats.setdefault(
-                str(requester_id or "unknown"),
-                {
-                    "userId": requester_id,
-                    "name": requester_name,
-                    "entityId": source_entity_id_value,
-                    "entityName": source_entity_name,
-                    "sourceTeamLeaderId": source_team_leader_id,
-                    "sourceTeamLeaderName": source_team_leader_name,
-                    "sourceTeamLabel": source_team_label,
-                    "createdCount": 0,
-                    "closedCount": 0,
-                    "pendingCount": 0,
-                    "sentBackCount": 0,
-                    "hoursTotal": 0.0,
-                    "hoursCount": 0,
-                },
-            )
+                for bucket in (company_bucket, entity_bucket, team_bucket, requester_bucket):
+                    if created_in_range:
+                        bucket["createdCount"] += 1
+                    if is_closed:
+                        bucket["closedCount"] += 1
+                    if is_pending:
+                        bucket["pendingCount"] += 1
+                    if is_sent_back:
+                        bucket["sentBackCount"] += 1
+                    if is_closed and isinstance(row_hours, (int, float)) and row_hours > 0:
+                        bucket["hoursTotal"] += float(row_hours)
+                        bucket["hoursCount"] += 1
 
-            for bucket in (company_bucket, entity_bucket, team_bucket, requester_bucket):
-                if created_in_range:
-                    bucket["createdCount"] += 1
-                if is_closed:
-                    bucket["closedCount"] += 1
-                if is_pending:
-                    bucket["pendingCount"] += 1
-                if is_sent_back:
-                    bucket["sentBackCount"] += 1
-                if is_closed and isinstance(row_hours, (int, float)) and row_hours > 0:
-                    bucket["hoursTotal"] += float(row_hours)
-                    bucket["hoursCount"] += 1
+            def _finalize_request_demand(rows):
+                finalized = []
+                for item in rows:
+                    created_count = int(item.get("createdCount", 0) or 0)
+                    closed_count = int(item.get("closedCount", 0) or 0)
+                    pending_count = int(item.get("pendingCount", 0) or 0)
+                    sent_back_count = int(item.get("sentBackCount", 0) or 0)
+                    if created_count <= 0 and closed_count <= 0 and pending_count <= 0 and sent_back_count <= 0:
+                        continue
+                    avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
+                    payload = {
+                        **item,
+                        "completionRate": int(round((closed_count / created_count) * 100)) if created_count else 0,
+                        "avgHours": avg_hours,
+                        "created_count": created_count,
+                        "closed_count": closed_count,
+                        "pending_count": pending_count,
+                        "sent_back_count": sent_back_count,
+                        "completion_rate": int(round((closed_count / created_count) * 100)) if created_count else 0,
+                        "avg_hours": avg_hours,
+                    }
+                    payload.pop("hoursTotal", None)
+                    payload.pop("hoursCount", None)
+                    finalized.append(payload)
+                return sorted(finalized, key=_demand_sort_key)
 
-        def _finalize_request_demand(rows):
-            finalized = []
-            for item in rows:
-                created_count = int(item.get("createdCount", 0) or 0)
-                closed_count = int(item.get("closedCount", 0) or 0)
-                pending_count = int(item.get("pendingCount", 0) or 0)
-                sent_back_count = int(item.get("sentBackCount", 0) or 0)
-                if created_count <= 0 and closed_count <= 0 and pending_count <= 0 and sent_back_count <= 0:
-                    continue
-                avg_hours = item["hoursTotal"] / item["hoursCount"] if item["hoursCount"] else 0
-                payload = {
-                    **item,
-                    "completionRate": int(round((closed_count / created_count) * 100)) if created_count else 0,
-                    "avgHours": avg_hours,
-                    "created_count": created_count,
-                    "closed_count": closed_count,
-                    "pending_count": pending_count,
-                    "sent_back_count": sent_back_count,
-                    "completion_rate": int(round((closed_count / created_count) * 100)) if created_count else 0,
-                    "avg_hours": avg_hours,
-                }
-                payload.pop("hoursTotal", None)
-                payload.pop("hoursCount", None)
-                finalized.append(payload)
-            return sorted(finalized, key=_demand_sort_key)
-
-        request_demand_rankings = {
-            "sourceCompanies": _finalize_request_demand(source_company_stats.values()),
-            "sourceEntities": _finalize_request_demand(source_entity_stats.values()),
-            "sourceTeams": _finalize_request_demand(source_team_stats.values()),
-            "requesters": _finalize_request_demand(requester_stats.values()),
-        }
+            request_demand_rankings = {
+                "sourceCompanies": _finalize_request_demand(source_company_stats.values()),
+                "sourceEntities": _finalize_request_demand(source_entity_stats.values()),
+                "sourceTeams": _finalize_request_demand(source_team_stats.values()),
+                "requesters": _finalize_request_demand(requester_stats.values()),
+            }
 
         return Response(
             {

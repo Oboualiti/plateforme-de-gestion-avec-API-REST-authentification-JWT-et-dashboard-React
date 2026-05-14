@@ -69,6 +69,18 @@ const ICON_MAP = {
 };
 
 const CREDITS_PAGE_SIZE = 5;
+const creditsSolvesInFlight = new Map();
+
+function fetchCreditsSolves(params) {
+  const key = JSON.stringify(params || {});
+  const existing = creditsSolvesInFlight.get(key);
+  if (existing) return existing;
+  const request = api.get("/credits/solves/", { params }).finally(() => {
+    creditsSolvesInFlight.delete(key);
+  });
+  creditsSolvesInFlight.set(key, request);
+  return request;
+}
 
 function formatDate(value) {
   if (!value) return "-";
@@ -3673,7 +3685,18 @@ export default function CreditsBoard() {
 
   useEffect(() => {
     const nextEntity = role === "team_leader" ? defaultEntityId : "all";
-    setAppliedFilters((prev) => ({ ...prev, companyId: defaultCompanyId, entityId: nextEntity, teamId: "all", personId: "all", requestType: "all" }));
+    setAppliedFilters((prev) => {
+      if (
+        prev.companyId === defaultCompanyId
+        && prev.entityId === nextEntity
+        && prev.teamId === "all"
+        && prev.personId === "all"
+        && prev.requestType === "all"
+      ) {
+        return prev;
+      }
+      return { ...prev, companyId: defaultCompanyId, entityId: nextEntity, teamId: "all", personId: "all", requestType: "all" };
+    });
   }, [role, defaultEntityId, defaultCompanyId]);
 
   useEffect(() => {
@@ -3737,7 +3760,10 @@ export default function CreditsBoard() {
       try {
         if (isInitialLoad) setLoading(true);
         else setTableLoading(true);
-        const params = { include_rankings: true };
+        const params = {
+          include_rankings: true,
+          include_requester_rankings: isRequesterContext,
+        };
 
         if (appliedFilters.companyId !== "all") params.company_id = appliedFilters.companyId;
         if (appliedFilters.entityId !== "all") {
@@ -3764,7 +3790,7 @@ export default function CreditsBoard() {
           params.date_to = now.toISOString().split("T")[0];
         }
 
-        const response = await api.get("/credits/solves/", { params });
+        const response = await fetchCreditsSolves(params);
         if (!active) return;
         const payload = response.data || {};
         const rawSolves = Array.isArray(payload) ? payload : payload.solves || [];
@@ -4734,7 +4760,4 @@ export default function CreditsBoard() {
     </div>
   );
 }
-
-
-
 
