@@ -138,7 +138,10 @@ export function filterSolvesByUserRole(solves, user) {
     return solves.filter((solve) => solve.companyId === userCompanyId);
   }
   if (primaryRole === "team_leader") {
-    return solves.filter((solve) => solve.entityId === userEntityId);
+    if (isProdEntityUser) {
+      return solves.filter((solve) => solve.entityId === userEntityId);
+    }
+    return solves.filter((solve) => String(solve.targetTeamLeaderId ?? solve.target_team_leader ?? "") === String(user?.id));
   }
   return solves.filter((solve) => solve.solverId === user?.id);
 }

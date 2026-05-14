@@ -43,8 +43,8 @@ describe("creditsBoardContext", () => {
 
     expect(superAdmin.tabsByMode.solvers).toEqual(["companies", "entities", "teams", "people"]);
     expect(superAdmin.tabsByMode.requesters).toEqual(["sourceCompanies", "sourceEntities", "sourceTeams", "requesters"]);
-    expect(senior.tabsByMode.solvers).toEqual(["entities", "teams", "people"]);
-    expect(senior.tabsByMode.requesters).toEqual(["sourceEntities", "sourceTeams", "requesters"]);
+    expect(senior.tabsByMode.solvers).toEqual(["companies", "entities", "teams", "people"]);
+    expect(senior.tabsByMode.requesters).toEqual(["sourceCompanies", "sourceEntities", "sourceTeams", "requesters"]);
     expect(managerProd.tabsByMode.solvers).toEqual(["teams", "people"]);
     expect(managerProd.tabsByMode.requesters).toEqual(["sourceTeams", "requesters"]);
     expect(managerSupport.tabsByMode.requesters).toEqual(["sourceEntities", "sourceTeams", "requesters"]);

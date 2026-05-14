@@ -908,7 +908,7 @@ function CreditsBoardHeader({
       <div className="mb-5 flex flex-col gap-1">
         <div className="min-w-0">
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-            Credits Board
+            Ranking
             {titleSuffix ? <span className="ml-2 text-xl text-muted-foreground">{titleSuffix}</span> : null}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
@@ -958,7 +958,7 @@ function CreditsBoardHeaderCompact({
   return (
     <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-4xl font-bold leading-tight text-foreground">Credits Board</h1>
+        <h1 className="text-4xl font-bold leading-tight text-foreground">Ranking</h1>
         <p className="mt-2 text-base text-muted-foreground">{subtitle}</p>
       </div>
       <div className="mb-5 flex flex-wrap items-end gap-3 lg:mb-0">
@@ -3617,6 +3617,7 @@ export default function CreditsBoard() {
     [role, entityType, rankingMode],
   );
   const isProdEntityUser = entityType === "PROD";
+  const isSupportTeamLeader = role === "team_leader" && !isProdEntityUser;
   const isProdRequesterView = false;
   const isBasicUser = role === "user";
   const canExport = true;
@@ -4033,8 +4034,8 @@ export default function CreditsBoard() {
     });
   }, [backendTeamRankings, rankingFilteredSolves, entities, userNameById]);
   const solverPeopleRows = useMemo(
-    () => (backendPeopleRankings.length > 0 ? backendPeopleRankings : buildPeopleRankings(rankingFilteredSolves, users, entities)),
-    [backendPeopleRankings, rankingFilteredSolves, users, entities],
+    () => ((backendPeopleRankings.length > 0 && !isSupportTeamLeader) ? backendPeopleRankings : buildPeopleRankings(rankingFilteredSolves, users, entities)),
+    [backendPeopleRankings, isSupportTeamLeader, rankingFilteredSolves, users, entities],
   );
   const solverCompanyRows = useMemo(
     () => buildCompanyRankings(rankingFilteredSolves),
@@ -4277,14 +4278,14 @@ export default function CreditsBoard() {
   if (authLoading || loading) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Credits Board" description="Loading..." />
+        <PageHeader title="Ranking" description="Loading..." />
         <Skeleton className="h-40" />
         <Skeleton className="h-80" />
       </div>
     );
   }
 
-  if (!user) return <PageHeader title="Credits Board" description="Not authenticated" />;
+  if (!user) return <PageHeader title="Ranking" description="Not authenticated" />;
 
   return (
     <div className="min-h-screen bg-background">
