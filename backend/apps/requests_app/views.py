@@ -3234,6 +3234,16 @@ class RequestInviteMembersView(APIView):
         if not selected_user_ids:
             return Response({"detail": "No eligible users were found for the selected target."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Notify only users that are newly invited in this action.
+        previously_invited_user_ids = set(
+            UserRequestPermissionOverride.objects.filter(
+                user_id__in=selected_user_ids,
+                request=service_request,
+                permission_key="request.view",
+                allowed=True,
+            ).values_list("user_id", flat=True)
+        )
+
         # Persist explicit allow/deny for all invite-managed keys so unchecked
         # permissions do not silently fall back to inherited role permissions.
         existing_overrides = UserRequestPermissionOverride.objects.filter(
@@ -3270,6 +3280,29 @@ class RequestInviteMembersView(APIView):
             UserRequestPermissionOverride.objects.bulk_create(to_create)
         if to_update:
             UserRequestPermissionOverride.objects.bulk_update(to_update, ["allowed", "updated_at"])
+
+        newly_invited_user_ids = sorted(
+            user_id for user_id in selected_user_ids
+            if user_id not in previously_invited_user_ids and user_id != request.user.id
+        )
+        if newly_invited_user_ids:
+            invited_users = User.objects.filter(id__in=newly_invited_user_ids, is_active=True)
+            inviter_name = request.user.get_full_name() or request.user.username or "A manager"
+            create_bulk_notifications(
+                users=invited_users,
+                event_type=UserNotification.EventType.GENERAL,
+                title="You were invited to a request",
+                message=(
+                    f"{inviter_name} invited you to request "
+                    f"{service_request.request_number or f'#{service_request.id}'}."
+                ),
+                link=f"/requests/{service_request.id}",
+                metadata={
+                    "request_id": service_request.id,
+                    "request_number": service_request.request_number,
+                    "invite_type": payload.get("invite_type"),
+                },
+            )
 
         service_request = load_request(request_id)
         return Response(
