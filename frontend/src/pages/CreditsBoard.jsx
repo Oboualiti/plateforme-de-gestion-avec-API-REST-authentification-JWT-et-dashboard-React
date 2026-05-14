@@ -57,7 +57,7 @@ import {
   rankPeople,
   rankTeams,
 } from "../data/credits";
-import { getBoardContext, resolveActiveMode, resolveActiveTab } from "./creditsBoardContext";
+import { getBoardContext, resolveActiveMode, resolveActiveTab } from "../lib/creditsBoardContext";
 
 const ICON_MAP = {
   solved: CheckCircle2,
@@ -488,6 +488,14 @@ function getRequestTypeMeta(type) {
     tone: "border-ink/20 bg-muted text-foreground",
     labelTone: "border-ink/20 bg-muted text-foreground",
   };
+}
+
+function getRequesterRowKey(requester, index) {
+  if (requester?.userId != null) return `user-${requester.userId}`;
+  const name = String(requester?.name || "").trim().toLowerCase();
+  const entityName = String(requester?.entityName || "").trim().toLowerCase();
+  if (name || entityName) return `requester-${name}-${entityName}`;
+  return `requester-row-${index}`;
 }
 
 function getUserById(users, id) {
@@ -1886,7 +1894,7 @@ function ProdRequestersRankingTable({ requesters = [] }) {
           </thead>
           <tbody className="divide-y divide-ink/10">
             {pageRequesters.map((requester, idx) => (
-              <tr key={requester?.userId ?? idx} className="border-t border-ink/10 transition-colors hover:bg-muted/30">
+              <tr key={getRequesterRowKey(requester, startIndex + idx)} className="border-t border-ink/10 transition-colors hover:bg-muted/30">
                 <td className="px-3 py-4 text-center align-middle">
                   <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold shadow-sm ${rankTone(startIndex + idx)}`}>
                     {startIndex + idx + 1}
@@ -3612,7 +3620,7 @@ export default function CreditsBoard() {
   const isProdRequesterView = false;
   const isBasicUser = role === "user";
   const canExport = true;
-  const canFilterCompany = !isBasicUser && role === "super_admin";
+  const canFilterCompany = !isBasicUser && ["super_admin", "senior"].includes(role);
   const canFilterEntity = boardContext.activeMode === "requesters" || ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
   const canFilterTeam = ["super_admin", "senior", "manager", "team_leader", "user"].includes(role);
   const canFilterUser = role === "team_leader";
@@ -3721,6 +3729,8 @@ export default function CreditsBoard() {
   }
 
   useEffect(() => {
+    let active = true;
+
     async function loadData() {
       const isInitialLoad = !hasLoadedOnceRef.current;
       try {
@@ -3754,6 +3764,7 @@ export default function CreditsBoard() {
         }
 
         const response = await api.get("/credits/solves/", { params });
+        if (!active) return;
         const payload = response.data || {};
         const rawSolves = Array.isArray(payload) ? payload : payload.solves || [];
         setSolves(rawSolves.map(normalizeSolve));
@@ -3767,6 +3778,7 @@ export default function CreditsBoard() {
         setCanOpenSolvesDrilldown(backendAllowsDrilldown && boardContext.canDrilldown);
         setProdRequestCounts({ inProgress: 0 });
       } catch (error) {
+        if (!active) return;
         console.error("Failed to load credits board", error);
         setSolves([]);
         setUsers([]);
@@ -3778,6 +3790,7 @@ export default function CreditsBoard() {
         setCanOpenSolvesDrilldown(true);
         setProdRequestCounts({ inProgress: 0 });
       } finally {
+        if (!active) return;
         if (isInitialLoad) {
           hasLoadedOnceRef.current = true;
           setLoading(false);
@@ -3788,6 +3801,9 @@ export default function CreditsBoard() {
     }
 
     if (!authLoading && user) loadData();
+    return () => {
+      active = false;
+    };
   }, [authLoading, user, reloadTick, appliedFilters, boardContext.canDrilldown, isRequesterContext]);
 
   // TODO: Implement server-side pagination when backend supports:
@@ -3816,6 +3832,14 @@ export default function CreditsBoard() {
   }, [entities, companyScopedSolves]);
 
   const visibleCompanies = useMemo(() => {
+    if (role === "senior") {
+      const seniorCompanyId = user?.company_id ?? user?.company ?? null;
+      if (!seniorCompanyId) return [];
+      const scopedMatch = roleScopedSolves.find((solve) => String(solve.companyId || "") === String(seniorCompanyId));
+      const seniorCompanyName = scopedMatch?.sourceCompanyName || user?.company_name || `Company ${seniorCompanyId}`;
+      return [{ id: seniorCompanyId, name: seniorCompanyName }];
+    }
+
     const map = new Map();
     roleScopedSolves.forEach((solve) => {
       if (!solve.companyId) return;
@@ -3827,7 +3851,7 @@ export default function CreditsBoard() {
       }
     });
     return Array.from(map.values());
-  }, [roleScopedSolves]);
+  }, [role, roleScopedSolves, user]);
 
   const visibleTeams = useMemo(() => {
     const map = new Map();
@@ -4448,6 +4472,20 @@ export default function CreditsBoard() {
                       className="h-10 rounded-lg border border-ink/10 bg-white pl-10 shadow-none"
                     />
                   </div>
+                  {canFilterCompany ? (
+                    <Select
+                      className="!h-9 !w-[160px] rounded-lg border-ink/10 bg-white text-sm shadow-none"
+                      value={appliedFilters.companyId}
+                      onChange={(e) => setAppliedFilters((prev) => ({ ...prev, companyId: e.target.value }))}
+                    >
+                      {role === "super_admin" ? <option value="all">All companies</option> : null}
+                      {visibleCompanies.map((company) => (
+                        <option key={company.id} value={String(company.id)}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : null}
                   <Select className="!h-9 !w-[140px] rounded-lg border-ink/10 bg-white text-sm shadow-none" value={appliedFilters.date} onChange={(e) => setAppliedFilters((prev) => ({ ...prev, date: e.target.value }))}>
                     <option value="30d">Last 30 days</option>
                     <option value="7d">Last 7 days</option>

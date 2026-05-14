@@ -42,7 +42,7 @@ describe("creditsBoardContext", () => {
     const userProd = getBoardContext({ role: "user", entityType: "PROD" });
 
     expect(superAdmin.tabsByMode.solvers).toEqual(["companies", "entities", "teams", "people"]);
-    expect(superAdmin.tabsByMode.requesters).toEqual(["sourceEntities", "sourceTeams", "requesters"]);
+    expect(superAdmin.tabsByMode.requesters).toEqual(["sourceCompanies", "sourceEntities", "sourceTeams", "requesters"]);
     expect(senior.tabsByMode.solvers).toEqual(["entities", "teams", "people"]);
     expect(senior.tabsByMode.requesters).toEqual(["sourceEntities", "sourceTeams", "requesters"]);
     expect(managerProd.tabsByMode.solvers).toEqual(["teams", "people"]);
