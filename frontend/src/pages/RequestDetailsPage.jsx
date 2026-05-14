@@ -27,6 +27,8 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 
 import { Avatar } from '../components/Avatar'
@@ -518,6 +520,12 @@ function RequestDetailsPage() {
   const [collapsedEntityPermissionCards, setCollapsedEntityPermissionCards] = useState({})
   const [collapsedTeamPermissionCards, setCollapsedTeamPermissionCards] = useState({})
   const [collapsedUserPermissionCards, setCollapsedUserPermissionCards] = useState({})
+  const [invitedMemberEditor, setInvitedMemberEditor] = useState({
+    open: false,
+    userId: null,
+    username: '',
+    permissions: [],
+  })
   const [lifecycleMenuOpen, setLifecycleMenuOpen] = useState(false)
   const [editCommentId, setEditCommentId] = useState(null)
   const [editCommentText, setEditCommentText] = useState('')
@@ -640,12 +648,36 @@ function RequestDetailsPage() {
     { key: 'request.edit_deadline', label: 'Edit deadline' },
   ]
   const defaultInvitePermissions = ['request.comment', 'request.view_discussion']
+  const invitedMembers = Array.isArray(request?.invited_members) ? request.invited_members : []
+  const invitedMemberIds = useMemo(
+    () => new Set((Array.isArray(invitedMembers) ? invitedMembers : []).map((item) => Number(item?.id)).filter(Boolean)),
+    [invitedMembers],
+  )
+  const inviteEligibleUsers = useMemo(
+    () => (Array.isArray(inviteTargets?.users) ? inviteTargets.users : []).filter((item) => !invitedMemberIds.has(Number(item?.id))),
+    [inviteTargets.users, invitedMemberIds],
+  )
+  const inviteEligibleTeams = useMemo(() => {
+    return (Array.isArray(inviteTargets?.teams) ? inviteTargets.teams : []).filter((team) => {
+      const memberIds = new Set(
+        inviteEligibleUsers
+          .filter((u) => (u.team_ids || []).includes(team.id))
+          .map((u) => Number(u.id))
+      )
+      return memberIds.size > 0
+    })
+  }, [inviteTargets.teams, inviteEligibleUsers])
+  const inviteEligibleEntities = useMemo(() => {
+    return (Array.isArray(inviteTargets?.entities) ? inviteTargets.entities : []).filter((entity) => {
+      return inviteEligibleUsers.some((u) => Number(u.entity_id) === Number(entity.id))
+    })
+  }, [inviteTargets.entities, inviteEligibleUsers])
   const inviteTeamsForSelectedEntities = useMemo(() => {
-    if (!inviteForm.entityIds.length) return inviteTargets.teams || []
-    return (inviteTargets.teams || []).filter((item) => inviteForm.entityIds.includes(item.entity_id))
-  }, [inviteForm.entityIds, inviteTargets.teams])
+    if (!inviteForm.entityIds.length) return inviteEligibleTeams
+    return inviteEligibleTeams.filter((item) => inviteForm.entityIds.includes(item.entity_id))
+  }, [inviteForm.entityIds, inviteEligibleTeams])
   const inviteFilteredTeams = useMemo(() => {
-    const base = inviteForm.inviteType === 'team' ? (inviteTargets.teams || []) : inviteTeamsForSelectedEntities
+    const base = inviteForm.inviteType === 'team' ? inviteEligibleTeams : inviteTeamsForSelectedEntities
     const byEntity = inviteTeamEntityFilter === 'all'
       ? base
       : base.filter((team) => String(team.entity_id || '') === String(inviteTeamEntityFilter))
@@ -655,7 +687,7 @@ function RequestDetailsPage() {
       const label = `${team.name || ''} ${team.leader_name || ''}`.toLowerCase()
       return label.includes(q)
     })
-  }, [inviteForm.inviteType, inviteTargets.teams, inviteTeamsForSelectedEntities, inviteTeamEntityFilter, inviteTeamSearch])
+  }, [inviteForm.inviteType, inviteEligibleTeams, inviteTeamsForSelectedEntities, inviteTeamEntityFilter, inviteTeamSearch])
   const inviteSupportEntityOptions = useMemo(() => {
     return (inviteTargets.entities || []).filter((entity) => {
       const type = String(entity.entity_type || '').toUpperCase()
@@ -664,16 +696,16 @@ function RequestDetailsPage() {
   }, [inviteTargets.entities])
   const inviteFilteredEntities = useMemo(() => {
     const q = inviteEntitySearch.trim().toLowerCase()
-    const base = (inviteTargets.entities || []).filter((entity) => (
+    const base = inviteEligibleEntities.filter((entity) => (
       inviteEntityTypeFilter === 'all'
         ? true
         : String(entity.entity_type || '').toUpperCase() === inviteEntityTypeFilter
     ))
     if (!q) return base
     return base.filter((entity) => String(entity.name || '').toLowerCase().includes(q))
-  }, [inviteEntitySearch, inviteEntityTypeFilter, inviteTargets.entities])
+  }, [inviteEligibleEntities, inviteEntitySearch, inviteEntityTypeFilter])
   const inviteUsersForFilters = useMemo(() => {
-    const users = inviteTargets.users || []
+    const users = inviteEligibleUsers
     const byEntity = inviteUserEntityFilter === 'all'
       ? users
       : users.filter((item) => String(item.entity_id || '') === String(inviteUserEntityFilter))
@@ -687,32 +719,32 @@ function RequestDetailsPage() {
       const label = `${item.username || ''} ${(item.role_keys || []).join(' ')}`.toLowerCase()
       return label.includes(q)
     })
-  }, [inviteTargets.users, inviteUserEntityFilter, inviteUserRoleFilter, inviteUserSearch])
+  }, [inviteEligibleUsers, inviteUserEntityFilter, inviteUserRoleFilter, inviteUserSearch])
   const inviteUserRoleOptions = useMemo(() => {
     const roleSet = new Set()
-    ;(inviteTargets.users || []).forEach((item) => {
+    ;(inviteEligibleUsers || []).forEach((item) => {
       ;(item.role_keys || []).forEach((role) => roleSet.add(role))
     })
     return Array.from(roleSet).sort()
-  }, [inviteTargets.users])
+  }, [inviteEligibleUsers])
   const inviteTeamMemberCountMap = useMemo(() => {
     const map = {}
-    ;(inviteTargets.teams || []).forEach((team) => { map[team.id] = 0 })
-    ;(inviteTargets.users || []).forEach((userItem) => {
+    ;(inviteEligibleTeams || []).forEach((team) => { map[team.id] = 0 })
+    ;(inviteEligibleUsers || []).forEach((userItem) => {
       ;(userItem.team_ids || []).forEach((teamId) => {
         map[teamId] = (map[teamId] || 0) + 1
       })
     })
     return map
-  }, [inviteTargets.teams, inviteTargets.users])
+  }, [inviteEligibleTeams, inviteEligibleUsers])
   const inviteEntityUserCountMap = useMemo(() => {
     const map = {}
-    ;(inviteTargets.entities || []).forEach((entity) => { map[entity.id] = 0 })
-    ;(inviteTargets.users || []).forEach((userItem) => {
+    ;(inviteEligibleEntities || []).forEach((entity) => { map[entity.id] = 0 })
+    ;(inviteEligibleUsers || []).forEach((userItem) => {
       if (userItem.entity_id) map[userItem.entity_id] = (map[userItem.entity_id] || 0) + 1
     })
     return map
-  }, [inviteTargets.entities, inviteTargets.users])
+  }, [inviteEligibleEntities, inviteEligibleUsers])
   const assignmentActions = (canAssignToMe || canAssignToMember || canReassignTargetTeam || canInviteMembers) ? (
     <div className="flex items-center gap-2">
       {canAssignToMe ? (
@@ -1509,6 +1541,35 @@ function RequestDetailsPage() {
     }
   }
 
+  function openInvitedMemberEditor(member) {
+    const selectedPermissions = Object.entries(member?.permissions || {})
+      .filter(([, allowed]) => Boolean(allowed))
+      .map(([key]) => key)
+    setInvitedMemberEditor({
+      open: true,
+      userId: member.id,
+      username: member.username,
+      permissions: selectedPermissions,
+    })
+  }
+
+  async function saveInvitedMemberPermissions() {
+    if (!invitedMemberEditor.userId) return
+    const result = await handleAction(
+      api.patch(`/requests/${requestId}/invite-members/${invitedMemberEditor.userId}/`, {
+        permissions: invitedMemberEditor.permissions,
+      })
+    )
+    if (!result?.ok) return
+    setInvitedMemberEditor({ open: false, userId: null, username: '', permissions: [] })
+  }
+
+  async function removeInvitedMember(member) {
+    if (!member?.id) return
+    if (!window.confirm(`Remove ${member.username} from invited members?`)) return
+    await handleAction(api.delete(`/requests/${requestId}/invite-members/${member.id}/`))
+  }
+
   if (state.loading) return (
     <main className="page-content space-y-6">
       <PageHeader
@@ -2224,6 +2285,66 @@ function RequestDetailsPage() {
               </div>
             </article>
 
+            {canInviteMembers ? (
+              <article className="surface-card p-5">
+                <h3 className="mb-3 text-[11px] font-extrabold uppercase tracking-widest">Invited Members</h3>
+                {invitedMembers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No invited members yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {invitedMembers.map((member) => {
+                      const granted = Object.entries(member.permissions || {})
+                        .filter(([, allowed]) => Boolean(allowed))
+                        .map(([key]) => invitePermissionOptions.find((item) => item.key === key)?.label || key)
+                      return (
+                        <div key={`invited-member-${member.id}`} className="rounded-md border border-ink/10 p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-extrabold text-foreground">{member.username}</p>
+                              <p className="truncate text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                {member.entity_name || 'Unknown entity'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                                onClick={() => openInvitedMemberEditor(member)}
+                                disabled={actionState.busy}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-destructive hover:text-destructive"
+                                onClick={() => removeInvitedMember(member)}
+                                disabled={actionState.busy}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {granted.length ? granted.map((label) => (
+                              <span key={`${member.id}-${label}`} className="rounded border border-ink/10 bg-muted px-1.5 py-0.5 text-[10px] font-bold text-foreground">
+                                {label}
+                              </span>
+                            )) : (
+                              <span className="text-[10px] font-semibold text-muted-foreground">No extra permissions</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </article>
+            ) : null}
+
           </div>
         </aside>
       </div>
@@ -2481,7 +2602,7 @@ function RequestDetailsPage() {
                         className="h-9 w-full"
                       >
                         <option value="all">All support/dev entities</option>
-                        {inviteSupportEntityOptions.map((entity) => (
+                        {inviteSupportEntityOptions.filter((entity) => inviteEligibleEntities.some((e) => e.id === entity.id)).map((entity) => (
                           <option key={entity.id} value={entity.id}>{entity.name}</option>
                         ))}
                       </Select>
@@ -2848,7 +2969,7 @@ function RequestDetailsPage() {
                       className="h-10 w-full"
                     >
                       <option value="all">All entities</option>
-                      {(inviteTargets.entities || []).map((entity) => (
+                      {inviteEligibleEntities.map((entity) => (
                         <option key={entity.id} value={entity.id}>{entity.name}</option>
                       ))}
                     </Select>
@@ -3059,6 +3180,55 @@ function RequestDetailsPage() {
                 disabled={!reassignTeamForm.targetTeamId || !hasReassignmentTargets || actionState.busy}
               >
                 {hasTargetTeamLeader ? 'Reassign' : 'Assign'}
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {invitedMemberEditor.open ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-4">
+          <section className="w-full max-w-md rounded-xl border border-ink/10 bg-card shadow-xl">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Invited Member</p>
+              <h3 className="mt-1 text-base font-extrabold text-foreground">
+                Edit Permissions • {invitedMemberEditor.username}
+              </h3>
+            </div>
+            <div className="space-y-2 px-5 py-4">
+              {invitePermissionOptions.map((item) => (
+                <label key={`invited-editor-${item.key}`} className="flex items-center gap-2 text-sm font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={invitedMemberEditor.permissions.includes(item.key)}
+                    onChange={(e) => {
+                      setInvitedMemberEditor((curr) => ({
+                        ...curr,
+                        permissions: e.target.checked
+                          ? (curr.permissions.includes(item.key) ? curr.permissions : [...curr.permissions, item.key])
+                          : curr.permissions.filter((key) => key !== item.key),
+                      }))
+                    }}
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setInvitedMemberEditor({ open: false, userId: null, username: '', permissions: [] })}
+                disabled={actionState.busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={saveInvitedMemberPermissions}
+                disabled={actionState.busy}
+              >
+                Save
               </Button>
             </div>
           </section>

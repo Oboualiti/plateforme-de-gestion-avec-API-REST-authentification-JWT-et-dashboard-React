@@ -16,6 +16,7 @@ from .views import (
     RequestAssignToMeView,
     RequestAssignUserView,
     RequestInviteMembersView,
+    RequestInvitedMemberManageView,
     RequestAiImproveView,
     RequestAiSummaryView,
     RequestMessageViewSet,
@@ -96,5 +97,10 @@ urlpatterns = [
         "requests/<int:request_id>/invite-members/",
         RequestInviteMembersView.as_view(),
         name="requests-invite-members",
+    ),
+    path(
+        "requests/<int:request_id>/invite-members/<int:user_id>/",
+        RequestInvitedMemberManageView.as_view(),
+        name="requests-invite-members-manage",
     ),
 ] + router.urls

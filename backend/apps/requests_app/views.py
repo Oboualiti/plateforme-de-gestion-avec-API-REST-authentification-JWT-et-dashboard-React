@@ -3171,7 +3171,9 @@ class RequestInviteMembersView(APIView):
                 {"detail": "You do not have permission to invite members for this request."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        return Response(get_request_invite_targets(service_request))
+        payload = get_request_invite_targets(service_request)
+        payload["invited_members"] = get_request_invited_members(service_request)
+        return Response(payload)
 
     def post(self, request, request_id):
         service_request = load_request(request_id)
@@ -3196,6 +3198,13 @@ class RequestInviteMembersView(APIView):
 
         allowed_permissions = set(payload.get("permissions") or [])
         allowed_permissions.add("request.view")
+        managed_permission_keys = [
+            "request.view",
+            "request.update_status",
+            "request.comment",
+            "request.view_discussion",
+            "request.edit_deadline",
+        ]
 
         selected_user_ids = set()
         if payload["invite_type"] == "entity":
@@ -3225,26 +3234,138 @@ class RequestInviteMembersView(APIView):
         if not selected_user_ids:
             return Response({"detail": "No eligible users were found for the selected target."}, status=status.HTTP_400_BAD_REQUEST)
 
-        UserRequestPermissionOverride.objects.filter(
+        # Persist explicit allow/deny for all invite-managed keys so unchecked
+        # permissions do not silently fall back to inherited role permissions.
+        existing_overrides = UserRequestPermissionOverride.objects.filter(
             user_id__in=selected_user_ids,
             request=service_request,
-            permission_key__in=list(allowed_permissions),
-        ).delete()
-        for permission_key in sorted(allowed_permissions):
-            UserRequestPermissionOverride.objects.bulk_create(
-                [
+            permission_key__in=managed_permission_keys,
+        )
+        existing_map = {
+            (item.user_id, item.permission_key): item
+            for item in existing_overrides
+        }
+
+        to_create = []
+        to_update = []
+        for user_id in sorted(selected_user_ids):
+            for permission_key in managed_permission_keys:
+                is_allowed = permission_key in allowed_permissions
+                existing = existing_map.get((user_id, permission_key))
+                if existing is None:
+                    to_create.append(
+                        UserRequestPermissionOverride(
+                            user_id=user_id,
+                            request=service_request,
+                            permission_key=permission_key,
+                            allowed=is_allowed,
+                            created_by=request.user,
+                        )
+                    )
+                elif bool(existing.allowed) != bool(is_allowed):
+                    existing.allowed = is_allowed
+                    to_update.append(existing)
+
+        if to_create:
+            UserRequestPermissionOverride.objects.bulk_create(to_create)
+        if to_update:
+            UserRequestPermissionOverride.objects.bulk_update(to_update, ["allowed", "updated_at"])
+
+        service_request = load_request(request_id)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+
+class RequestInvitedMemberManageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    managed_permission_keys = [
+        "request.view",
+        "request.update_status",
+        "request.comment",
+        "request.view_discussion",
+        "request.edit_deadline",
+    ]
+
+    def _validate_access(self, request, request_id):
+        service_request = load_request(request_id)
+        if service_request is None:
+            return None, Response({"detail": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not get_visible_requests_queryset(request.user).filter(id=service_request.id).exists():
+            return None, Response({"detail": "You cannot access this request."}, status=status.HTTP_403_FORBIDDEN)
+        if not can_invite_request_members(request.user, service_request):
+            return None, Response({"detail": "You do not have permission to manage invited members."}, status=status.HTTP_403_FORBIDDEN)
+        return service_request, None
+
+    def patch(self, request, request_id, user_id):
+        service_request, error_response = self._validate_access(request, request_id)
+        if error_response:
+            return error_response
+        target_user = User.objects.filter(id=user_id, is_active=True).first()
+        if not target_user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        permissions = set(request.data.get("permissions") or [])
+        valid_permissions = {
+            "request.update_status",
+            "request.comment",
+            "request.view_discussion",
+            "request.edit_deadline",
+        }
+        if not permissions.issubset(valid_permissions):
+            return Response({"detail": "Invalid permissions payload."}, status=status.HTTP_400_BAD_REQUEST)
+        permissions.add("request.view")
+
+        existing = UserRequestPermissionOverride.objects.filter(
+            user_id=target_user.id,
+            request=service_request,
+            permission_key__in=self.managed_permission_keys,
+        )
+        existing_map = {(item.user_id, item.permission_key): item for item in existing}
+        to_create = []
+        to_update = []
+        for key in self.managed_permission_keys:
+            allowed = key in permissions
+            current = existing_map.get((target_user.id, key))
+            if current is None:
+                to_create.append(
                     UserRequestPermissionOverride(
-                        user_id=user_id,
+                        user_id=target_user.id,
                         request=service_request,
-                        permission_key=permission_key,
-                        allowed=True,
+                        permission_key=key,
+                        allowed=allowed,
                         created_by=request.user,
                     )
-                    for user_id in sorted(selected_user_ids)
-                ],
-                ignore_conflicts=True,
-            )
+                )
+            elif bool(current.allowed) != bool(allowed):
+                current.allowed = allowed
+                to_update.append(current)
+        if to_create:
+            UserRequestPermissionOverride.objects.bulk_create(to_create)
+        if to_update:
+            UserRequestPermissionOverride.objects.bulk_update(to_update, ["allowed", "updated_at"])
 
+        service_request = load_request(request_id)
+        return Response(
+            RequestDetailSerializer(
+                service_request,
+                context=build_request_detail_context(request, service_request),
+            ).data
+        )
+
+    def delete(self, request, request_id, user_id):
+        service_request, error_response = self._validate_access(request, request_id)
+        if error_response:
+            return error_response
+        UserRequestPermissionOverride.objects.filter(
+            user_id=user_id,
+            request=service_request,
+            permission_key__in=self.managed_permission_keys,
+        ).delete()
         service_request = load_request(request_id)
         return Response(
             RequestDetailSerializer(
@@ -3599,14 +3720,12 @@ def get_allowed_status_transitions(user, service_request):
     ):
         return {ServiceRequest.Status.CLOSED, ServiceRequest.Status.IN_PROGRESS}
 
-    if not can_operate_submitted_request(user, service_request):
-        return set()
-
     can_update_status = can_use_request_permission(
         user,
         service_request,
         "request.update_status",
-        has_permission(user, "resolve_request"),
+        has_permission(user, "resolve_request")
+        and can_operate_submitted_request(user, service_request),
     )
     if not can_update_status:
         return set()
@@ -3740,6 +3859,7 @@ def can_reassign_target_team(user, service_request):
         return False
     role_key = get_primary_role_key(user)
     request_company_id = get_request_company_id(service_request)
+    request_target_entity_id = get_request_target_entity_id(service_request)
 
     if role_key == "super_admin":
         return True
@@ -3750,7 +3870,14 @@ def can_reassign_target_team(user, service_request):
             return bool(request_company_id and user.company_id and request_company_id == user.company_id)
         return False
     if role_key == "manager":
-        return bool(request_company_id and user.company_id and request_company_id == user.company_id)
+        return bool(
+            request_company_id
+            and request_target_entity_id
+            and user.company_id
+            and user.entity_id
+            and request_company_id == user.company_id
+            and request_target_entity_id == user.entity_id
+        )
 
     if is_global_requests_manager(user):
         return True
@@ -3789,6 +3916,7 @@ def build_request_detail_context(request, service_request):
             request.user, service_request
         ),
         "potential_assignees": get_potential_assignees(request.user, service_request),
+        "invited_members": get_request_invited_members(service_request),
     }
 
 
@@ -4044,6 +4172,56 @@ def get_request_invite_targets(service_request):
         ],
         "users": users_payload,
     }
+
+
+def get_request_invited_members(service_request):
+    managed_permission_keys = [
+        "request.view",
+        "request.update_status",
+        "request.comment",
+        "request.view_discussion",
+        "request.edit_deadline",
+    ]
+    overrides = UserRequestPermissionOverride.objects.filter(
+        request=service_request,
+        permission_key__in=managed_permission_keys,
+    ).select_related("user", "user__entity")
+
+    by_user = {}
+    for item in overrides:
+        if not item.user_id or not item.user or not item.user.is_active:
+            continue
+        entry = by_user.setdefault(
+            item.user_id,
+            {
+                "id": item.user_id,
+                "username": item.user.username,
+                "entity_id": item.user.entity_id,
+                "entity_name": item.user.entity.name if item.user.entity_id and item.user.entity else "",
+                "permissions": {},
+            },
+        )
+        entry["permissions"][item.permission_key] = bool(item.allowed)
+
+    result = []
+    for _, entry in by_user.items():
+        if not entry["permissions"].get("request.view", False):
+            continue
+        result.append(
+            {
+                "id": entry["id"],
+                "username": entry["username"],
+                "entity_id": entry["entity_id"],
+                "entity_name": entry["entity_name"],
+                "permissions": {
+                    "request.update_status": bool(entry["permissions"].get("request.update_status", False)),
+                    "request.comment": bool(entry["permissions"].get("request.comment", False)),
+                    "request.view_discussion": bool(entry["permissions"].get("request.view_discussion", False)),
+                    "request.edit_deadline": bool(entry["permissions"].get("request.edit_deadline", False)),
+                },
+            }
+        )
+    return sorted(result, key=lambda item: item["username"].lower())
 
 
 def apply_request_filters(queryset, params):

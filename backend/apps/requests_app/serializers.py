@@ -437,6 +437,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     is_pending_approval = serializers.SerializerMethodField()
     can_edit_deadline = serializers.SerializerMethodField()
     can_invite_members = serializers.SerializerMethodField()
+    invited_members = serializers.SerializerMethodField()
     activity_timeline = serializers.SerializerMethodField()
     priority_label = serializers.SerializerMethodField()
     was_rejected = serializers.SerializerMethodField()
@@ -509,6 +510,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "is_pending_approval",
             "can_edit_deadline",
             "can_invite_members",
+            "invited_members",
         ]
 
     def get_role_keys(self, obj):
@@ -668,6 +670,9 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_can_invite_members(self, obj):
         return bool(self.context.get("can_invite_members"))
+
+    def get_invited_members(self, obj):
+        return self.context.get("invited_members") or []
 
     def get_attachment_url(self, obj):
         if not obj.attachment:
