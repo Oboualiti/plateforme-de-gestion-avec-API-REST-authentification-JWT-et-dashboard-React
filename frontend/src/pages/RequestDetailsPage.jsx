@@ -4,7 +4,6 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
-  Bot,
   Calendar,
   CalendarDays,
   CheckCircle2,
@@ -15,7 +14,6 @@ import {
   MoreHorizontal,
   Paperclip,
   Send,
-  Sparkles,
   UserPlus,
   Users,
   Building2,
@@ -47,6 +45,7 @@ const statusLabelMap = {
 
 const terminalStatuses = new Set(['REJECTED', 'COMPLETED', 'CLOSED'])
 const stepperStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED']
+const prodLifecycleStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED']
 const acceptedFlowStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED']
 const rejectedFlowStatuses = ['NEW', 'REJECTED']
 const priorityLabelMap = {
@@ -118,6 +117,11 @@ function isImageAttachment(url, fallbackName = '') {
   )
 }
 
+function isCreditsEvidenceComment(comment) {
+  const message = String(comment?.message || '').trim().toLowerCase()
+  return message.startsWith('credits evidence') || message.startsWith('credits proof')
+}
+
 function getInitials(name) {
   if (!name) return '?'
   return name
@@ -172,8 +176,8 @@ function StatusNoteModal({
   rejectMode,
   rejectionReason,
   note,
-  evidenceLink,
-  evidenceAttachment,
+  evidenceLinks,
+  evidenceAttachments,
   deadlineDate,
   requireDeadline,
   required,
@@ -181,8 +185,12 @@ function StatusNoteModal({
   loading,
   onChangeNote,
   onChangeRejectionReason,
-  onChangeEvidenceLink,
-  onChangeEvidenceAttachment,
+  onChangeEvidenceLinkAt,
+  onAddEvidenceLink,
+  onRemoveEvidenceLink,
+  onChangeEvidenceAttachmentAt,
+  onAddEvidenceAttachment,
+  onRemoveEvidenceAttachment,
   onChangeDeadlineDate,
   onCancel,
   onConfirm,
@@ -230,24 +238,74 @@ function StatusNoteModal({
           {targetStatus === 'COMPLETED' ? (
             <>
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Evidence link (optional)
+                Evidence links (optional)
               </label>
-              <Input
-                type="url"
-                value={evidenceLink}
-                onChange={(event) => onChangeEvidenceLink(event.target.value)}
-                placeholder="https://..."
-              />
+              <div className="space-y-2">
+                {(evidenceLinks || []).map((value, index) => (
+                  <div key={`evidence-link-${index}`} className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      value={value}
+                      onChange={(event) => onChangeEvidenceLinkAt(index, event.target.value)}
+                      placeholder="https://..."
+                    />
+                    {(evidenceLinks || []).length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 px-2 text-[10px] font-bold"
+                        onClick={() => onRemoveEvidenceLink(index)}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-2 text-[10px] font-bold uppercase tracking-wider"
+                  onClick={onAddEvidenceLink}
+                >
+                  Add another link
+                </Button>
+              </div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Evidence file (optional)
+                Evidence files (optional)
               </label>
-              <Input
-                type="file"
-                onChange={(event) => onChangeEvidenceAttachment(event.target.files?.[0] || null)}
-              />
-              {evidenceAttachment ? (
-                <p className="text-xs text-muted-foreground">Selected: {evidenceAttachment.name}</p>
-              ) : null}
+              <div className="space-y-2">
+                {(evidenceAttachments || []).map((file, index) => (
+                  <div key={`evidence-file-${index}`} className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      onChange={(event) => onChangeEvidenceAttachmentAt(index, event.target.files?.[0] || null)}
+                    />
+                    {(evidenceAttachments || []).length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 px-2 text-[10px] font-bold"
+                        onClick={() => onRemoveEvidenceAttachment(index)}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-2 text-[10px] font-bold uppercase tracking-wider"
+                  onClick={onAddEvidenceAttachment}
+                >
+                  Add another file
+                </Button>
+                {evidenceAttachments?.some(Boolean) ? (
+                  <p className="text-xs text-muted-foreground">
+                    Selected: {evidenceAttachments.filter(Boolean).map((item) => item.name).join(', ')}
+                  </p>
+                ) : null}
+              </div>
             </>
           ) : null}
           {requireDeadline ? (
@@ -432,15 +490,14 @@ function RequestDetailsPage() {
   const [editCommentText, setEditCommentText] = useState('')
   const [editCommentError, setEditCommentError] = useState('')
   const [replyToComment, setReplyToComment] = useState(null)
-  const [aiSummary, setAiSummary] = useState({ loading: false, error: '', data: null })
   const [historyPage, setHistoryPage] = useState(1)
   const [statusDialog, setStatusDialog] = useState({
     open: false,
     targetStatus: '',
     rejectionReason: '',
     note: '',
-    evidenceLink: '',
-    evidenceAttachment: null,
+    evidenceLinks: [''],
+    evidenceAttachments: [null],
     deadlineDate: '',
     requireDeadline: false,
     required: false,
@@ -509,11 +566,14 @@ function RequestDetailsPage() {
     if (request?.status === 'REJECTED') {
       return rejectedFlowStatuses
     }
+    if (isProdEntityUser && (isUser || isTeamLeader || isManager)) {
+      return prodLifecycleStatuses
+    }
     if (canUseAdvancedLifecycle) {
       return acceptedFlowStatuses
     }
     return stepperStatuses
-  }, [canUseAdvancedLifecycle, request?.status])
+  }, [canUseAdvancedLifecycle, isManager, isProdEntityUser, isTeamLeader, isUser, request?.status])
   const canSwitchAcceptedRejected = useMemo(() => {
     if (!canChangeStatus || actionState.busy) return false
     if (!request?.status) return false
@@ -592,6 +652,53 @@ function RequestDetailsPage() {
     })
     return map
   }, [comments])
+  const evidenceItems = useMemo(() => {
+    return comments
+      .filter((item) => isCreditsEvidenceComment(item) && (item?.attachment_url || item?.message))
+      .map((item) => {
+        const lines = String(item?.message || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+        const noteLine = lines.find((line) => line.toLowerCase().startsWith('note:'))
+        const linkLine = lines.find((line) => line.toLowerCase().startsWith('link:'))
+        const note = noteLine ? noteLine.slice(noteLine.indexOf(':') + 1).trim() : ''
+        const link = linkLine ? linkLine.slice(linkLine.indexOf(':') + 1).trim() : ''
+        return {
+          id: item.id,
+          createdAt: item.created_at,
+          createdBy: item.sender_name || item.sender_username || 'Unknown',
+          note,
+          link,
+          attachmentUrl: item.attachment_url || '',
+          attachmentName: getFileNameFromUrl(item.attachment_url || ''),
+        }
+      })
+  }, [comments])
+
+  const downloadEvidenceAttachment = async (evidence) => {
+    if (!evidence?.id || !requestId) return
+    try {
+      const response = await api.get(`/requests/${requestId}/comments/${evidence.id}/download/`, {
+        responseType: 'blob',
+      })
+      const blob = response.data
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      const disposition = response.headers?.['content-disposition'] || ''
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i)
+      const filename = decodeURIComponent((match?.[1] || match?.[2] || '').trim() || evidence.attachmentName || 'evidence-file')
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(objectUrl)
+    } catch (_error) {
+      if (evidence?.attachmentUrl) window.open(evidence.attachmentUrl, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   function jumpToComment(commentId) {
     const numericId = Number(commentId)
     if (!numericId) return
@@ -911,8 +1018,8 @@ function RequestDetailsPage() {
       targetStatus: status,
       rejectionReason: '',
       note: '',
-      evidenceLink: '',
-      evidenceAttachment: null,
+      evidenceLinks: [''],
+      evidenceAttachments: [null],
       deadlineDate: request?.deadline_date || '',
       requireDeadline,
       required: rejectMode ? false : required,
@@ -928,8 +1035,8 @@ function RequestDetailsPage() {
       targetStatus: '',
       rejectionReason: '',
       note: '',
-      evidenceLink: '',
-      evidenceAttachment: null,
+      evidenceLinks: [''],
+      evidenceAttachments: [null],
       deadlineDate: '',
       requireDeadline: false,
       required: false,
@@ -968,15 +1075,24 @@ function RequestDetailsPage() {
       }))
       return
     }
-    const hasEvidence = Boolean(statusDialog.evidenceAttachment) || Boolean(statusDialog.evidenceLink.trim())
+    const parsedEvidenceLinks = (statusDialog.evidenceLinks || [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+    const parsedEvidenceAttachments = (statusDialog.evidenceAttachments || []).filter(Boolean)
+    const hasEvidence = parsedEvidenceAttachments.length > 0 || parsedEvidenceLinks.length > 0
     const useFormData = statusDialog.targetStatus === 'COMPLETED' && hasEvidence
     if (useFormData) {
       const payload = new FormData()
       payload.append('status', statusDialog.targetStatus)
       payload.append('note', note)
       if (statusDialog.deadlineDate) payload.append('deadline_date', statusDialog.deadlineDate)
-      if (statusDialog.evidenceLink.trim()) payload.append('evidence_link', statusDialog.evidenceLink.trim())
-      if (statusDialog.evidenceAttachment) payload.append('evidence_attachment', statusDialog.evidenceAttachment)
+      parsedEvidenceLinks.forEach((link) => {
+        payload.append('evidence_links', link)
+        payload.append('evidence_links[]', link)
+      })
+      if (parsedEvidenceLinks.length > 0) payload.append('evidence_link', parsedEvidenceLinks[0])
+      parsedEvidenceAttachments.forEach((file) => payload.append('evidence_attachments', file))
+      if (parsedEvidenceAttachments.length > 0) payload.append('evidence_attachment', parsedEvidenceAttachments[0])
       const result = await handleAction(api.post(`/requests/${requestId}/status/`, payload))
       if (!result?.ok) {
         const apiError =
@@ -1010,8 +1126,8 @@ function RequestDetailsPage() {
       targetStatus: '',
       rejectionReason: '',
       note: '',
-      evidenceLink: '',
-      evidenceAttachment: null,
+      evidenceLinks: [''],
+      evidenceAttachments: [null],
       deadlineDate: '',
       requireDeadline: false,
       required: false,
@@ -1042,17 +1158,6 @@ function RequestDetailsPage() {
     }))
     setReassignTeamDialogOpen(false)
     setReassignTeamForm({ targetTeamId: '', note: '' })
-  }
-
-  async function loadAiSummary() {
-    setAiSummary({ loading: true, error: '', data: null })
-    try {
-      const response = await api.post(`/requests/${requestId}/ai-summary/`)
-      setAiSummary({ loading: false, error: '', data: response.data })
-    } catch (err) {
-      const errorMsg = err.response?.data?.detail || 'AI summarization failed. Please try again.'
-      setAiSummary({ loading: false, error: errorMsg, data: null })
-    }
   }
 
   async function saveDeadline() {
@@ -1192,62 +1297,6 @@ function RequestDetailsPage() {
       <div className="grid gap-6 lg:grid-cols-12">
         {/* Left column */}
         <div className={cn('space-y-6', hideProdActionPanels ? 'lg:col-span-12' : 'lg:col-span-8')}>
-          {/* AI Summary */}
-          <article className="surface-card p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15 text-primary border border-ink">
-                <Bot className="h-4 w-4" />
-              </div>
-              <h2 className="text-sm font-extrabold uppercase text-foreground tracking-widest">AI Synopsis</h2>
-              <span className="rounded-md bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">Beta</span>
-              <Button variant="ghost" size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="ml-auto h-7 px-2 border border-ink/10 shadow-sm bg-card text-[10px] uppercase font-extrabold">
-                {aiSummary.loading ? 'Parsing...' : <><Sparkles className="h-3 w-3 mr-1" /> Re-trigger</>}
-              </Button>
-            </div>
-            {aiSummary.data ? (
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div className="sm:col-span-1">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Current progress</p>
-                  <p className="mb-1.5 text-xs text-foreground font-bold">{aiSummary.data.current_progress || '-'}</p>
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const progressMap = {
-                        NEW: 25,
-                        ACCEPTED: 50,
-                        IN_PROGRESS: 75,
-                        COMPLETED: 100,
-                        REJECTED: 100,
-                        CLOSED: 100,
-                      };
-                      const percent = progressMap[request.status] || 0;
-                      return (
-                        <>
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted border border-ink/20">
-                            <div className={cn("h-full rounded-full", request.status === 'REJECTED' ? "bg-destructive" : "bg-primary")} style={{ width: `${percent}%` }} />
-                          </div>
-                          <span className="text-[11px] font-extrabold tabular-nums text-foreground">{percent}%</span>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-                <div className="sm:col-span-1">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Summary</p>
-                  <p className="text-xs leading-relaxed text-foreground font-medium">
-                    {aiSummary.data.short_summary || 'No summary available yet.'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-               <div className="rounded-md border-2 border-dashed border-ink/30 bg-muted/10 py-6 text-center">
-                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">No intelligence data generated yet.</p>
-                 <Button size="sm" onClick={loadAiSummary} disabled={aiSummary.loading} className="text-[10px] font-extrabold uppercase tracking-wider shadow-brutal border border-ink/10 bg-primary text-primary-foreground">
-                   {aiSummary.loading ? 'Initializing...' : 'Initialize Synthesis'}
-                 </Button>
-               </div>
-            )}
-          </article>
-
           {/* Lifecycle */}
           <article className="surface-card p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -1338,6 +1387,67 @@ function RequestDetailsPage() {
               <a href={request.attachment_url} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 rounded-md border border-ink/10 bg-muted/30 px-4 py-2 text-[11px] uppercase tracking-wider font-extrabold hover:bg-muted shadow-brutal transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none ml-1">
                 <Paperclip className="h-3.5 w-3.5" /> View original attachment
               </a>
+            )}
+          </article>
+
+          <article className="surface-card p-5">
+            <div className="mb-3 flex items-center gap-2 text-muted-foreground pl-1">
+              <Paperclip className="h-4 w-4" />
+              <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-foreground">
+                Evidence{evidenceItems.length ? ` (${evidenceItems.length})` : ''}
+              </h3>
+            </div>
+            {evidenceItems.length === 0 ? (
+              <p className="pl-1 text-sm font-medium text-muted-foreground">No evidence attached yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {evidenceItems.map((evidence) => (
+                  <div key={evidence.id} className="rounded-md border border-ink/10 bg-muted/20 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-foreground">
+                        Added by {evidence.createdBy} on {formatDateTime(evidence.createdAt)}
+                      </p>
+                    </div>
+                    {evidence.note ? (
+                      <p className="mt-2 text-sm text-foreground/90">{evidence.note}</p>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {evidence.link ? (
+                        <a
+                          href={evidence.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-md border border-ink/10 bg-card px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider text-primary hover:bg-muted/40"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open link
+                        </a>
+                      ) : null}
+                      {evidence.attachmentUrl ? (
+                        <>
+                          <a
+                            href={evidence.attachmentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-md border border-ink/10 bg-card px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider hover:bg-muted/40"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            {evidence.attachmentName}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => downloadEvidenceAttachment(evidence)}
+                            className="inline-flex items-center gap-2 rounded-md border border-ink/10 bg-card px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider hover:bg-muted/40"
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                            Download
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </article>
 
@@ -1793,8 +1903,8 @@ function RequestDetailsPage() {
         rejectMode={statusDialog.rejectMode}
         rejectionReason={statusDialog.rejectionReason}
         note={statusDialog.note}
-        evidenceLink={statusDialog.evidenceLink}
-        evidenceAttachment={statusDialog.evidenceAttachment}
+        evidenceLinks={statusDialog.evidenceLinks}
+        evidenceAttachments={statusDialog.evidenceAttachments}
         deadlineDate={statusDialog.deadlineDate}
         requireDeadline={statusDialog.requireDeadline}
         required={statusDialog.required}
@@ -1806,11 +1916,47 @@ function RequestDetailsPage() {
         onChangeNote={(value) =>
           setStatusDialog((current) => ({ ...current, note: value, error: '' }))
         }
-        onChangeEvidenceLink={(value) =>
-          setStatusDialog((current) => ({ ...current, evidenceLink: value, error: '' }))
+        onChangeEvidenceLinkAt={(index, value) =>
+          setStatusDialog((current) => ({
+            ...current,
+            evidenceLinks: current.evidenceLinks.map((item, i) => (i === index ? value : item)),
+            error: '',
+          }))
         }
-        onChangeEvidenceAttachment={(value) =>
-          setStatusDialog((current) => ({ ...current, evidenceAttachment: value, error: '' }))
+        onAddEvidenceLink={() =>
+          setStatusDialog((current) => ({
+            ...current,
+            evidenceLinks: [...(current.evidenceLinks || ['']), ''],
+            error: '',
+          }))
+        }
+        onRemoveEvidenceLink={(index) =>
+          setStatusDialog((current) => ({
+            ...current,
+            evidenceLinks: current.evidenceLinks.filter((_, i) => i !== index),
+            error: '',
+          }))
+        }
+        onChangeEvidenceAttachmentAt={(index, value) =>
+          setStatusDialog((current) => ({
+            ...current,
+            evidenceAttachments: current.evidenceAttachments.map((item, i) => (i === index ? value : item)),
+            error: '',
+          }))
+        }
+        onAddEvidenceAttachment={() =>
+          setStatusDialog((current) => ({
+            ...current,
+            evidenceAttachments: [...(current.evidenceAttachments || [null]), null],
+            error: '',
+          }))
+        }
+        onRemoveEvidenceAttachment={(index) =>
+          setStatusDialog((current) => ({
+            ...current,
+            evidenceAttachments: current.evidenceAttachments.filter((_, i) => i !== index),
+            error: '',
+          }))
         }
         onChangeDeadlineDate={(value) =>
           setStatusDialog((current) => ({ ...current, deadlineDate: value, error: '' }))

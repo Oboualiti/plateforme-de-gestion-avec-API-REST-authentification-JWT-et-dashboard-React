@@ -73,6 +73,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
     reference_code = serializers.CharField(source="request_number", read_only=True)
     type = serializers.CharField(source="category", read_only=True)
     target_entity_name = serializers.SerializerMethodField()
+    target_entity_type = serializers.SerializerMethodField()
     source_entity_name = serializers.SerializerMethodField()
     creator_name = serializers.CharField(source="requester_user.username", read_only=True)
     assignee_name = serializers.CharField(
@@ -112,6 +113,7 @@ class RequestSummarySerializer(serializers.ModelSerializer):
             "company_name",
             "source_entity_name",
             "target_entity_name",
+            "target_entity_type",
             "target_team_id",
             "target_team_name",
             "target_team_label",
@@ -135,6 +137,11 @@ class RequestSummarySerializer(serializers.ModelSerializer):
 
     def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
+
+    def get_target_entity_type(self, obj):
+        if obj.target_entity_id and obj.target_entity:
+            return obj.target_entity.entity_type
+        return ""
 
     def _resolve_target_team(self, obj):
         if obj.target_team_id:
@@ -394,6 +401,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     reference_code = serializers.CharField(source="request_number", read_only=True)
     type = serializers.CharField(source="category", read_only=True)
     target_entity_name = serializers.SerializerMethodField()
+    target_entity_type = serializers.SerializerMethodField()
     source_entity_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     requester_name = serializers.CharField(source="requester_user.username", read_only=True)
@@ -468,6 +476,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             "target_entity",
             "target_unit",
             "target_entity_name",
+            "target_entity_type",
             "requester_user",
             "requester_name",
             "requester_avatar_url",
@@ -511,6 +520,11 @@ class RequestDetailSerializer(serializers.ModelSerializer):
 
     def get_target_entity_name(self, obj):
         return obj.target_entity.name if obj.target_entity_id else obj.target_unit.name
+
+    def get_target_entity_type(self, obj):
+        if obj.target_entity_id and obj.target_entity:
+            return obj.target_entity.entity_type
+        return ""
 
     def _resolve_target_team(self, obj):
         if obj.target_team_id:

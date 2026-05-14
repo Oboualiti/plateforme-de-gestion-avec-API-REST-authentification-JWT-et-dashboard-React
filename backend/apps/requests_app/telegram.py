@@ -2,7 +2,9 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import uuid
+from html import escape
 from urllib import parse, request
 
 from django.conf import settings
@@ -10,8 +12,12 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 TELEGRAM_MAX_MESSAGE_LEN = 4096
+URL_PATTERN = re.compile(r"(https?://[^\s]+)", re.IGNORECASE)
 
 
+def _to_telegram_html(text):
+    safe = escape(str(text or ""))
+    return URL_PATTERN.sub(r'<a href="\1">\1</a>', safe)
 def mirror_request_created_to_telegram(service_request):
     if not getattr(settings, "TELEGRAM_MESSAGE_MIRROR_ENABLED", True):
         return
@@ -159,6 +165,12 @@ def mirror_request_message_to_telegram(service_request, request_message):
         )
     )
 
+    message_text = str(request_message.message or "")
+    if message_text.strip().lower().startswith("credits evidence"):
+        # Keep evidence links visible as explicit lines in Telegram.
+        # Telegram clients auto-detect plain URLs as clickable links.
+        message_text = message_text.replace("Credits evidence", "Credits evidence (links)")
+
     text = (
         f"Request discussion update\n"
         f"Company: {company_name}\n"
@@ -166,7 +178,7 @@ def mirror_request_message_to_telegram(service_request, request_message):
         f"From: {source_name}\n"
         f"To: {target_name}\n"
         f"By: {request_message.sender.username}\n"
-        f"Message: {request_message.message}"
+        f"Message: {message_text}"
     )
     if len(text) > TELEGRAM_MAX_MESSAGE_LEN:
         text = text[: TELEGRAM_MAX_MESSAGE_LEN - 3] + "..."
@@ -328,9 +340,11 @@ def unpin_request_message_in_telegram(service_request):
 def _send_telegram_message(
     service_request, bot_token, chat_id, text, reply_to_message_id=None
 ):
+    html_text = _to_telegram_html(text)
     payload_dict = {
         "chat_id": chat_id,
-        "text": text,
+        "text": html_text,
+        "parse_mode": "HTML",
         "disable_web_page_preview": "true",
     }
     if reply_to_message_id:

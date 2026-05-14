@@ -191,7 +191,7 @@ function RequestsPage({ forcedScope = '' }) {
   const isBasicUser = roleKeys.includes('user')
   const isManagerRequestsBoard = isManager && resolvedScope === 'all'
   const [managerRequestsTab, setManagerRequestsTab] = useState('requests')
-  const [managerTabCounts, setManagerTabCounts] = useState({ requests: 0, waiting: 0, sent_back: 0 })
+  const [managerTabCounts, setManagerTabCounts] = useState({ requests: 0, waiting: 0, sent_back: 0, closed: 0 })
   const isIncomingQueueTeamLeader = isTeamLeader && resolvedScope === 'team'
   const isPendingScope = resolvedScope === 'pending'
   const shouldRedirectBasicApproverFromPending = isPendingScope
@@ -382,7 +382,9 @@ function RequestsPage({ forcedScope = '' }) {
             ? scopedResults.filter((item) => item.status === 'COMPLETED')
             : managerRequestsTab === 'sent_back'
               ? scopedResults.filter((item) => item.status === 'IN_PROGRESS' && isSentBackRequest(item))
-              : scopedResults.filter((item) => item.status !== 'COMPLETED' && !isSentBackRequest(item))
+              : managerRequestsTab === 'closed'
+                ? scopedResults.filter((item) => item.status === 'CLOSED')
+                : scopedResults.filter((item) => item.status !== 'COMPLETED' && item.status !== 'CLOSED' && !isSentBackRequest(item))
         )
         : scopedResults
 
@@ -459,14 +461,16 @@ function RequestsPage({ forcedScope = '' }) {
       const rows = applyScopeFilter(rawResults)
       const waitingCount = rows.filter((item) => item.status === 'COMPLETED').length
       const sentBackCount = rows.filter((item) => item.status === 'IN_PROGRESS' && isSentBackRequest(item)).length
-      const requestsCount = rows.filter((item) => item.status !== 'COMPLETED' && !isSentBackRequest(item)).length
+      const closedCount = rows.filter((item) => item.status === 'CLOSED').length
+      const requestsCount = rows.filter((item) => item.status !== 'COMPLETED' && item.status !== 'CLOSED' && !isSentBackRequest(item)).length
       setManagerTabCounts({
         requests: Math.max(0, requestsCount),
         waiting: waitingCount,
         sent_back: sentBackCount,
+        closed: closedCount,
       })
     } catch (_error) {
-      setManagerTabCounts({ requests: 0, waiting: 0, sent_back: 0 })
+      setManagerTabCounts({ requests: 0, waiting: 0, sent_back: 0, closed: 0 })
     }
   }
 
@@ -710,14 +714,13 @@ function RequestsPage({ forcedScope = '' }) {
     }
   }
 
-  async function sendBackManagerWaitingRequest(requestId) {
+  async function sendBackManagerWaitingRequest(requestId, extra = {}) {
     if (!requestId || !canManagerWaitingReview) return
-    const note = window.prompt('Reason for sending back to in progress:')
-    if (note === null) return
-    const trimmed = String(note).trim()
+    const reason = String(extra?.rejectionReason || '').trim()
+    const detail = String(extra?.rejectionNote || '').trim()
+    const trimmed = [reason, detail].filter(Boolean).join('\n')
     if (!trimmed) {
-      window.alert('Reason is required to send back a completed request.')
-      return
+      throw new Error('Reason is required to send back a completed request.')
     }
     setWaitingActionLoadingId(requestId)
     try {
@@ -728,7 +731,7 @@ function RequestsPage({ forcedScope = '' }) {
       closePendingPreview()
       await loadRequests()
     } catch (error) {
-      window.alert(error.response?.data?.detail || 'Could not send request back.')
+      throw new Error(error.response?.data?.detail || 'Could not send request back.')
     } finally {
       setWaitingActionLoadingId(null)
     }
@@ -739,6 +742,8 @@ function RequestsPage({ forcedScope = '' }) {
     && managerRequestsTab === 'waiting'
     && user?.entity_type === 'PROD'
     && hasPermission('approve_request')
+  const canManagerClosedView = isManagerRequestsBoard
+    && managerRequestsTab === 'closed'
   const pendingSolve = useMemo(() => {
     const data = pendingPreview.data
     if (!data) return null
@@ -755,7 +760,7 @@ function RequestsPage({ forcedScope = '' }) {
       priority: data.priority_label || data.priority || '-',
       solverId: data.assignee_id || null,
       solverName: data.assignee_name || data.assignee_username || 'Unknown',
-      solverRole: data.assignee_role_label || data.assignee_role || 'Support/Dev',
+      solverRole: data.target_entity_type || data.assignee_role_label || data.assignee_role || '-',
       solverEntityName: data.target_entity_name || '-',
       sourceCompanyName: data.source_company_name || data.source_entity_name || '-',
       sourceEntityName: data.source_entity_name || '-',
@@ -799,7 +804,7 @@ function RequestsPage({ forcedScope = '' }) {
         {isManagerRequestsBoard ? (
           <div className="mb-4 border-b border-border">
             <div className="flex flex-wrap items-end gap-6">
-              {[['requests', 'Requests'], ['waiting', 'waiting approval'], ['sent_back', 'Sent back']].map(([key, label]) => (
+              {[['requests', 'Requests'], ['waiting', 'waiting approval'], ['sent_back', 'Sent back'], ['closed', 'Closed requests']].map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
@@ -808,7 +813,13 @@ function RequestsPage({ forcedScope = '' }) {
                 >
                   {label}
                   <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold text-foreground">
-                    {key === 'waiting' ? managerTabCounts.waiting : key === 'sent_back' ? managerTabCounts.sent_back : managerTabCounts.requests}
+                    {key === 'waiting'
+                      ? managerTabCounts.waiting
+                      : key === 'sent_back'
+                        ? managerTabCounts.sent_back
+                        : key === 'closed'
+                          ? managerTabCounts.closed
+                          : managerTabCounts.requests}
                   </span>
                 </button>
               ))}
@@ -877,7 +888,7 @@ function RequestsPage({ forcedScope = '' }) {
             ))}
           </Select>
 
-          {!isManagerRequestsBoard ? (
+          {!isManagerRequestsBoard || managerRequestsTab === 'requests' ? (
             <Select
               className="flex h-10 min-w-[150px] rounded-md border border-input bg-background px-3 py-2 text-sm xl:flex-1"
               value={filters.status}
@@ -1032,7 +1043,11 @@ function RequestsPage({ forcedScope = '' }) {
                   <th className="px-4 py-3 text-left font-medium">Status</th>
                   {(!isPendingScope || !canDecidePending) && <th className="px-4 py-3 text-left font-medium">Assignee</th>}
                   <th className="px-4 py-3 text-left font-medium">Updated</th>
-                  {(canDecidePending || canManagerWaitingReview) && <th className="px-4 py-3 text-right font-medium">{canManagerWaitingReview ? 'Actions' : 'Decision'}</th>}
+                  {(canDecidePending || canManagerWaitingReview || canManagerClosedView) && (
+                    <th className="px-4 py-3 text-right font-medium">
+                      {(canManagerWaitingReview || canManagerClosedView) ? 'Actions' : 'Decision'}
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1122,7 +1137,7 @@ function RequestsPage({ forcedScope = '' }) {
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {formatUpdated(item.updated_at || item.created_at)}
                     </td>
-                    {(canDecidePending || canManagerWaitingReview) && (
+                    {(canDecidePending || canManagerWaitingReview || canManagerClosedView) && (
                       <td className="px-4 py-3 text-right">
                         {canManagerWaitingReview ? (
                           <Button
@@ -1137,6 +1152,19 @@ function RequestsPage({ forcedScope = '' }) {
                             disabled={waitingActionLoadingId === item.id}
                           >
                             Review
+                          </Button>
+                        ) : canManagerClosedView ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-[10px] font-bold uppercase tracking-widest"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openPendingPreview(item.id)
+                            }}
+                          >
+                            View
                           </Button>
                         ) : (
                           <div className="flex justify-end gap-2">
@@ -1268,7 +1296,7 @@ function RequestsPage({ forcedScope = '' }) {
           currentUser={null}
           onClose={closePendingPreview}
           onApproveResult={(solve) => approveManagerWaitingRequest(solve.requestId)}
-          onRejectResult={(solve) => sendBackManagerWaitingRequest(solve.requestId)}
+          onRejectResult={(solve, extra) => sendBackManagerWaitingRequest(solve.requestId, extra)}
           statusActionBusyId={waitingActionLoadingId}
         />
       ) : null}
