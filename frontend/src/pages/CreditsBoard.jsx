@@ -919,6 +919,7 @@ function CreditsBoardHeader({
     <section className="mb-5">
       <div className="mb-5 flex flex-col gap-1">
         <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Operations</p>
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
             Ranking
             {titleSuffix ? <span className="ml-2 text-xl text-muted-foreground">{titleSuffix}</span> : null}
@@ -970,6 +971,7 @@ function CreditsBoardHeaderCompact({
   return (
     <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Operations</p>
         <h1 className="text-4xl font-bold leading-tight text-foreground">Ranking</h1>
         <p className="mt-2 text-base text-muted-foreground">{subtitle}</p>
       </div>
@@ -1975,28 +1977,119 @@ function SolvesPanel({
   onViewDetails,
 }) {
   const [drawerSearch, setDrawerSearch] = useState("");
+  const [drawerStatus, setDrawerStatus] = useState("all");
+  const [drawerEvidence, setDrawerEvidence] = useState("all");
+  const [drawerDate, setDrawerDate] = useState("all");
+  const [drawerSort, setDrawerSort] = useState("newest");
   const [expandedNotes, setExpandedNotes] = useState({});
 
-  if (!open) return null;
-
   const q = drawerSearch.trim().toLowerCase();
-  const visibleRows = q
-    ? rows.filter((solve) => {
-        const solver = getUserById(users, solve.solverId);
-        const team = getEntityById(entities, solve.entityId);
-        return [
-          solve.requestTitle,
-          solve.requestReference,
-          solver?.full_name,
-          solver?.username,
-          team?.name,
-          solve.sourceCompanyName,
-          solve.sourceEntityName,
-          solve.completionNote,
-          solve.note,
-        ].filter(Boolean).join(" ").toLowerCase().includes(q);
-      })
-    : rows;
+
+  const hasSentBackOrNeedsReview = useMemo(
+    () => rows.some((solve) => {
+      const status = requestStatus(solve);
+      return status === "SENT_BACK" || status === "NEEDS_REVIEW";
+    }),
+    [rows],
+  );
+
+  function getPanelStatusKey(solve) {
+    const status = requestStatus(solve);
+    if (status === "CLOSED") return "approved";
+    if (status === "COMPLETED") return "pending";
+    if (solve?.wasRejected || status === "REJECTED") return "rejected";
+    if (status === "SENT_BACK" || status === "NEEDS_REVIEW") return "sent_back";
+    return "other";
+  }
+
+  function getPanelStatusLabel(solve) {
+    const status = requestStatus(solve);
+    if (status === "CLOSED") return "APPROVED";
+    if (status === "COMPLETED") return "PENDING";
+    if (solve?.wasRejected || status === "REJECTED") return "REJECTED";
+    if (status === "SENT_BACK") return "SENT BACK";
+    if (status === "NEEDS_REVIEW") return "NEEDS REVIEW";
+    return status || "PENDING";
+  }
+
+  const visibleRows = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    const filtered = rows.filter((solve) => {
+      const solver = getUserById(users, solve.solverId);
+      const team = getEntityById(entities, solve.entityId);
+      const searchMatch = !q || [
+        solve.requestTitle,
+        solve.requestReference,
+        solver?.full_name,
+        solver?.username,
+        solve.solverName,
+        solve.requesterName,
+        solve.sourceCompanyName,
+        solve.sourceEntityName,
+        solve.solvedForName,
+        solve.targetEntityName,
+        solve.targetEntityCode,
+        solve.entityCode,
+        solve.teamCode,
+        team?.name,
+        team?.code,
+        solve.completionNote,
+        solve.note,
+      ].filter(Boolean).join(" ").toLowerCase().includes(q);
+
+      if (!searchMatch) return false;
+
+      if (drawerStatus !== "all" && getPanelStatusKey(solve) !== drawerStatus) return false;
+      if (drawerEvidence === "has" && !hasEvidence(solve)) return false;
+      if (drawerEvidence === "none" && hasEvidence(solve)) return false;
+
+      if (drawerDate !== "all") {
+        const completedAt = new Date(solve.completedAt || 0);
+        if (Number.isNaN(completedAt.getTime())) return false;
+        if (drawerDate === "today" && completedAt < startOfToday) return false;
+        if (drawerDate === "7d" && completedAt.getTime() < (now.getTime() - (7 * dayMs))) return false;
+        if (drawerDate === "30d" && completedAt.getTime() < (now.getTime() - (30 * dayMs))) return false;
+      }
+
+      return true;
+    });
+
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      if (drawerSort === "oldest") {
+        return new Date(a.completedAt || 0).getTime() - new Date(b.completedAt || 0).getTime();
+      }
+      if (drawerSort === "credits_high") {
+        return getEarnedCredits(b) - getEarnedCredits(a);
+      }
+      if (drawerSort === "credits_low") {
+        return getEarnedCredits(a) - getEarnedCredits(b);
+      }
+      return new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime();
+    });
+    return sorted;
+  }, [rows, users, entities, q, drawerStatus, drawerEvidence, drawerDate, drawerSort]);
+
+  const hasActiveFilters = Boolean(
+    q
+    || drawerStatus !== "all"
+    || drawerEvidence !== "all"
+    || drawerDate !== "all"
+    || drawerSort !== "newest",
+  );
+
+  function clearPanelFilters() {
+    setDrawerSearch("");
+    setDrawerStatus("all");
+    setDrawerEvidence("all");
+    setDrawerDate("all");
+    setDrawerSort("newest");
+  }
+
+  if (!open) return null;
 
   const totalCredits = rows.reduce((sum, solve) => sum + getEarnedCredits(solve), 0);
   const uniqueSolvers = new Set(rows.map((solve) => solve.solverId).filter(Boolean)).size;
@@ -2020,34 +2113,33 @@ function SolvesPanel({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
-      <div className="h-full w-full max-w-[620px] overflow-y-auto border-l border-ink/10 bg-card shadow-2xl">
-        <div className="sticky top-0 z-10 border-b border-ink/10 bg-card px-6 py-6">
-          <div className="flex items-start justify-between gap-4">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+      <div className="h-full w-full max-w-[540px] overflow-y-auto border-l border-ink/10 bg-card shadow-2xl">
+        <div className="sticky top-0 z-10 border-b border-ink/15 bg-card px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-xl font-bold leading-tight text-foreground">{title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
+              <h3 className="text-3xl font-bold leading-tight tracking-tight text-foreground">{title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
             </div>
-            <Button variant="outline" className="h-10 rounded-md border-ink/20 bg-card px-3 shadow-none" onClick={onClose}>
-              Close
-              <X className="ml-1 h-4 w-4" />
-            </Button>
+            <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground" onClick={onClose} aria-label="Close panel">
+              <X className="h-5 w-5" />
+            </button>
           </div>
         </div>
 
-        <div className="space-y-5 px-6 py-5">
+        <div className="space-y-4 px-5 py-4">
           <div className="grid grid-cols-3 gap-3">
             {summaryItems.map((item) => {
               const Icon = item.icon;
               return (
-                <div key={item.label} className="rounded-md border border-ink/10 bg-card p-4">
+                <div key={item.label} className="rounded-xl border border-ink/10 bg-muted/20 p-3.5">
                   <div className="flex items-center gap-3">
                     <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${iconTone[item.tone]}`}>
                       <Icon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <div className="truncate text-lg font-bold leading-none">{item.value}</div>
-                      <div className="mt-1 text-sm font-semibold">{item.label}</div>
+                      <div className="truncate text-2xl font-bold leading-none">{item.value}</div>
+                      <div className="mt-1 text-xs font-bold uppercase tracking-wider">{item.label}</div>
                     </div>
                   </div>
                   <div className="mt-1 pl-12 text-xs text-muted-foreground">{item.helper}</div>
@@ -2061,12 +2153,48 @@ function SolvesPanel({
             <Input
               value={drawerSearch}
               onChange={(e) => setDrawerSearch(e.target.value)}
-              placeholder="Search within solved requests..."
-              className="h-11 rounded-md border border-ink/10 bg-card pl-10 shadow-none"
+              placeholder="Search title, ref, solver, requester, team, note..."
+              className="h-10 rounded-xl border border-ink/10 bg-card pl-10 shadow-none"
             />
           </div>
 
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <Select className="[&_button]:h-9 [&_button]:rounded-lg [&_button]:border-ink/10 [&_button]:bg-card [&_button]:text-xs [&_button]:font-semibold" value={drawerStatus} onChange={(e) => setDrawerStatus(e.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="approved">Approved</option>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
+              {hasSentBackOrNeedsReview ? <option value="sent_back">Sent back / Needs review</option> : null}
+            </Select>
+            <Select className="[&_button]:h-9 [&_button]:rounded-lg [&_button]:border-ink/10 [&_button]:bg-card [&_button]:text-xs [&_button]:font-semibold" value={drawerEvidence} onChange={(e) => setDrawerEvidence(e.target.value)}>
+              <option value="all">All evidence</option>
+              <option value="has">Has evidence</option>
+              <option value="none">No evidence</option>
+            </Select>
+            <Select className="[&_button]:h-9 [&_button]:rounded-lg [&_button]:border-ink/10 [&_button]:bg-card [&_button]:text-xs [&_button]:font-semibold" value={drawerDate} onChange={(e) => setDrawerDate(e.target.value)}>
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </Select>
+            <Select className="[&_button]:h-9 [&_button]:rounded-lg [&_button]:border-ink/10 [&_button]:bg-card [&_button]:text-xs [&_button]:font-semibold" value={drawerSort} onChange={(e) => setDrawerSort(e.target.value)}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="credits_high">Credits high to low</option>
+              <option value="credits_low">Credits low to high</option>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Showing {visibleRows.length} of {rows.length}</span>
+            {hasActiveFilters ? (
+              <Button size="sm" variant="ghost" className="h-8 px-2 text-xs font-semibold" onClick={clearPanelFilters}>
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+
+          <div className="space-y-3.5">
           {visibleRows.map((solve) => {
             const solver = getUserById(users, solve.solverId);
             const team = getEntityById(entities, solve.entityId);
@@ -2075,48 +2203,51 @@ function SolvesPanel({
             const isExpanded = expandedNotes[solve.id];
             const noteText = isLongNote && !isExpanded ? `${note.slice(0, 150)}...` : note;
             return (
-              <div key={solve.id} className="rounded-lg border border-ink/10 bg-card p-5 shadow-sm">
+              <div key={solve.id} className="rounded-xl border border-warning/35 bg-card p-3.5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="font-bold leading-tight">{solve.requestTitle}</div>
-                    <div className="mt-2 text-sm text-muted-foreground">{solve.requestReference}</div>
+                    <div className="text-[22px] font-bold leading-tight text-foreground">{solve.requestTitle}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">{solve.requestReference}</div>
                   </div>
-                  <div className="shrink-0 text-sm text-muted-foreground">{formatDate(solve.completedAt)}</div>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="shrink-0 text-xs text-muted-foreground">{formatDate(solve.completedAt)}</div>
+                    <span className="rounded px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide bg-muted text-foreground">{getPanelStatusLabel(solve)}</span>
+                  </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-md border border-ink/10">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   {contextType === "team" ? (
-                    <div className="border-b border-r border-ink/10 p-3">
-                      <div className="text-xs font-bold text-muted-foreground">Solved by</div>
+                    <div className="rounded-md bg-muted/35 p-2.5">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Solved by</div>
                       <div className="mt-1 text-sm font-semibold">{solver?.full_name || solver?.username || solve.solverName || "Unknown"}</div>
                     </div>
                   ) : (
-                    <div className="border-b border-r border-ink/10 p-3">
-                      <div className="text-xs font-bold text-muted-foreground">Solved for</div>
+                    <div className="rounded-md bg-muted/35 p-2.5">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Solved for</div>
                       <div className="mt-1 text-sm font-semibold">{solve.sourceCompanyName || "-"} / {solve.sourceEntityName || "-"}</div>
                     </div>
                   )}
-                  <div className="border-b border-ink/10 p-3">
-                    <div className="text-xs font-bold text-muted-foreground">Evidence</div>
+                  <div className="rounded-md bg-muted/35 p-2.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Evidence</div>
                     <div className="mt-1 text-sm font-semibold">{evidenceLabel(solve)}</div>
                   </div>
-                  <div className="border-r border-ink/10 p-3">
-                    <div className="text-xs font-bold text-muted-foreground">Team</div>
+                  <div className="rounded-md bg-muted/35 p-2.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Team</div>
                     <div className="mt-1 text-sm font-semibold">{team?.name || solve.targetEntityName || "-"}</div>
                   </div>
-<div className="p-3">
-                    <div className="text-xs font-bold text-muted-foreground">Credits</div>
-                    <div className="mt-1 text-sm font-semibold">{getEarnedCredits(solve)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Base +{solve.baseCredits || 0} · SLA +{solve.slaBonus || 0} · Evidence +{solve.evidenceBonus || 0}
+                  <div className="rounded-md bg-muted/35 p-2.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Credits</div>
+                    <div className="mt-1 text-[32px] font-extrabold leading-none">{getEarnedCredits(solve)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Base +{solve.baseCredits || 0} · Fast solve +{solve.slaBonus || 0} · Evidence +{solve.evidenceBonus || 0}
                     </div>
                   </div>
                 </div>
 
                 {note ? (
-                  <div className="mt-4">
-                    <div className="text-xs font-bold text-muted-foreground">Completion note</div>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">{noteText}</p>
+                  <div className="mt-3 rounded-md bg-muted/35 p-2.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Completion note</div>
+                    <p className="mt-1 text-sm leading-6 text-foreground/90">{noteText}</p>
                     {isLongNote ? (
                       <button
                         type="button"
@@ -2129,25 +2260,16 @@ function SolvesPanel({
                   </div>
                 ) : null}
 
-                <div className="mt-5 flex justify-end gap-3">
-                  <Button size="sm" variant="ghost" className="h-10 px-4 shadow-none" onClick={() => onViewDetails(solve)}>Details</Button>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button size="sm" variant="ghost" className="h-9 px-3 shadow-none" onClick={() => onViewDetails(solve)}>Details</Button>
                     {solve.requestUrl ? (
-                    <a href={solve.requestUrl}><Button size="sm" variant="outline" className="h-10 rounded-md border-ink bg-card px-4 shadow-none">Open Request</Button></a>
+                    <a href={solve.requestUrl}><Button size="sm" className="h-9 rounded-md bg-primary px-4 font-bold text-primary-foreground shadow-none hover:bg-primary/90">Open Request</Button></a>
                     ) : null}
                 </div>
               </div>
             );
           })}
-          {!visibleRows.length ? <div className="rounded-md border border-ink/10 py-8 text-center text-sm text-muted-foreground">No solved requests.</div> : null}
-          </div>
-
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Showing {visibleRows.length ? 1 : 0} to {visibleRows.length} of {visibleRows.length} request{visibleRows.length === 1 ? "" : "s"}</span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled><ChevronRight className="h-4 w-4 rotate-180" /></Button>
-              <Button size="sm" className="h-9 w-9 rounded-md p-0 shadow-none">1</Button>
-              <Button size="sm" variant="outline" className="h-9 w-9 rounded-md border-ink/10 p-0 shadow-none" disabled><ChevronRight className="h-4 w-4" /></Button>
-            </div>
+          {!visibleRows.length ? <div className="rounded-md border border-ink/10 py-8 text-center text-sm text-muted-foreground">No solved requests match these filters.</div> : null}
           </div>
         </div>
       </div>
@@ -3254,7 +3376,8 @@ function RankingsTable({ rows = [], tabKey, isRequesterContext, context, current
 
   return (
     <>
-      <div className="px-4 pb-2">
+      <div className="mx-4 overflow-hidden rounded-xl border border-ink/10">
+      <div className="p-0">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             {columns.map((col) => <col key={col.key} style={{ width: col.width }} />)}
@@ -3262,7 +3385,7 @@ function RankingsTable({ rows = [], tabKey, isRequesterContext, context, current
           <thead className="bg-muted/30 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             <tr className="border-b border-ink/10">
               {columns.map((col) => (
-                <th key={col.key} className={`px-3 py-3 align-middle ${col.align}`}>{col.label}</th>
+                <th key={col.key} className={`py-3 align-middle ${col.key === "actions" ? "pl-2 pr-4" : "px-3"} ${col.align}`}>{col.label}</th>
               ))}
             </tr>
           </thead>
@@ -3273,12 +3396,12 @@ function RankingsTable({ rows = [], tabKey, isRequesterContext, context, current
               return (
                 <tr key={getRowKey(row, idx)} className={`border-t border-ink/10 transition-colors hover:bg-muted/30 ${isCurrentUser ? "bg-warning/10" : ""}`}>
                   {baseColumns.map((col) => (
-                    <td key={col.key} className={`px-3 py-3 align-middle ${col.align}`}>{renderCell(row, rank, col.key)}</td>
+                    <td key={col.key} className={`py-3 align-middle ${col.key === "actions" ? "pl-2 pr-4" : "px-3"} ${col.align}`}>{renderCell(row, rank, col.key)}</td>
                   ))}
                   {showActions ? (
-                    <td className="px-3 py-3 text-center align-middle">
+                    <td className="py-3 pl-2 pr-4 text-center align-middle">
                       {canShowSolves ? (
-                        <Button size="sm" variant="outline" className="h-8 rounded-md border-ink/10 bg-card px-3 text-xs font-semibold shadow-none" onClick={() => onViewSolves(row)}>Solves</Button>
+                        <Button size="sm" variant="outline" className="h-8 rounded-md border-ink/10 bg-white px-3 text-xs font-semibold shadow-none" onClick={() => onViewSolves(row)}>Solves</Button>
                       ) : (
                         <RowMenu />
                       )}
@@ -3290,6 +3413,7 @@ function RankingsTable({ rows = [], tabKey, isRequesterContext, context, current
           </tbody>
         </table>
         {!rows.length ? <div className="py-6 text-center text-sm text-muted-foreground">No rankings found.</div> : null}
+      </div>
       </div>
       <div className="flex items-center justify-between px-5 py-3 text-xs text-muted-foreground">
         <span>Showing {rows.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + CREDITS_PAGE_SIZE, rows.length)} of {rows.length}</span>
@@ -3652,7 +3776,7 @@ export default function CreditsBoard() {
   const [requesterRankingTab, setRequesterRankingTab] = useState(boardContext.defaultTabByMode.requesters || "requesters");
   const [rankingSearch, setRankingSearch] = useState("");
   const [debouncedRankingSearch, setDebouncedRankingSearch] = useState("");
-  const [topN, setTopN] = useState(10);
+  const topN = 10;
   const [rankingSort, setRankingSort] = useState("rank");
   const [resolutionSearchTerm, setResolutionSearchTerm] = useState("");
   const [debouncedResolutionSearch, setDebouncedResolutionSearch] = useState("");
@@ -3762,7 +3886,7 @@ export default function CreditsBoard() {
         else setTableLoading(true);
         const params = {
           include_rankings: true,
-          include_requester_rankings: isRequesterContext,
+          include_requester_rankings: true,
         };
 
         if (appliedFilters.companyId !== "all") params.company_id = appliedFilters.companyId;
@@ -4124,15 +4248,30 @@ export default function CreditsBoard() {
     people: Array.isArray(requestDemandData?.requesters) ? requestDemandData.requesters : [],
   }), [requestDemandData]);
 
+  const topRequesterFallback = useMemo(() => {
+    const map = new Map();
+    roleScopedSolves.forEach((solve) => {
+      const key = String(solve.requesterId ?? solve.requester_user_id ?? solve.requesterName ?? "unknown");
+      const name = (solve.requesterName || "").trim() || "Unknown requester";
+      const current = map.get(key) || { name, createdCount: 0 };
+      current.createdCount += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.values()).sort((a, b) => Number(b.createdCount || 0) - Number(a.createdCount || 0))[0] || null;
+  }, [roleScopedSolves]);
+
   const rankingCards = useMemo(() => {
     const topCompany = solverCompanyRows[0];
     const topEntity = solverEntityRows[0];
     const topTeam = solverTeamRows[0];
     const topSolver = solverPeopleRows[0];
-    const topRequester = requesterRows.people[0];
+    const topRequester = requesterRows.people[0] || topRequesterFallback;
+    const requesterCompletionFallback = roleScopedSolves.length
+      ? Math.round((roleScopedSolves.filter((row) => closedOnly(row)).length / roleScopedSolves.length) * 100)
+      : 0;
     const requesterCompletion = requesterRows.people.length
       ? Math.round(requesterRows.people.reduce((s, r) => s + Number(r.completionRate || 0), 0) / requesterRows.people.length)
-      : 0;
+      : requesterCompletionFallback;
     const myRow = solverPeopleRows.find((p) => String(p.userId) === String(user?.id));
     const myRank = myRow ? solverPeopleRows.findIndex((p) => String(p.userId) === String(user?.id)) + 1 : null;
 
@@ -4200,7 +4339,7 @@ export default function CreditsBoard() {
       ],
     };
     return presets[activeCardPreset] || presets.default;
-  }, [activeCardPreset, requesterRows, solverCompanyRows, solverEntityRows, solverPeopleRows, solverTeamRows, user?.id]);
+  }, [activeCardPreset, requesterRows, roleScopedSolves, solverCompanyRows, solverEntityRows, solverPeopleRows, solverTeamRows, topRequesterFallback, user?.id]);
 
   const rankingInsights = useMemo(() => {
     const getInsightName = (row) => row?.name || row?.teamLabel || "-";
@@ -4519,13 +4658,6 @@ export default function CreditsBoard() {
                     <option value="90d">Last 90 days</option>
                     <option value="all">All time</option>
                   </Select>
-                  <Select className="!h-9 !w-[110px] rounded-lg border-ink/10 bg-white text-sm shadow-none" value={String(topN)} onChange={(e) => setTopN(Number(e.target.value))}>
-                    <option value="5">Top 5</option>
-                    <option value="10">Top 10</option>
-                    <option value="20">Top 20</option>
-                    <option value="50">Top 50</option>
-                    <option value="999999">All</option>
-                  </Select>
                   {canExport ? (
                     <Button
                       type="button"
@@ -4542,11 +4674,15 @@ export default function CreditsBoard() {
               <CardContent className="p-0">
                 <div className="px-4 pt-3">
                   {canSeeRequesterRankings && boardContext.availableModes.length > 1 ? (
-                    <div className="inline-flex rounded-xl border border-ink/15 bg-muted/30 p-1 dark:bg-surface-2/60">
+                    <div className="relative inline-grid grid-cols-2 rounded-xl border border-ink/15 bg-muted/30 p-1 dark:bg-surface-2/60">
                       <Button
                         size="sm"
-                        variant={rankingMode === "solvers" ? "default" : "ghost"}
-                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "solvers" ? "!border !border-primary !bg-primary !text-primary-foreground hover:!bg-primary/90 hover:!text-primary-foreground" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
+                        variant="ghost"
+                        className={`relative z-10 h-10 rounded-lg px-3.5 text-sm font-bold shadow-none transition-colors duration-300 ${
+                          rankingMode === "solvers"
+                            ? "!border-0 !bg-transparent !text-warning"
+                            : "!border-0 !bg-transparent !text-muted-foreground hover:!text-foreground"
+                        }`}
                         onClick={() => setRankingMode("solvers")}
                       >
                         <Trophy className="mr-2 h-4 w-4" />
@@ -4554,8 +4690,12 @@ export default function CreditsBoard() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={rankingMode === "requesters" ? "default" : "ghost"}
-                        className={`h-10 rounded-lg px-4 text-sm font-bold shadow-none ${rankingMode === "requesters" ? "!border !border-primary !bg-primary !text-primary-foreground hover:!bg-primary/90 hover:!text-primary-foreground" : "!border-0 !bg-transparent !text-muted-foreground hover:!bg-muted/60 hover:!text-foreground dark:hover:!bg-surface-2"}`}
+                        variant="ghost"
+                        className={`relative z-10 h-10 rounded-lg px-3.5 text-sm font-bold shadow-none transition-colors duration-300 ${
+                          rankingMode === "requesters"
+                            ? "!border-0 !bg-transparent !text-warning"
+                            : "!border-0 !bg-transparent !text-muted-foreground hover:!text-foreground"
+                        }`}
                         onClick={() => setRankingMode("requesters")}
                       >
                         <Users className="mr-2 h-4 w-4" />
@@ -4563,15 +4703,15 @@ export default function CreditsBoard() {
                       </Button>
                     </div>
                   ) : null}
-                  {!isProdRequesterView && boardContext.variant !== "user" && boardContext.variant !== "leader_prod" && boardContext.variant !== "user_prod" ? (
+                  {!tableLoading && !isProdRequesterView && boardContext.variant !== "user" && boardContext.variant !== "leader_prod" && boardContext.variant !== "user_prod" ? (
                     <div className="mt-3 px-4">
                       {(() => {
                         if (!rankingInsights.length) return null;
                         const tones = [
-                          { icon: "border-success/30 bg-success/10 text-success dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
-                          { icon: "border-destructive/30 bg-destructive/10 text-destructive dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
-                          { icon: "border-info/30 bg-info/10 text-info dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
-                          { icon: "border-muted-foreground/30 bg-muted/40 text-muted-foreground dark:border-secondary/50 dark:bg-secondary/30 dark:text-secondary-foreground" },
+                          { icon: "text-success" },
+                          { icon: "text-destructive" },
+                          { icon: "text-warning" },
+                          { icon: "text-warning" },
                         ];
                         const insights = rankingInsights;
                         return (
@@ -4581,9 +4721,7 @@ export default function CreditsBoard() {
                               const tone = tones[idx % tones.length];
                               return (
                                 <div key={item.label} className="flex items-center gap-3 rounded-lg border border-ink/10 bg-card/80 p-3 transition-colors hover:bg-muted/30 dark:bg-surface-2/60 dark:hover:bg-surface-2">
-                                  <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${tone.icon}`}>
-                                    <Icon className="h-4 w-4" />
-                                  </span>
+                                  <Icon className={`h-4 w-4 shrink-0 ${tone.icon}`} />
                                   <div className="min-w-0">
                                     <p className="text-[11px] font-semibold text-muted-foreground">{item.label}</p>
                                     <p className="truncate text-xs font-bold leading-tight text-foreground">{item.value}</p>
@@ -4599,19 +4737,38 @@ export default function CreditsBoard() {
                 </div>
 
                 {tableLoading ? (
-                  <div className="px-4 pb-4">
-                    <div className="overflow-hidden rounded-lg border border-ink/10">
-                      <div className="grid grid-cols-8 gap-3 border-b border-ink/10 bg-muted/30 px-3 py-3">
-                        {Array.from({ length: 8 }).map((_, idx) => (
-                          <Skeleton key={`head-${idx}`} className="h-3 w-full" />
-                        ))}
+                  <div className="mt-4 px-4 pb-4">
+                    <div className="min-h-[360px] overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      <div className="grid grid-cols-8 items-center gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                        <Skeleton className="h-3 w-10 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-28 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-14 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-12 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-14 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-16 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-20 rounded bg-slate-200" />
+                        <Skeleton className="h-3 w-14 rounded bg-slate-200" />
                       </div>
-                      <div className="divide-y divide-ink/10 bg-card">
-                        {Array.from({ length: 6 }).map((_, rowIdx) => (
-                          <div key={`row-${rowIdx}`} className="grid grid-cols-8 gap-3 px-3 py-3">
-                            {Array.from({ length: 8 }).map((__, colIdx) => (
-                              <Skeleton key={`cell-${rowIdx}-${colIdx}`} className="h-5 w-full" />
-                            ))}
+                      <div className="divide-y divide-slate-200">
+                        {Array.from({ length: 5 }).map((_, rowIdx) => (
+                          <div key={`row-${rowIdx}`} className="grid grid-cols-8 items-center gap-4 px-4 py-4 animate-pulse">
+                            <Skeleton className="h-8 w-8 rounded-lg bg-slate-100" />
+                            <div className="flex items-center gap-3">
+                              <Skeleton className="h-8 w-8 rounded-full bg-slate-100" />
+                              <div className="space-y-2">
+                                <Skeleton className="h-3 w-24 rounded bg-slate-100" />
+                                <Skeleton className="h-3 w-16 rounded bg-slate-100" />
+                              </div>
+                            </div>
+                            <Skeleton className="h-4 w-14 rounded bg-slate-100" />
+                            <Skeleton className="h-4 w-10 rounded bg-slate-100" />
+                            <Skeleton className="h-6 w-8 rounded-full bg-slate-100" />
+                            <Skeleton className="h-6 w-8 rounded-full bg-slate-100" />
+                            <div className="flex items-center gap-2">
+                              <Skeleton className="h-4 w-8 rounded bg-slate-100" />
+                              <Skeleton className="h-2 w-16 rounded-full bg-slate-100" />
+                            </div>
+                            <Skeleton className="h-6 w-16 rounded-full bg-slate-100" />
                           </div>
                         ))}
                       </div>
@@ -4619,7 +4776,7 @@ export default function CreditsBoard() {
                   </div>
                 ) : rankingMode === "solvers" || !canSeeRequesterRankings ? (
                   <>
-                    <div className="mx-4 mt-3 flex gap-7 border-b border-ink/10">
+                    <div className="mx-4 mt-3 mb-4 flex gap-7 border-b border-ink/10">
                       {(boardContext.tabsByMode.solvers || []).map((tabKey) => {
                         const labelMap = { companies: "Companies", entities: "Entities", teams: "Teams", people: "Solvers" };
                         return (
@@ -4681,7 +4838,7 @@ export default function CreditsBoard() {
                   </>
                 ) : (
                   <>
-                    <div className="mx-4 mt-3 flex gap-7 border-b border-ink/10">
+                    <div className="mx-4 mt-3 mb-4 flex gap-7 border-b border-ink/10">
                       {(boardContext.tabsByMode.requesters || []).map((tabKey) => {
                         const labelMap = activeCardPreset === "tl_prod"
                           ? { sourceCompanies: "Companies", sourceEntities: "Entities", sourceTeams: "Teams", requesters: "Requesters" }
@@ -4760,4 +4917,3 @@ export default function CreditsBoard() {
     </div>
   );
 }
-
