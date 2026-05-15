@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -14,6 +14,8 @@ import {
   FileSearch,
   LayoutGrid,
   ArrowLeft,
+  ChevronDown,
+  ChevronRight,
   Mail,
   MapPinned,
   CircleDot,
@@ -89,9 +91,10 @@ const PERMISSION_SECTION_BY_KEY = {
   view_team_requests: 'requests',
   view_own_requests: 'requests',
   approve_request: 'requests',
+  approve_completed_result: 'requests',
   assign_request: 'requests',
+  invite_request_members: 'requests',
   resolve_request: 'requests',
-  close_request: 'requests',
   view_request_discussion: 'requests',
   comment_request: 'requests',
   view_global_reports: 'reports',
@@ -174,6 +177,7 @@ function PermissionDetailPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState({})
   const [options, setOptions] = useState({
     company_options: [],
     entity_options: [],
@@ -371,12 +375,55 @@ function PermissionDetailPage() {
   const canShowCompany = isSuperAdmin
   const canShowEntity = ['manager', 'team_leader', 'user'].includes(targetRole)
   const canShowTeamLeader = targetRole === 'user'
+  const selectedEntity = options.entity_options.find((item) => Number(item.id) === Number(profileForm.entity_id))
+  const activeEntityType = String(selectedEntity?.entity_type || user?.entity_type || '').toUpperCase()
+  const isProdEntity = activeEntityType === 'PROD'
+  const isTargetedEntity = ['SUPPORT', 'TDEV'].includes(activeEntityType)
+  const prodOnlyRequestPermissions = new Set(['create_request', 'approve_request', 'approve_completed_result'])
+  const targetedOnlyRequestPermissions = new Set(['assign_request', 'resolve_request', 'edit_request_deadline'])
+
+  function canShowPermissionForEntity(permissionKey) {
+    if (!prodOnlyRequestPermissions.has(permissionKey) && !targetedOnlyRequestPermissions.has(permissionKey)) {
+      return true
+    }
+    if (prodOnlyRequestPermissions.has(permissionKey)) return isProdEntity
+    if (targetedOnlyRequestPermissions.has(permissionKey)) return isTargetedEntity
+    return true
+  }
+
+  const visiblePermissions = useMemo(() => {
+    const byKey = new Map()
+    for (const permission of user?.permissions || []) {
+      if (permission.key === 'close_request') continue
+      if (!canShowPermissionForEntity(permission.key)) continue
+      const existing = byKey.get(permission.key)
+      if (!existing) {
+        byKey.set(permission.key, permission)
+      } else if (!existing.effective && permission.effective) {
+        byKey.set(permission.key, { ...existing, effective: true })
+      }
+    }
+    return [...byKey.values()]
+  }, [user?.permissions, isProdEntity, isTargetedEntity])
 
   const groupedPermissions = PERMISSION_SECTION_ORDER.map((sectionKey) => ({
     sectionKey,
     sectionLabel: PERMISSION_SECTION_LABELS[sectionKey],
-    items: (user?.permissions || []).filter((permission) => getPermissionSection(permission.key) === sectionKey),
+    items: visiblePermissions.filter((permission) => getPermissionSection(permission.key) === sectionKey),
   })).filter((group) => group.items.length > 0)
+  const visiblePermissionsCount = groupedPermissions.reduce((sum, group) => sum + group.items.length, 0)
+  const isSectionCollapsed = (sectionKey) => collapsedSections[sectionKey] ?? true
+  const allSectionsCollapsed = groupedPermissions.length > 0
+    && groupedPermissions.every((group) => isSectionCollapsed(group.sectionKey))
+
+  function setAllSectionsCollapsed(collapsed) {
+    setCollapsedSections(
+      groupedPermissions.reduce((accumulator, group) => {
+        accumulator[group.sectionKey] = collapsed
+        return accumulator
+      }, {}),
+    )
+  }
 
   const companyId = Number(profileForm.company_id)
   const entityId = Number(profileForm.entity_id)
@@ -790,7 +837,16 @@ function PermissionDetailPage() {
               <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Permissions</p>
               <h2 className="mt-1 text-lg font-semibold text-foreground">Permission Matrix</h2>
             </div>
-            <span className="text-xs text-muted-foreground">{user.permissions.length} permission(s)</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex h-7 items-center rounded-md border border-border px-2 text-[11px] font-semibold text-foreground transition hover:bg-muted/60"
+                onClick={() => setAllSectionsCollapsed(!allSectionsCollapsed)}
+              >
+                {allSectionsCollapsed ? 'Expand all' : 'Collapse all'}
+              </button>
+              <span className="text-xs text-muted-foreground">{visiblePermissionsCount} permission(s)</span>
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto">
             <table className="data-table bg-card">
@@ -805,7 +861,20 @@ function PermissionDetailPage() {
                   <Fragment key={group.sectionKey}>
                     <tr className="sticky top-0 z-10 bg-surface-2">
                       <td colSpan={2} className="border-y border-ink/10 px-4 py-3">
-                        <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 text-left"
+                          onClick={() =>
+                            setCollapsedSections((current) => ({
+                              ...current,
+                              [group.sectionKey]: !isSectionCollapsed(group.sectionKey),
+                            }))
+                          }
+                          aria-label={`${isSectionCollapsed(group.sectionKey) ? 'Expand' : 'Collapse'} ${group.sectionLabel} section`}
+                        >
+                          {isSectionCollapsed(group.sectionKey)
+                            ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                            : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                           {(() => {
                             const Icon = PERMISSION_SECTION_ICON[group.sectionKey] || PERMISSION_SECTION_ICON.other
                             return <Icon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -814,12 +883,12 @@ function PermissionDetailPage() {
                             {group.sectionLabel}
                           </span>
                           <span className="text-[10px] font-medium text-muted-foreground/60">
-                             · {group.items.length} permissions
+                            - {group.items.length} permissions
                           </span>
-                        </div>
+                        </button>
                       </td>
                     </tr>
-                    {group.items.map((permission) => (
+                    {!isSectionCollapsed(group.sectionKey) && group.items.map((permission) => (
                       <tr key={permission.key} className="bg-card">
                         <td className="px-4 py-3 align-top">
                           <div className="text-base font-bold leading-tight">{permission.name}</div>
@@ -854,3 +923,4 @@ function PermissionDetailPage() {
 }
 
 export default PermissionDetailPage
+

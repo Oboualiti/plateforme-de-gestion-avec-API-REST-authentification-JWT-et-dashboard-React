@@ -2182,7 +2182,7 @@ class RequestDetailView(APIView):
         can_delete = (
             has_any_permission(
                 request.user,
-                {"approve_request", "assign_request", "resolve_request", "close_request"},
+                {"approve_request", "assign_request", "resolve_request"},
             )
             or request.user.is_staff
         )
@@ -4135,27 +4135,33 @@ def get_available_reassignment_targets(user, service_request):
 
 
 def can_invite_request_members(user, service_request):
+    fallback_allowed = has_permission(user, "invite_request_members")
     actor_role = get_primary_role_key(user)
     target_entity_id = get_request_target_entity_id(service_request)
     if not target_entity_id:
-        return False
+        fallback_allowed = False
     if actor_role == "manager":
-        return bool(user.entity_id and user.entity_id == target_entity_id)
-    if service_request.target_team_id:
+        fallback_allowed = bool(user.entity_id and user.entity_id == target_entity_id)
+    elif service_request.target_team_id:
         is_member = Team.objects.filter(
             id=service_request.target_team_id,
             is_active=True,
         ).filter(Q(leader_id=user.id) | Q(members__id=user.id)).exists()
-        return bool(is_member)
-    if service_request.target_team_leader_id:
+        fallback_allowed = bool(is_member)
+    elif service_request.target_team_leader_id:
         if service_request.target_team_leader_id == user.id:
-            return True
-        return Team.objects.filter(
-            leader_id=service_request.target_team_leader_id,
-            is_active=True,
-            members__id=user.id,
-        ).exists()
-    return False
+            fallback_allowed = True
+        else:
+            fallback_allowed = Team.objects.filter(
+                leader_id=service_request.target_team_leader_id,
+                is_active=True,
+                members__id=user.id,
+            ).exists()
+    else:
+        fallback_allowed = False
+    return can_use_request_permission(
+        user, service_request, "request.invite_members", fallback_allowed
+    )
 
 
 def get_request_invite_targets(service_request):

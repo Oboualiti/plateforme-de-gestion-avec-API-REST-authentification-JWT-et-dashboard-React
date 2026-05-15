@@ -10,11 +10,13 @@ import { api } from '../lib/api'
 
 const PERMISSION_OPTIONS = [
   { key: 'request.view', label: 'View Requests' },
+  { key: 'request.approve', label: 'Approve Completed Result' },
   { key: 'request.assign', label: 'Assign Requests' },
   { key: 'request.update_status', label: 'Update Status' },
   { key: 'request.comment', label: 'Comment' },
   { key: 'request.view_discussion', label: 'View Discussion' },
   { key: 'request.edit_deadline', label: 'Edit Deadline' },
+  { key: 'request.invite_members', label: 'Invite Members' },
 ]
 const PERMISSION_LABELS = Object.fromEntries(
   PERMISSION_OPTIONS.map((item) => [item.key, item.label]),

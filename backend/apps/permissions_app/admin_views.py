@@ -136,10 +136,7 @@ def normalize_log_scope_permission_keys(role_key, permission_keys):
 
 
 def normalize_request_status_permission_keys(permission_keys):
-    keys = set(permission_keys or [])
-    if "resolve_request" not in keys:
-        keys.discard("close_request")
-    return sorted(keys)
+    return sorted(set(permission_keys or []))
 
 
 HIDDEN_ROLE_PERMISSION_KEYS = {"view_audit_logs"}

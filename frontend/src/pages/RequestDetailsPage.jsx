@@ -526,6 +526,11 @@ function RequestDetailsPage() {
     username: '',
     permissions: [],
   })
+  const [removeMemberDialog, setRemoveMemberDialog] = useState({
+    open: false,
+    memberId: null,
+    username: '',
+  })
   const [lifecycleMenuOpen, setLifecycleMenuOpen] = useState(false)
   const [editCommentId, setEditCommentId] = useState(null)
   const [editCommentText, setEditCommentText] = useState('')
@@ -1566,8 +1571,22 @@ function RequestDetailsPage() {
 
   async function removeInvitedMember(member) {
     if (!member?.id) return
-    if (!window.confirm(`Remove ${member.username} from invited members?`)) return
-    await handleAction(api.delete(`/requests/${requestId}/invite-members/${member.id}/`))
+    setRemoveMemberDialog({
+      open: true,
+      memberId: member.id,
+      username: member.username || 'this member',
+    })
+  }
+
+  function closeRemoveMemberDialog() {
+    setRemoveMemberDialog({ open: false, memberId: null, username: '' })
+  }
+
+  async function confirmRemoveInvitedMember() {
+    if (!removeMemberDialog.memberId) return
+    const result = await handleAction(api.delete(`/requests/${requestId}/invite-members/${removeMemberDialog.memberId}/`))
+    if (!result?.ok) return
+    closeRemoveMemberDialog()
   }
 
   if (state.loading) return (
@@ -3229,6 +3248,45 @@ function RequestDetailsPage() {
                 disabled={actionState.busy}
               >
                 Save
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {removeMemberDialog.open ? (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/45 p-4">
+          <section className="w-full max-w-md rounded-xl border border-ink/10 bg-card shadow-xl">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Confirmation</p>
+              <h3 className="mt-1 flex items-center gap-2 text-base font-extrabold text-foreground">
+                <CircleAlert className="h-4 w-4 text-amber-600" />
+                Remove invited member
+              </h3>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to remove <span className="font-semibold text-foreground">{removeMemberDialog.username}</span> from this request?
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                They will lose access to the request discussion and assigned permissions.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={closeRemoveMemberDialog}
+                disabled={actionState.busy}
+              >
+                Keep member
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={confirmRemoveInvitedMember}
+                disabled={actionState.busy}
+              >
+                {actionState.busy ? 'Removing...' : 'Remove member'}
               </Button>
             </div>
           </section>

@@ -42,11 +42,14 @@ REQUEST_PERMISSION_OVERRIDE_KEYS = [
     "request.comment",
     "request.view_discussion",
     "request.edit_deadline",
+    "request.invite_members",
 ]
 PROD_REQUEST_PERMISSION_OVERRIDE_KEYS = [
     "request.view",
+    "request.approve",
     "request.comment",
     "request.view_discussion",
+    "request.invite_members",
 ]
 
 

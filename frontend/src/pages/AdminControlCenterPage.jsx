@@ -1822,9 +1822,10 @@ const permissionMetaByKey = {
   view_team_requests: { title: 'View Team Requests', description: 'View team requests', section: 'requests' },
   view_own_requests: { title: 'View Own Requests', description: 'View own submitted requests', section: 'requests' },
   approve_request: { title: 'Approve Request', description: 'Approve requests in pending workflow', section: 'requests' },
+  approve_completed_result: { title: 'Approve Completed Result', description: 'Approve or reject completed work results', section: 'requests' },
   assign_request: { title: 'Assign Request', description: 'Assign request owner', section: 'requests' },
+  invite_request_members: { title: 'Invite Request Members', description: 'Invite members to a request', section: 'requests' },
   resolve_request: { title: 'Update Request Status', description: 'Control status changes (accepted / in progress / rejected / completed)', section: 'requests' },
-  close_request: { title: 'Close Request', description: 'Close completed requests', section: 'requests' },
   edit_request_deadline: { title: 'Edit Request Deadline', description: 'Set and update approximate request deadlines', section: 'requests' },
   view_request_discussion: { title: 'View Request Discussion', description: 'View request discussion messages', section: 'requests' },
   comment_request: { title: 'Comment Request', description: 'Post messages in request discussion', section: 'requests' },
@@ -1873,7 +1874,8 @@ const LOG_PERMISSION_ORDER = [
 ]
 
 const REQUEST_PERMISSION_ORDER = [
-  'close_request',
+  'approve_completed_result',
+  'invite_request_members',
   'resolve_request',
   'edit_request_deadline',
   'comment_request',
@@ -1957,11 +1959,7 @@ function applyLogScopePolicyForRole(roleKey, permissionKeys) {
 }
 
 function applyRequestStatusPolicy(permissionKeys) {
-  const next = new Set(permissionKeys || [])
-  if (!next.has('resolve_request')) {
-    next.delete('close_request')
-  }
-  return Array.from(next)
+  return Array.from(new Set(permissionKeys || []))
 }
 
 function toTitleCaseFromKey(key) {
@@ -1979,6 +1977,7 @@ function buildPermissionRows(allPermissionKeys) {
   }
 
   return (allPermissionKeys || [])
+    .filter((key) => key !== 'close_request')
     .map((key) => {
       const metadata = permissionMetaByKey[key]
       return {

@@ -23,15 +23,13 @@ from apps.audit_logs.services import log_admin_action
 from apps.notifications.models import UserNotification
 from apps.notifications.services import create_notification
 from apps.permissions_app.models import (
-    AppPermission,
-    UserPermissionOverride,
     UserRequestPermissionOverride,
     UserScopedAccessOverride,
     UserRole,
 )
 from apps.roles.models import Role
 from apps.users.models import User
-from apps.requests_app.models import ServiceRequest
+from apps.requests_app.models import ServiceRequest, Team
 from apps.requests_app.views import get_visible_requests_queryset
 
 from .serializers import (
@@ -745,17 +743,7 @@ class ManageUserPermissionOverrideView(BaseManageUsersView):
 
     @staticmethod
     def enforce_status_permission_dependency(user, reason="Auto-adjusted by status permission policy."):
-        effective_keys = set(get_effective_permission_keys(user))
-        if "resolve_request" in effective_keys:
-            return
-        close_permission = AppPermission.objects.filter(key="close_request").first()
-        if close_permission is None:
-            return
-        UserPermissionOverride.objects.update_or_create(
-            user=user,
-            permission=close_permission,
-            defaults={"is_allowed": False, "reason": reason},
-        )
+        return
 
     def build_payload(self, request, target):
         actor_level = get_user_max_role_level(request.user)
@@ -899,6 +887,132 @@ class AdminRequestPermissionControlView(APIView):
             "priority": item.priority,
         }
 
+    def _resolve_target_entity_ids(self, requests):
+        resolved = {}
+        missing_codes = set()
+        for item in requests:
+            if item.target_entity_id:
+                resolved[item.id] = item.target_entity_id
+                continue
+            target_unit = getattr(item, "target_unit", None)
+            code = getattr(target_unit, "code", None)
+            if code:
+                missing_codes.add(code)
+        code_to_entity_id = {}
+        if missing_codes:
+            code_to_entity_id = {
+                code: entity_id
+                for code, entity_id in Entity.objects.filter(code__in=missing_codes).values_list("code", "id")
+            }
+        for item in requests:
+            if item.id in resolved:
+                continue
+            target_unit = getattr(item, "target_unit", None)
+            code = getattr(target_unit, "code", None)
+            resolved[item.id] = code_to_entity_id.get(code)
+        return resolved
+
+    def _invite_members_access_map(self, target_user, requests_qs):
+        requests = list(requests_qs.select_related("target_unit"))
+        request_ids = [item.id for item in requests]
+        fallback_map = {request_id: False for request_id in request_ids}
+        if not has_permission(target_user, "invite_request_members") or not requests:
+            return fallback_map
+
+        actor_role = get_primary_role_key(target_user)
+        target_entity_by_request_id = self._resolve_target_entity_ids(requests)
+
+        if actor_role == "manager":
+            user_entity_id = target_user.entity_id
+            for item in requests:
+                fallback_map[item.id] = bool(
+                    user_entity_id and target_entity_by_request_id.get(item.id) == user_entity_id
+                )
+        else:
+            member_or_leader_team_ids = set(
+                Team.objects.filter(is_active=True).filter(
+                    Q(leader_id=target_user.id) | Q(members__id=target_user.id)
+                ).values_list("id", flat=True)
+            )
+            member_team_leader_ids = set(
+                Team.objects.filter(is_active=True, members__id=target_user.id).values_list("leader_id", flat=True)
+            )
+            for item in requests:
+                if item.target_team_id:
+                    fallback_map[item.id] = item.target_team_id in member_or_leader_team_ids
+                elif item.target_team_leader_id:
+                    fallback_map[item.id] = (
+                        item.target_team_leader_id == target_user.id
+                        or item.target_team_leader_id in member_team_leader_ids
+                    )
+                else:
+                    fallback_map[item.id] = False
+
+        override_map = {
+            row["request_id"]: row["allowed"]
+            for row in UserRequestPermissionOverride.objects.filter(
+                user=target_user,
+                permission_key="request.invite_members",
+                request_id__in=request_ids,
+            ).values("request_id", "allowed")
+        }
+        for request_id, allowed in override_map.items():
+            fallback_map[request_id] = bool(allowed)
+        return fallback_map
+
+    def _approve_completed_access_map(self, target_user, requests_qs):
+        requests = list(requests_qs.select_related("requester_user"))
+        request_ids = [item.id for item in requests]
+        fallback_map = {request_id: False for request_id in request_ids}
+        if not requests:
+            return fallback_map
+
+        actor_role = get_primary_role_key(target_user)
+        managed_requester_ids = set()
+        if actor_role == "team_leader":
+            managed_requester_ids = set(
+                Team.objects.filter(leader_id=target_user.id, is_active=True).values_list("members__id", flat=True)
+            )
+
+        for item in requests:
+            requester = item.requester_user
+            if not requester:
+                fallback_allowed = False
+            elif actor_role == "super_admin":
+                fallback_allowed = True
+            elif actor_role == "senior":
+                fallback_allowed = bool(target_user.company_id) and target_user.company_id == item.company_id
+            elif actor_role == "manager":
+                fallback_allowed = (
+                    bool(target_user.company_id)
+                    and bool(target_user.entity_id)
+                    and target_user.company_id == requester.company_id
+                    and target_user.entity_id == requester.entity_id
+                )
+            elif actor_role == "team_leader":
+                fallback_allowed = (
+                    requester.id == target_user.id
+                    or requester.team_leader_id == target_user.id
+                    or requester.id in managed_requester_ids
+                )
+            elif actor_role == "user":
+                fallback_allowed = requester.id == target_user.id
+            else:
+                fallback_allowed = False
+            fallback_map[item.id] = bool(fallback_allowed)
+
+        override_map = {
+            row["request_id"]: row["allowed"]
+            for row in UserRequestPermissionOverride.objects.filter(
+                user=target_user,
+                permission_key="request.approve",
+                request_id__in=request_ids,
+            ).values("request_id", "allowed")
+        }
+        for request_id, allowed in override_map.items():
+            fallback_map[request_id] = bool(allowed)
+        return fallback_map
+
     def _base_access_map(self, target_user, permission_key, requests_qs):
         if permission_key == "request.view":
             visible_ids = set(
@@ -906,6 +1020,10 @@ class AdminRequestPermissionControlView(APIView):
                 .values_list("id", flat=True)
             )
             return {request_id: (request_id in visible_ids) for request_id in requests_qs.values_list("id", flat=True)}
+        if permission_key == "request.approve":
+            return self._approve_completed_access_map(target_user, requests_qs)
+        if permission_key == "request.invite_members":
+            return self._invite_members_access_map(target_user, requests_qs)
         from apps.requests_app.views import (
             can_assign_request,
             can_edit_request_deadline,
@@ -1011,16 +1129,25 @@ class AdminRequestPermissionControlView(APIView):
 
         all_requests = list(queryset)
         all_request_ids = [item.id for item in all_requests]
-        if actor_user is not None:
-            controllable_ids = self._actor_controllable_ids(actor_user, permission_key, all_request_ids)
-            all_requests = [item for item in all_requests if item.id in controllable_ids]
-            all_request_ids = [item.id for item in all_requests]
-
         base_allow_map = self._base_access_map(
             target_user,
             permission_key,
             ServiceRequest.objects.filter(id__in=all_request_ids),
         )
+        if actor_user is not None and all_request_ids:
+            actor_allow_map = self._base_access_map(
+                actor_user,
+                permission_key,
+                ServiceRequest.objects.filter(id__in=all_request_ids),
+            )
+            all_requests = [item for item in all_requests if actor_allow_map.get(item.id, False)]
+            all_request_ids = [item.id for item in all_requests]
+            allowed_id_set = set(all_request_ids)
+            base_allow_map = {
+                request_id: allowed
+                for request_id, allowed in base_allow_map.items()
+                if request_id in allowed_id_set
+            }
         override_map = {
             row["request_id"]: row["allowed"]
             for row in UserRequestPermissionOverride.objects.filter(
@@ -1248,8 +1375,10 @@ class AdminRequestPermissionControlView(APIView):
                         unique_fields=["user", "request", "permission_key"],
                     )
 
-        payload = self._build_payload(target_user, permission_key, request.query_params, actor_user=request.user)
-        return Response(payload, status=status.HTTP_200_OK)
+        if bool(request.data.get("include_payload", False)):
+            payload = self._build_payload(target_user, permission_key, request.query_params, actor_user=request.user)
+            return Response(payload, status=status.HTTP_200_OK)
+        return Response({"detail": "Request permission overrides saved successfully."}, status=status.HTTP_200_OK)
 
 
 class AdminUserAccessPermissionControlView(APIView):
@@ -1633,6 +1762,7 @@ class RequestPermissionAiAssistantView(APIView):
         from apps.requests_app.views import (
             can_assign_request,
             can_edit_request_deadline,
+            can_invite_request_members,
             can_update_request_status,
             can_validate_completed_result,
         )
@@ -1652,6 +1782,8 @@ class RequestPermissionAiAssistantView(APIView):
                 current_map[item.id] = "view_request_discussion" in effective_permission_keys
             elif permission_key == "request.edit_deadline":
                 current_map[item.id] = can_edit_request_deadline(target_user, item)
+            elif permission_key == "request.invite_members":
+                current_map[item.id] = can_invite_request_members(target_user, item)
             else:
                 current_map[item.id] = False
         return current_map
@@ -1732,6 +1864,7 @@ class RequestPermissionAiAssistantView(APIView):
             ("request.comment", ["comment", "reply", "discussion message"]),
             ("request.view_discussion", ["view discussion", "see discussion", "discussion"]),
             ("request.edit_deadline", ["deadline", "edit deadline", "change deadline"]),
+            ("request.invite_members", ["invite members", "invite member", "invited members", "invite users"]),
             ("request.view", ["view", "see", "open"]),
         ]
         for key, markers in permission_map:
